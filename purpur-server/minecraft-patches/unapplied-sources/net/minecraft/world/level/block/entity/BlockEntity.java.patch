@@ -1,0 +1,50 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/entity/BlockEntity.java b/net/minecraft/world/level/block/entity/BlockEntity.java
+index fb22ebe9758014ebf2aebcda21155f1c4c83fafe..7cbb92c23f0b3d49b8ea6cd66ed4f377dd22ee98 100644
+--- a/net/minecraft/world/level/block/entity/BlockEntity.java
++++ b/net/minecraft/world/level/block/entity/BlockEntity.java
+@@ -105,6 +105,10 @@ public abstract class BlockEntity implements DebugValueSource {
+         input.read("PublicBukkitValues", CompoundTag.CODEC)
+             .ifPresent(this.persistentDataContainer::putAll);
+         // Paper end - read persistent data container
++
++
++        this.persistentLore = input.read("Purpur.persistentLore", net.minecraft.world.item.component.ItemLore.CODEC).orElse(null); // Purpur - Persistent BlockEntity Lore and DisplayName
++
+     }
+ 
+     public final void loadWithComponents(ValueInput input) {
+@@ -117,6 +121,11 @@ public abstract class BlockEntity implements DebugValueSource {
+     }
+ 
+     protected void saveAdditional(ValueOutput output) {
++        // Purpur start - Persistent BlockEntity Lore and DisplayName
++        if (this.persistentLore != null) {
++            output.store("Purpur.persistentLore", net.minecraft.world.item.component.ItemLore.CODEC, this.persistentLore);
++        }
++        // Purpur end - Persistent BlockEntity Lore and DisplayName
+     }
+ 
+     public final CompoundTag saveWithFullMetadata(HolderLookup.Provider registries) {
+@@ -402,4 +411,16 @@ public abstract class BlockEntity implements DebugValueSource {
+             return this.blockEntity.getNameForReporting() + "@" + this.blockEntity.getBlockPos();
+         }
+     }
++
++    // Purpur start - Persistent BlockEntity Lore and DisplayName
++    private net.minecraft.world.item.component.@Nullable ItemLore persistentLore = null;
++
++    public void setPersistentLore(net.minecraft.world.item.component.ItemLore lore) {
++        this.persistentLore = lore;
++    }
++
++    public @org.jetbrains.annotations.Nullable net.minecraft.world.item.component.ItemLore getPersistentLore() {
++        return this.persistentLore;
++    }
++    // Purpur end - Persistent BlockEntity Lore and DisplayName
+ }

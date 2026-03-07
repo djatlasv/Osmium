@@ -1,0 +1,27 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java b/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java
+index 1daf8f52148043339f723aaebdf6135763dd805b..9c38e3b8c09caa2701a207b91761f344c5e53385 100644
+--- a/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java
++++ b/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java
+@@ -957,6 +957,7 @@ public class EnderDragon extends Mob implements Enemy {
+ 
+     @Override
+     protected boolean canRide(Entity entity) {
++        if (this.level().purpurConfig.enderDragonCanRideVehicles) return this.boardingCooldown <= 0; // Purpur - Configs for if Wither/Ender Dragon can ride vehicles
+         return false;
+     }
+ 
+@@ -992,7 +993,7 @@ public class EnderDragon extends Mob implements Enemy {
+         boolean flag = level.getGameRules().get(GameRules.MOB_DROPS);
+         int i = 500;
+ 
+-        if (this.dragonFight != null && !this.dragonFight.hasPreviouslyKilledDragon()) {
++        if (this.dragonFight != null && (level().purpurConfig.enderDragonAlwaysDropsFullExp || !this.dragonFight.hasPreviouslyKilledDragon())) { // Purpur - Ender dragon always drop full exp
+             i = 12000;
+         }
+ 

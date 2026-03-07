@@ -1,0 +1,22 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/ai/goal/RangedBowAttackGoal.java b/net/minecraft/world/entity/ai/goal/RangedBowAttackGoal.java
+index 722f378bb3726200b6fe88948bf1e1d3514a7b5c..e337e22c2cf82b0c1cab3fe0a9ff894c0c718716 100644
+--- a/net/minecraft/world/entity/ai/goal/RangedBowAttackGoal.java
++++ b/net/minecraft/world/entity/ai/goal/RangedBowAttackGoal.java
+@@ -116,9 +116,9 @@ public class RangedBowAttackGoal<T extends Monster & RangedAttackMob> extends Go
+                 }
+ 
+                 this.mob.lookAt(target, 30.0F, 30.0F);
+-            } else {
++            } //else { // Purpur - MC-121706 - Fix mobs not looking up and down when strafing
+                 this.mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
+-            }
++            //} // Purpur - MC-121706 - Fix mobs not looking up and down when strafing
+ 
+             if (this.mob.isUsingItem()) {
+                 if (!hasLineOfSight && this.seeTime < -60) {

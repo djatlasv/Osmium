@@ -1,0 +1,19 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/effect/WitherMobEffect.java b/net/minecraft/world/effect/WitherMobEffect.java
+index 1fc9e1ad541c46124183a401b2a7d99aea69cecf..881271f0bc77a8a8a7d31daad9a8188bebaca67b 100644
+--- a/net/minecraft/world/effect/WitherMobEffect.java
++++ b/net/minecraft/world/effect/WitherMobEffect.java
+@@ -12,7 +12,7 @@ public class WitherMobEffect extends MobEffect {
+ 
+     @Override
+     public boolean applyEffectTick(ServerLevel level, LivingEntity entity, int amplifier) {
+-        entity.hurtServer(level, entity.damageSources().wither(), 1.0F);
++        entity.hurtServer(level, entity.damageSources().wither(), entity.level().purpurConfig.entityWitherDegenerationAmount); // Purpur - Config MobEffect by world
+         return true;
+     }
+ 

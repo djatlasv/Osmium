@@ -1,0 +1,31 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/animal/golem/CopperGolemAi.java b/net/minecraft/world/entity/animal/golem/CopperGolemAi.java
+index 56872b4674ae4ce0ebcb6c28ae606265384777cd..fd556e10ff87eac5e965a5eef31cfe0c0f8fbd66 100644
+--- a/net/minecraft/world/entity/animal/golem/CopperGolemAi.java
++++ b/net/minecraft/world/entity/animal/golem/CopperGolemAi.java
+@@ -43,7 +43,7 @@ public class CopperGolemAi {
+     private static final int TICK_TO_START_ON_REACHED_INTERACTION = 1;
+     private static final int TICK_TO_PLAY_ON_REACHED_SOUND = 9;
+     private static final Predicate<BlockState> TRANSPORT_ITEM_SOURCE_BLOCK = state -> state.is(BlockTags.COPPER_CHESTS);
+-    private static final Predicate<BlockState> TRANSPORT_ITEM_DESTINATION_BLOCK = state -> state.is(Blocks.CHEST) || state.is(Blocks.TRAPPED_CHEST);
++    private static final Predicate<BlockState> TRANSPORT_ITEM_DESTINATION_BLOCK = state -> state.is(Blocks.CHEST) || state.is(Blocks.TRAPPED_CHEST); // Purpur - copper golem can place items in barrels or shulkers option - diff on change
+     private static final ImmutableList<SensorType<? extends Sensor<? super CopperGolem>>> SENSOR_TYPES = ImmutableList.of(
+         SensorType.NEAREST_LIVING_ENTITIES, SensorType.HURT_BY
+     );
+@@ -158,6 +158,11 @@ public class CopperGolemAi {
+                 }
+ 
+                 if (integer == 60) {
++                    // Purpur start - copper golem can place items in barrels or shulkers option
++                    if (container instanceof net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity shulkerBoxBlockEntity && shulkerBoxBlockEntity.openCount > 0) {
++                        container.stopOpen(copperGolem);
++                    }
++                    // Purpur end - copper golem can place items in barrels or shulkers option
+                     if (container.getEntitiesWithContainerOpen().contains(pathfinderMob)) {
+                         container.stopOpen(copperGolem);
+                     }

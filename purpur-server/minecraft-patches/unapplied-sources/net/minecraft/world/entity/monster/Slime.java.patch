@@ -1,0 +1,22 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/monster/Slime.java b/net/minecraft/world/entity/monster/Slime.java
+index f1eb8c9120a4794b1b70777c272e1a0491fa5164..e433eacd865f620a9c336a1976fd017b8053cf6a 100644
+--- a/net/minecraft/world/entity/monster/Slime.java
++++ b/net/minecraft/world/entity/monster/Slime.java
+@@ -302,6 +302,11 @@ public class Slime extends Mob implements Enemy {
+     public static boolean checkSlimeSpawnRules(
+         EntityType<Slime> entityType, LevelAccessor level, EntitySpawnReason spawnReason, BlockPos pos, RandomSource random
+     ) {
++        // Purpur start - Config to disable hostile mob spawn on ice
++        if (net.minecraft.world.entity.monster.Monster.canSpawnInBlueAndPackedIce(level, pos)) {
++            return false;
++        }
++        // Purpur end - Config to disable hostile mob spawn on ice
+         if (level.getDifficulty() != Difficulty.PEACEFUL) {
+             if (EntitySpawnReason.isSpawner(spawnReason)) {
+                 return checkMobSpawnRules(entityType, level, spawnReason, pos, random);

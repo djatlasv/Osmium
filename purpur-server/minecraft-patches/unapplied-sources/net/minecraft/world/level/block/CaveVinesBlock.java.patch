@@ -1,0 +1,22 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/CaveVinesBlock.java b/net/minecraft/world/level/block/CaveVinesBlock.java
+index f4a4dc14012c110e58b1c9272d80d4b89394d090..da85ec2b88b200fd28d89d9ae35c7319d4b028b7 100644
+--- a/net/minecraft/world/level/block/CaveVinesBlock.java
++++ b/net/minecraft/world/level/block/CaveVinesBlock.java
+@@ -92,4 +92,11 @@ public class CaveVinesBlock extends GrowingPlantHeadBlock implements CaveVines {
+     public void performBonemeal(ServerLevel level, RandomSource random, BlockPos pos, BlockState state) {
+         level.setBlock(pos, state.setValue(BERRIES, true), Block.UPDATE_CLIENTS);
+     }
++
++    // Purpur start - cave vines configurable max growth age
++    @Override
++    public int getMaxGrowthAge() {
++        return org.purpurmc.purpur.PurpurConfig.caveVinesMaxGrowthAge;
++    }
++    // Purpur end - cave vines configurable max growth age
+ }

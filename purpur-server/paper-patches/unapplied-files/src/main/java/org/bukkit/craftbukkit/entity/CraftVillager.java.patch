@@ -1,0 +1,22 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftVillager.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftVillager.java
+index 22704813d84f5ff44ef8d8b1baaa95ae4fc73b05..456f31b0a0663f0784b7c8b2b1a3995531e0f970 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftVillager.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftVillager.java
+@@ -243,4 +243,11 @@ public class CraftVillager extends CraftAbstractVillager implements Villager {
+     public void restock() {
+         getHandle().restock();
+     }
++
++    // Purpur start - Lobotomize stuck villagers
++    @Override
++    public boolean isLobotomized() {
++        return getHandle().isLobotomized();
++    }
++    // Purpur end - Lobotomize stuck villagers
+ }

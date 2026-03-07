@@ -1,0 +1,55 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/animal/dolphin/Dolphin.java b/net/minecraft/world/entity/animal/dolphin/Dolphin.java
+index 3a3c9694d3a704aaaa241bd8601c7fd2439436cc..50b8abff1e20855ba8c8acb225c251a1223b8b58 100644
+--- a/net/minecraft/world/entity/animal/dolphin/Dolphin.java
++++ b/net/minecraft/world/entity/animal/dolphin/Dolphin.java
+@@ -75,6 +75,7 @@ public class Dolphin extends AgeableWaterCreature {
+     public static final float BABY_SCALE = 0.65F;
+     private static final boolean DEFAULT_GOT_FISH = false;
+     @Nullable public BlockPos treasurePos;
++    private boolean isNaturallyAggressiveToPlayers; // Purpur - Dolphins naturally aggressive to players chance
+ 
+     public Dolphin(EntityType<? extends Dolphin> type, Level level) {
+         super(type, level);
+@@ -90,6 +91,7 @@ public class Dolphin extends AgeableWaterCreature {
+         this.setAirSupply(this.getMaxAirSupply());
+         this.setXRot(0.0F);
+         SpawnGroupData spawnGroupData1 = Objects.requireNonNullElseGet(spawnGroupData, () -> new AgeableMob.AgeableMobGroupData(0.1F));
++        this.isNaturallyAggressiveToPlayers = level.getLevel().purpurConfig.dolphinNaturallyAggressiveToPlayersChance > 0.0D && random.nextDouble() <= level.getLevel().purpurConfig.dolphinNaturallyAggressiveToPlayersChance; // Purpur - Dolphins naturally aggressive to players chance
+         return super.finalizeSpawn(level, difficulty, spawnReason, spawnGroupData1);
+     }
+ 
+@@ -155,17 +157,19 @@ public class Dolphin extends AgeableWaterCreature {
+     protected void registerGoals() {
+         this.goalSelector.addGoal(0, new BreathAirGoal(this));
+         this.goalSelector.addGoal(0, new TryFindWaterGoal(this));
++        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.2000000476837158D, true)); // Purpur - Dolphins naturally aggressive to players chance
+         this.goalSelector.addGoal(1, new Dolphin.DolphinSwimToTreasureGoal(this));
+         this.goalSelector.addGoal(2, new Dolphin.DolphinSwimWithPlayerGoal(this, 4.0));
+         this.goalSelector.addGoal(4, new RandomSwimmingGoal(this, 1.0, 10));
+         this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
+         this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, Player.class, 6.0F));
+         this.goalSelector.addGoal(5, new DolphinJumpGoal(this, 10));
+-        this.goalSelector.addGoal(6, new MeleeAttackGoal(this, 1.2F, true));
++        //this.goalSelector.addGoal(6, new MeleeAttackGoal(this, 1.2F, true)); // Purpur - moved up - Dolphins naturally aggressive to players chance
+         this.goalSelector.addGoal(8, new Dolphin.PlayWithItemsGoal());
+         this.goalSelector.addGoal(8, new FollowBoatGoal(this));
+         this.goalSelector.addGoal(9, new AvoidEntityGoal<>(this, Guardian.class, 8.0F, 1.0, 1.0));
+         this.targetSelector.addGoal(1, new HurtByTargetGoal(this, Guardian.class).setAlertOthers());
++        this.targetSelector.addGoal(2, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(this, Player.class, 10, true, false, (ignored, ignored2) -> isNaturallyAggressiveToPlayers)); // Purpur - Dolphins naturally aggressive to players chance
+     }
+ 
+     public static AttributeSupplier.Builder createAttributes() {
+@@ -392,6 +396,7 @@ public class Dolphin extends AgeableWaterCreature {
+ 
+         @Override
+         public boolean canUse() {
++            if (this.dolphin.level().purpurConfig.dolphinDisableTreasureSearching) return false; // Purpur - Add option to disable dolphin treasure searching
+             return this.dolphin.gotFish() && this.dolphin.getAirSupply() >= 100;
+         }
+ 

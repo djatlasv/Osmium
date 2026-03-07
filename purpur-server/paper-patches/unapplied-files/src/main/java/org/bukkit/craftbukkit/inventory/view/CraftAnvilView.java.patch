@@ -1,0 +1,37 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/inventory/view/CraftAnvilView.java b/src/main/java/org/bukkit/craftbukkit/inventory/view/CraftAnvilView.java
+index 2b3844f5ecc1bfbf3f5dab1c00d06f8be27f39e9..4e535c287137ceedd4d48047b03f4578c33467b0 100644
+--- a/src/main/java/org/bukkit/craftbukkit/inventory/view/CraftAnvilView.java
++++ b/src/main/java/org/bukkit/craftbukkit/inventory/view/CraftAnvilView.java
+@@ -73,4 +73,26 @@ public class CraftAnvilView extends CraftInventoryView<AnvilMenu, AnvilInventory
+             this.setMaximumRepairCost(legacy.getMaximumRepairCost());
+         }
+     }
++
++    // Purpur start - Anvil API
++    @Override
++    public boolean canBypassCost() {
++        return this.container.bypassCost;
++    }
++
++    @Override
++    public void setBypassCost(boolean bypassCost) {
++        this.container.bypassCost = bypassCost;
++    }
++
++    @Override
++    public boolean canDoUnsafeEnchants() {
++        return this.container.canDoUnsafeEnchants;
++    }
++
++    @Override
++    public void setDoUnsafeEnchants(boolean canDoUnsafeEnchants) {
++        this.container.canDoUnsafeEnchants = canDoUnsafeEnchants;
++    }
++    // Purpur end - Anvil API
+ }

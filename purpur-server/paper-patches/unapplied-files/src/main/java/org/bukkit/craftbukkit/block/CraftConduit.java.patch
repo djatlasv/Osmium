@@ -1,0 +1,19 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/block/CraftConduit.java b/src/main/java/org/bukkit/craftbukkit/block/CraftConduit.java
+index 1c448bc38fa554707e0bfb99ded70b093e49926c..77e6913358ac992b503712cccb871518770fee0b 100644
+--- a/src/main/java/org/bukkit/craftbukkit/block/CraftConduit.java
++++ b/src/main/java/org/bukkit/craftbukkit/block/CraftConduit.java
+@@ -75,7 +75,7 @@ public class CraftConduit extends CraftBlockEntityState<ConduitBlockEntity> impl
+     public int getRange() {
+         this.ensureNoWorldGeneration();
+         ConduitBlockEntity conduit = (ConduitBlockEntity) this.getBlockEntityFromWorld();
+-        return (conduit != null) ? ConduitBlockEntity.getRange(conduit.effectBlocks) : 0;
++        return (conduit != null) ? ConduitBlockEntity.getRange(conduit.effectBlocks, this.world.getHandle()) : 0; // Purpur - Conduit behavior configuration
+     }
+ 
+     @Override

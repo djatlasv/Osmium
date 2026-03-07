@@ -1,0 +1,18 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/server/network/ServerStatusPacketListenerImpl.java b/net/minecraft/server/network/ServerStatusPacketListenerImpl.java
+index 465559113071a47e706f77a5b0996597ee986b3d..1b966dc52b067cd9d1fa9f500b692e3f75f1cc90 100644
+--- a/net/minecraft/server/network/ServerStatusPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerStatusPacketListenerImpl.java
+@@ -37,6 +37,7 @@ public class ServerStatusPacketListenerImpl implements ServerStatusPacketListene
+         } else {
+             this.hasRequestedStatus = true;
+             // this.connection.send(new ClientboundStatusResponsePacket(this.status)); // Paper
++            if (net.minecraft.server.MinecraftServer.getServer().getStatus().version().isEmpty()) return; // Purpur - Fix 'outdated server' showing in ping before server fully boots - do not respond to pings before we know the protocol version
+             com.destroystokyo.paper.network.StandardPaperServerListPingEventImpl.processRequest(net.minecraft.server.MinecraftServer.getServer(), this.connection); // Paper - handle status request
+         }
+     }

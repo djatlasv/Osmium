@@ -1,0 +1,47 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/monster/Monster.java b/net/minecraft/world/entity/monster/Monster.java
+index 07293a33c45a0834f3b623a47a1bd25f3e059f54..54033572e325f8486a438e31dde34f8407f9180a 100644
+--- a/net/minecraft/world/entity/monster/Monster.java
++++ b/net/minecraft/world/entity/monster/Monster.java
+@@ -84,6 +84,11 @@ public abstract class Monster extends PathfinderMob implements Enemy {
+     }
+ 
+     public static boolean isDarkEnoughToSpawn(ServerLevelAccessor level, BlockPos pos, RandomSource random) {
++        // Purpur start - Config to disable hostile mob spawn on ice
++        if (canSpawnInBlueAndPackedIce(level, pos)) {
++            return false;
++        }
++        // Purpur end - Config to disable hostile mob spawn on ice
+         if (level.getBrightness(LightLayer.SKY, pos) > random.nextInt(32)) {
+             return false;
+         } else {
+@@ -109,6 +114,11 @@ public abstract class Monster extends PathfinderMob implements Enemy {
+     public static boolean checkAnyLightMonsterSpawnRules(
+         EntityType<? extends Monster> entityType, LevelAccessor level, EntitySpawnReason spawnReason, BlockPos pos, RandomSource random
+     ) {
++        // Purpur start - Config to disable hostile mob spawn on ice
++        if (canSpawnInBlueAndPackedIce(level, pos)) {
++            return false;
++        }
++        // Purpur end - Config to disable hostile mob spawn on ice
+         return level.getDifficulty() != Difficulty.PEACEFUL && checkMobSpawnRules(entityType, level, spawnReason, pos, random);
+     }
+ 
+@@ -146,4 +156,12 @@ public abstract class Monster extends PathfinderMob implements Enemy {
+             return ItemStack.EMPTY;
+         }
+     }
++
++    // Purpur start - Config to disable hostile mob spawn on ice
++    public static boolean canSpawnInBlueAndPackedIce(LevelAccessor level, BlockPos pos) {
++        net.minecraft.world.level.block.state.BlockState spawnBlock = level.getBlockState(pos.below());
++
++        return (!level.getMinecraftWorld().purpurConfig.mobsSpawnOnPackedIce && spawnBlock.is(net.minecraft.world.level.block.Blocks.PACKED_ICE)) || (!level.getMinecraftWorld().purpurConfig.mobsSpawnOnBlueIce && spawnBlock.is(net.minecraft.world.level.block.Blocks.BLUE_ICE));
++    }
++    // Purpur end - Config to disable hostile mob spawn on ice
+ }

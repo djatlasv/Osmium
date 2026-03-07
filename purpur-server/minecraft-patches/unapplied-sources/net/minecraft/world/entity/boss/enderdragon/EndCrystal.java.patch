@@ -1,0 +1,64 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/boss/enderdragon/EndCrystal.java b/net/minecraft/world/entity/boss/enderdragon/EndCrystal.java
+index c095f42aa103b7874fb5d8dcece1b1484c2e2968..d1c593ccfab7bee4366ee7c56606a230964e3fb7 100644
+--- a/net/minecraft/world/entity/boss/enderdragon/EndCrystal.java
++++ b/net/minecraft/world/entity/boss/enderdragon/EndCrystal.java
+@@ -39,6 +39,24 @@ public class EndCrystal extends Entity {
+         this.setPos(x, y, z);
+     }
+ 
++    // Purpur start - End crystal explosion options
++    public boolean shouldExplode() {
++        return showsBottom() ? level().purpurConfig.basedEndCrystalExplode : level().purpurConfig.baselessEndCrystalExplode;
++    }
++
++    public float getExplosionPower() {
++        return (float) (showsBottom() ? level().purpurConfig.basedEndCrystalExplosionPower : level().purpurConfig.baselessEndCrystalExplosionPower);
++    }
++
++    public boolean hasExplosionFire() {
++        return showsBottom() ? level().purpurConfig.basedEndCrystalExplosionFire : level().purpurConfig.baselessEndCrystalExplosionFire;
++    }
++
++    public Level.ExplosionInteraction getExplosionEffect() {
++        return showsBottom() ? level().purpurConfig.basedEndCrystalExplosionEffect : level().purpurConfig.baselessEndCrystalExplosionEffect;
++    }
++    // Purpur end - End crystal explosion options
++
+     @Override
+     protected Entity.MovementEmission getMovementEmission() {
+         return Entity.MovementEmission.NONE;
+@@ -75,6 +93,8 @@ public class EndCrystal extends Entity {
+             }
+         }
+         // Paper end - Fix invulnerable end crystals
++        if (this.level().purpurConfig.endCrystalCramming > 0 && this.level().getEntitiesOfClass(EndCrystal.class, getBoundingBox()).size() > this.level().purpurConfig.endCrystalCramming) this.hurt(this.damageSources().cramming(), 6.0F); // Purpur - End Crystal Cramming
++
+     }
+ 
+     @Override
+@@ -115,15 +135,17 @@ public class EndCrystal extends Entity {
+                 }
+                 // CraftBukkit end
+                 if (!damageSource.is(DamageTypeTags.IS_EXPLOSION)) {
++                    if (shouldExplode()) {// Purpur - End crystal explosion options
+                     DamageSource damageSource1 = damageSource.getEntity() != null ? this.damageSources().explosion(this, damageSource.getEntity()) : null;
+                     // CraftBukkit start
+-                    org.bukkit.event.entity.ExplosionPrimeEvent event = org.bukkit.craftbukkit.event.CraftEventFactory.callExplosionPrimeEvent(this, 6.0F, false);
++                    org.bukkit.event.entity.ExplosionPrimeEvent event = org.bukkit.craftbukkit.event.CraftEventFactory.callExplosionPrimeEvent(this, getExplosionPower(), hasExplosionFire()); // Purpur - End crystal explosion options
+                     if (event.isCancelled()) {
+                         return false;
+                     }
+ 
+                     this.remove(Entity.RemovalReason.KILLED, org.bukkit.event.entity.EntityRemoveEvent.Cause.EXPLODE); // Paper - add Bukkit remove cause
+-                    level.explode(this, damageSource1, null, this.getX(), this.getY(), this.getZ(), event.getRadius(), event.getFire(), Level.ExplosionInteraction.BLOCK);
++                    level.explode(this, damageSource1, null, this.getX(), this.getY(), this.getZ(), event.getRadius(), event.getFire(), getExplosionEffect()); // Purpur - End crystal explosion options
++                    } else this.unsetRemoved(); // Purpur - End crystal explosion options
+                 } else {
+                     this.remove(Entity.RemovalReason.KILLED, org.bukkit.event.entity.EntityRemoveEvent.Cause.DEATH); // Paper - add Bukkit remove cause
+                     // CraftBukkit end

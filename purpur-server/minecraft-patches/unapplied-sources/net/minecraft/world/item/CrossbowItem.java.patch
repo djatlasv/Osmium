@@ -1,0 +1,19 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/item/CrossbowItem.java b/net/minecraft/world/item/CrossbowItem.java
+index 664e633f6d93c1569895f9cccb90e3bc8922e56d..a29ff7584371d35d9b0fff71681f672b76dea07c 100644
+--- a/net/minecraft/world/item/CrossbowItem.java
++++ b/net/minecraft/world/item/CrossbowItem.java
+@@ -66,7 +66,7 @@ public class CrossbowItem extends ProjectileWeaponItem {
+         ItemStack itemInHand = player.getItemInHand(hand);
+         ChargedProjectiles chargedProjectiles = itemInHand.get(DataComponents.CHARGED_PROJECTILES);
+         if (chargedProjectiles != null && !chargedProjectiles.isEmpty()) {
+-            this.performShooting(level, player, hand, itemInHand, getShootingPower(chargedProjectiles), 1.0F, null);
++            this.performShooting(level, player, hand, itemInHand, getShootingPower(chargedProjectiles), (float) level.purpurConfig.crossbowProjectileOffset, null); // Purpur - Projectile offset config
+             return InteractionResult.CONSUME;
+         } else if (!player.getProjectile(itemInHand).isEmpty()) {
+             this.startSoundPlayed = false;

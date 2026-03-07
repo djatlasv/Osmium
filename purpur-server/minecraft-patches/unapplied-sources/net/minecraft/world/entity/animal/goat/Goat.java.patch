@@ -1,0 +1,18 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/animal/goat/Goat.java b/net/minecraft/world/entity/animal/goat/Goat.java
+index 9f41c1ff3e75cf9164dee0853aeef4bfc473126b..566390c9258c1132c9ffa2df8ecc3e713963787f 100644
+--- a/net/minecraft/world/entity/animal/goat/Goat.java
++++ b/net/minecraft/world/entity/animal/goat/Goat.java
+@@ -389,6 +389,7 @@ public class Goat extends Animal {
+ 
+     // Paper start - Goat ram API
+     public void ram(net.minecraft.world.entity.LivingEntity entity) {
++        if(!new org.purpurmc.purpur.event.entity.GoatRamEntityEvent((org.bukkit.entity.Goat) getBukkitEntity(), entity.getBukkitLivingEntity()).callEvent()) return; // Purpur - Added goat ram event
+         Brain<Goat> brain = this.getBrain();
+         brain.setMemory(MemoryModuleType.RAM_TARGET, entity.position());
+         brain.eraseMemory(MemoryModuleType.RAM_COOLDOWN_TICKS);

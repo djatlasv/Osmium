@@ -1,0 +1,19 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
+index 7cc494d53c9a6d2fa0d34a60da50a9d199d65340..84b11654411eaa561a9b58ffa1210ca3d3b5a7cd 100644
+--- a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
++++ b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
+@@ -391,7 +391,7 @@ public class NewMinecartBehavior extends MinecartBehavior {
+     private Vec3 calculateBoostTrackSpeed(Vec3 speed, BlockPos pos, BlockState state) {
+         if (state.is(Blocks.POWERED_RAIL) && state.getValue(PoweredRailBlock.POWERED)) {
+             if (speed.length() > 0.01) {
+-                return speed.normalize().scale(speed.length() + 0.06);
++                return speed.normalize().scale(speed.length() + this.level().purpurConfig.poweredRailBoostModifier); // Purpur - Configurable powered rail boost modifier
+             } else {
+                 Vec3 redstoneDirection = this.minecart.getRedstoneDirection(pos);
+                 return redstoneDirection.lengthSqr() <= 0.0 ? speed : redstoneDirection.scale(speed.length() + 0.2);

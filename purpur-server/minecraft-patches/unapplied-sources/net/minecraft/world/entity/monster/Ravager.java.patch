@@ -1,0 +1,27 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/monster/Ravager.java b/net/minecraft/world/entity/monster/Ravager.java
+index 631092f088355be45f598bb91bd5d38a39a55d5b..a10c693a8948d1b7c4bd06b957a08a9cea9170ad 100644
+--- a/net/minecraft/world/entity/monster/Ravager.java
++++ b/net/minecraft/world/entity/monster/Ravager.java
+@@ -76,6 +76,7 @@ public class Ravager extends Raider {
+     protected void registerGoals() {
+         super.registerGoals();
+         this.goalSelector.addGoal(0, new FloatGoal(this));
++        if (level().purpurConfig.ravagerAvoidRabbits) this.goalSelector.addGoal(3, new net.minecraft.world.entity.ai.goal.AvoidEntityGoal<>(this, net.minecraft.world.entity.animal.rabbit.Rabbit.class, 6.0F, 1.0D, 1.2D)); // Purpur - option to make ravagers afraid of rabbits
+         this.goalSelector.addGoal(4, new MeleeAttackGoal(this, 1.0, true));
+         this.goalSelector.addGoal(5, new WaterAvoidingRandomStrollGoal(this, 0.4));
+         this.goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 6.0F));
+@@ -154,7 +155,7 @@ public class Ravager extends Raider {
+                 )) {
+                     BlockState blockState = serverLevel.getBlockState(blockPos);
+                     Block block = blockState.getBlock();
+-                    if (block instanceof LeavesBlock) {
++                    if (this.level().purpurConfig.ravagerGriefableBlocks.contains(block)) { // Purpur - Configurable ravager griefable blocks list
+                         // CraftBukkit start
+                         if (!org.bukkit.craftbukkit.event.CraftEventFactory.callEntityChangeBlockEvent(this, blockPos, blockState.getFluidState().createLegacyBlock())) { // Paper - fix wrong block state
+                             continue;

@@ -1,0 +1,28 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftIronGolem.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftIronGolem.java
+index 54cea2ff4abbb3780814aadc534e53cd97022971..e0a5b55005fd8a6ff16c7d13fff9caea1d836f66 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftIronGolem.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftIronGolem.java
+@@ -22,4 +22,17 @@ public class CraftIronGolem extends CraftGolem implements IronGolem {
+     public void setPlayerCreated(boolean playerCreated) {
+         this.getHandle().setPlayerCreated(playerCreated);
+     }
++
++    // Purpur start - Summoner API
++    @Override
++    @org.jetbrains.annotations.Nullable
++    public java.util.UUID getSummoner() {
++        return getHandle().getSummoner();
++    }
++
++    @Override
++    public void setSummoner(@org.jetbrains.annotations.Nullable java.util.UUID summoner) {
++        getHandle().setSummoner(summoner);
++    }
++    // Purpur end - Summoner API
+ }

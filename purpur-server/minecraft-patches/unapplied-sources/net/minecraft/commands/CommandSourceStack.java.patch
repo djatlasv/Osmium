@@ -1,0 +1,61 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/commands/CommandSourceStack.java b/net/minecraft/commands/CommandSourceStack.java
+index 566304106fd4f1c677a56e7c66282d1570e7b974..21d135189a4d67605e0dfb991283d48268ce5d5c 100644
+--- a/net/minecraft/commands/CommandSourceStack.java
++++ b/net/minecraft/commands/CommandSourceStack.java
+@@ -430,6 +430,19 @@ public class CommandSourceStack implements ExecutionCommandSource<CommandSourceS
+     }
+     // CraftBukkit end
+ 
++    // Purpur start - Gamemode extra permissions
++    public boolean testPermission(net.minecraft.server.permissions.Permission permission, String bukkitPermission) {
++        if (hasPermission(permission, bukkitPermission)) {
++            return true;
++        }
++        net.kyori.adventure.text.Component permissionMessage = getLevel().getServer().server.permissionMessage();
++        if (!permissionMessage.equals(net.kyori.adventure.text.Component.empty())) {
++            sendFailure(io.papermc.paper.adventure.PaperAdventure.asVanilla(permissionMessage.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder().matchLiteral("<permission>").replacement(bukkitPermission).build())));
++        }
++        return false;
++    }
++    // Purpur end - Gamemode extra permissions
++
+     public Vec3 getPosition() {
+         return this.worldPosition;
+     }
+@@ -513,6 +526,30 @@ public class CommandSourceStack implements ExecutionCommandSource<CommandSourceS
+         }
+     }
+ 
++    // Purpur start - Purpur config files
++    public void sendSuccess(@Nullable String message) {
++        sendSuccess(message, false);
++    }
++
++    public void sendSuccess(@Nullable String message, boolean broadcastToOps) {
++        if (message == null) {
++            return;
++        }
++        sendSuccess(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(message), broadcastToOps);
++    }
++
++    public void sendSuccess(net.kyori.adventure.text.@Nullable Component message) {
++        sendSuccess(message, false);
++    }
++
++    public void sendSuccess(net.kyori.adventure.text.@Nullable Component message, boolean broadcastToOps) {
++        if (message == null) {
++            return;
++        }
++        sendSuccess(() -> io.papermc.paper.adventure.PaperAdventure.asVanilla(message), broadcastToOps);
++    }
++    // Purpur end - Purpur config files
++
+     public void sendSuccess(Supplier<Component> messageSupplier, boolean allowLogging) {
+         boolean flag = this.source.acceptsSuccess() && !this.silent;
+         boolean flag1 = allowLogging && this.source.shouldInformAdmins() && !this.silent;

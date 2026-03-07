@@ -1,0 +1,28 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftCopperGolem.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftCopperGolem.java
+index f61abf0ecad0b5be477b0f3e8232c20789614986..1204ebdf76f0b54b8d0ff75f192d88a599d6317a 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftCopperGolem.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftCopperGolem.java
+@@ -67,4 +67,17 @@ public class CraftCopperGolem extends CraftGolem implements CopperGolem, PaperSh
+             default -> throw new IllegalStateException("Unexpected value: " + oxidizing);
+         }
+     }
++
++    // Purpur start - Summoner API
++    @Override
++    @org.jetbrains.annotations.Nullable
++    public java.util.UUID getSummoner() {
++        return getHandle().getSummoner();
++    }
++
++    @Override
++    public void setSummoner(@org.jetbrains.annotations.Nullable java.util.UUID summoner) {
++        getHandle().setSummoner(summoner);
++    }
++    // Purpur end - Summoner API
+ }

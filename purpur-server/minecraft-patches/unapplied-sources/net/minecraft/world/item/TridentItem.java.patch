@@ -1,0 +1,27 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/item/TridentItem.java b/net/minecraft/world/item/TridentItem.java
+index d029fda2e8bac95fb75f75666a55b0c3aa3bb12d..8330421fc79e63bbcec276c659cd76cad38e36eb 100644
+--- a/net/minecraft/world/item/TridentItem.java
++++ b/net/minecraft/world/item/TridentItem.java
+@@ -83,7 +83,7 @@ public class TridentItem extends Item implements ProjectileItem {
+                         if (tridentSpinAttackStrength == 0.0F) {
+                             ItemStack itemStack = stack.copyWithCount(1); // Paper
+                             Projectile.Delayed<ThrownTrident> tridentDelayed = Projectile.spawnProjectileFromRotationDelayed( // Paper - PlayerLaunchProjectileEvent(
+-                                ThrownTrident::new, serverLevel, itemStack, player, 0.0F, 2.5F, 1.0F
++                                ThrownTrident::new, serverLevel, itemStack, player, 0.0F, 2.5F, (float) serverLevel.purpurConfig.tridentProjectileOffset  // Purpur - Projectile offset config
+                             );
+                             // Paper start - PlayerLaunchProjectileEvent
+                             com.destroystokyo.paper.event.player.PlayerLaunchProjectileEvent event = new com.destroystokyo.paper.event.player.PlayerLaunchProjectileEvent((org.bukkit.entity.Player) player.getBukkitEntity(), org.bukkit.craftbukkit.inventory.CraftItemStack.asCraftMirror(stack), (org.bukkit.entity.Projectile) tridentDelayed.projectile().getBukkitEntity());
+@@ -93,6 +93,7 @@ public class TridentItem extends Item implements ProjectileItem {
+                                 return false;
+                             }
+                             ThrownTrident thrownTrident = tridentDelayed.projectile(); // Paper - PlayerLaunchProjectileEvent
++                            thrownTrident.setActualEnchantments(stack.getEnchantments()); // Purpur - Add an option to fix MC-3304 projectile looting
+                             if (event.shouldConsume()) {
+                                 itemStack.hurtWithoutBreaking(1, player); // Paper - PlayerLaunchProjectileEvent - use itemStack; pickup item damage
+                             }

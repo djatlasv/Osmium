@@ -1,0 +1,22 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/KelpBlock.java b/net/minecraft/world/level/block/KelpBlock.java
+index bf040f13b9c76056ec8cbfe9e9c2481d68c9c772..0c9238df402d493f58066735406ee174bffad5b1 100644
+--- a/net/minecraft/world/level/block/KelpBlock.java
++++ b/net/minecraft/world/level/block/KelpBlock.java
+@@ -71,4 +71,11 @@ public class KelpBlock extends GrowingPlantHeadBlock implements LiquidBlockConta
+     protected FluidState getFluidState(BlockState state) {
+         return Fluids.WATER.getSource(false);
+     }
++
++    // Purpur start - kelp vines configurable max growth age
++    @Override
++    public int getMaxGrowthAge() {
++        return org.purpurmc.purpur.PurpurConfig.kelpMaxGrowthAge;
++    }
++    // Purpur end - kelp vines configurable max growth age
+ }

@@ -1,0 +1,18 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
+index 6b337848d91cc4f24655d053bc69b0cd22447dda..d17269c9274bd29c761403138bfc56355c800d9c 100644
+--- a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
++++ b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
+@@ -431,6 +431,7 @@ public abstract class AbstractBoat extends VehicleEntity implements Leashable {
+             float groundFriction = this.getGroundFriction();
+             if (groundFriction > 0.0F) {
+                 this.landFriction = groundFriction;
++                if (level().purpurConfig.boatEjectPlayersOnLand) ejectPassengers(); // Purpur - Add option for boats to eject players on land
+                 return AbstractBoat.Status.ON_LAND;
+             } else {
+                 return AbstractBoat.Status.IN_AIR;

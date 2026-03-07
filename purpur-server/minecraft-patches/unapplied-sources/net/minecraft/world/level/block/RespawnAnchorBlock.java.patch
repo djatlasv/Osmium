@@ -1,0 +1,19 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/RespawnAnchorBlock.java b/net/minecraft/world/level/block/RespawnAnchorBlock.java
+index e90651ae6ab072c9fa9c179ae56329e0d816c77b..2b96781a2aaaef3837e617fa982c0d35862d4f39 100644
+--- a/net/minecraft/world/level/block/RespawnAnchorBlock.java
++++ b/net/minecraft/world/level/block/RespawnAnchorBlock.java
+@@ -166,7 +166,7 @@ public class RespawnAnchorBlock extends Block {
+         };
+         Vec3 center = pos2.getCenter();
+         level.explode(
+-            null, level.damageSources().badRespawnPointExplosion(center).causingBlockSnapshot(blockState), explosionDamageCalculator, center, 5.0F, true, Level.ExplosionInteraction.BLOCK // CraftBukkit - add state
++            null, level.damageSources().badRespawnPointExplosion(center).causingBlockSnapshot(blockState), explosionDamageCalculator, center, (float) level.purpurConfig.respawnAnchorExplosionPower, level.purpurConfig.respawnAnchorExplosionFire, level.purpurConfig.respawnAnchorExplosionEffect // CraftBukkit - add state // Purpur - Implement respawn anchor explosion options
+         );
+     }
+ 

@@ -1,0 +1,53 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/commands/arguments/selector/EntitySelector.java b/net/minecraft/commands/arguments/selector/EntitySelector.java
+index af71e0e1eb1c93745f3e4954ecc8fbd2ad4808a3..fbab3e2f4e3a9cdc1c148fc794036c5655368666 100644
+--- a/net/minecraft/commands/arguments/selector/EntitySelector.java
++++ b/net/minecraft/commands/arguments/selector/EntitySelector.java
+@@ -190,26 +190,27 @@ public class EntitySelector {
+         this.checkPermissions(source);
+         if (this.playerName != null) {
+             ServerPlayer playerByName = source.getServer().getPlayerList().getPlayerByName(this.playerName);
+-            return playerByName == null ? List.of() : List.of(playerByName);
++            return playerByName == null || !canSee(source, playerByName) ? List.of() : List.of(playerByName); // Purpur - Hide hidden players from entity selector
+         } else if (this.entityUUID != null) {
+             ServerPlayer playerByName = source.getServer().getPlayerList().getPlayer(this.entityUUID);
+-            return playerByName == null ? List.of() : List.of(playerByName);
++            return playerByName == null || !canSee(source, playerByName) ? List.of() : List.of(playerByName); // Purpur - Hide hidden players from entity selector
+         } else {
+             Vec3 vec3 = this.position.apply(source.getPosition());
+             AABB absoluteAabb = this.getAbsoluteAabb(vec3);
+             Predicate<Entity> predicate = this.getPredicate(vec3, absoluteAabb, null);
+             if (this.currentEntity) {
+-                return source.getEntity() instanceof ServerPlayer serverPlayer && predicate.test(serverPlayer) ? List.of(serverPlayer) : List.of();
++                return source.getEntity() instanceof ServerPlayer serverPlayer && predicate.test(serverPlayer) && canSee(source, serverPlayer) ? List.of(serverPlayer) : List.of(); // Purpur - Hide hidden players from entity selector
+             } else {
+                 int resultLimit = this.getResultLimit();
+                 List<ServerPlayer> players;
+                 if (this.isWorldLimited()) {
+                     players = source.getLevel().getPlayers(predicate, resultLimit);
++                    players.removeIf(entityplayer3 -> !canSee(source, entityplayer3)); // Purpur - Hide hidden players from entity selector
+                 } else {
+                     players = new ObjectArrayList<>();
+ 
+                     for (ServerPlayer serverPlayer1 : source.getServer().getPlayerList().getPlayers()) {
+-                        if (predicate.test(serverPlayer1)) {
++                        if (predicate.test(serverPlayer1) && canSee(source, serverPlayer1)) { // Purpur - Hide hidden players from entity selector
+                             players.add(serverPlayer1);
+                             if (players.size() >= resultLimit) {
+                                 return players;
+@@ -267,4 +268,10 @@ public class EntitySelector {
+     public static Component joinNames(List<? extends Entity> names) {
+         return ComponentUtils.formatList(names, Entity::getDisplayName);
+     }
++
++    // Purpur start - Hide hidden players from entity selector
++    private boolean canSee(CommandSourceStack sender, ServerPlayer target) {
++        return !org.purpurmc.purpur.PurpurConfig.hideHiddenPlayersFromEntitySelector || !(sender.getEntity() instanceof ServerPlayer player) || player.getBukkitEntity().canSee(target.getBukkitEntity());
++    }
++    // Purpur end - Hide hidden players from entity selector
+ }

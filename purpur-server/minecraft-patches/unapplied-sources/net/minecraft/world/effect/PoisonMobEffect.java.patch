@@ -1,0 +1,21 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/effect/PoisonMobEffect.java b/net/minecraft/world/effect/PoisonMobEffect.java
+index 75327fd96858fd508ea63a6983e5cbc655a8800f..73cfc61ac3f8e33e6b9f4fd08a292266c0adb535 100644
+--- a/net/minecraft/world/effect/PoisonMobEffect.java
++++ b/net/minecraft/world/effect/PoisonMobEffect.java
+@@ -12,8 +12,8 @@ public class PoisonMobEffect extends MobEffect {
+ 
+     @Override
+     public boolean applyEffectTick(ServerLevel level, LivingEntity entity, int amplifier) {
+-        if (entity.getHealth() > 1.0F) {
+-            entity.hurtServer(level, entity.damageSources().magic().knownCause(org.bukkit.event.entity.EntityDamageEvent.DamageCause.POISON), 1.0F); // CraftBukkit
++        if (entity.getHealth() > entity.level().purpurConfig.entityMinimalHealthPoison) { // Purpur
++            entity.hurtServer(level, entity.damageSources().magic().knownCause(org.bukkit.event.entity.EntityDamageEvent.DamageCause.POISON), entity.level().purpurConfig.entityPoisonDegenerationAmount); // CraftBukkit // Purpur - Config MobEffect by world
+         }
+ 
+         return true;

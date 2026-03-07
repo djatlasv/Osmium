@@ -1,0 +1,19 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java
+index b0987314d2635d685129af70b4b02cba3075e594..4f31c5604639b4699631449569ba73d064f83dc3 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java
+@@ -490,7 +490,7 @@ public class CraftLivingEntity extends CraftEntity implements LivingEntity {
+         net.minecraft.server.level.ServerPlayer nmsKiller = killer == null ? null : ((CraftPlayer) killer).getHandle();
+         this.getHandle().setLastHurtByMob(nmsKiller);
+         if (nmsKiller != null) {
+-            this.getHandle().setLastHurtByPlayer(nmsKiller, 100); // value taken from LivingEntity#resolvePlayerResponsibleForDamage
++            this.getHandle().setLastHurtByPlayer(nmsKiller, this.getHandle().level().purpurConfig.mobLastHurtByPlayerTime); // value taken from LivingEntity#resolvePlayerResponsibleForDamage // Purpur - Config for mob last hurt by player time
+         } else {
+             this.getHandle().lastHurtByPlayer = null;
+             this.getHandle().lastHurtByPlayerMemoryTime = 0;

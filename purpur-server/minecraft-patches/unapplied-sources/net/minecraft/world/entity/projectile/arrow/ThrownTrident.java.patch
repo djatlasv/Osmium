@@ -1,0 +1,19 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java b/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java
+index 483b8247d3be5839f9d764912ae5b879a9f729aa..fc29a8c27ce02ce81e3799fc999aba70b9800c10 100644
+--- a/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java
++++ b/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java
+@@ -72,7 +72,7 @@ public class ThrownTrident extends AbstractArrow {
+ 
+         Entity owner = this.getOwner();
+         int i = this.entityData.get(ID_LOYALTY);
+-        if (i > 0 && (this.dealtDamage || this.isNoPhysics()) && owner != null) {
++        if (i > 0 && (this.dealtDamage || this.isNoPhysics() || (level().purpurConfig.tridentLoyaltyVoidReturnHeight < 0.0D && getY() < level().purpurConfig.tridentLoyaltyVoidReturnHeight)) && owner != null) { // Purpur - Add option to allow loyalty on tridents to work in the void
+             if (!this.isAcceptibleReturnOwner()) {
+                 if (this.level() instanceof ServerLevel serverLevel && this.pickup == AbstractArrow.Pickup.ALLOWED) {
+                     this.spawnAtLocation(serverLevel, this.getPickupItem(), 0.1F);

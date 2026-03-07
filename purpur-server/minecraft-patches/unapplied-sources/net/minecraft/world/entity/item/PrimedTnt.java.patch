@@ -1,0 +1,43 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/item/PrimedTnt.java b/net/minecraft/world/entity/item/PrimedTnt.java
+index 910e7739aea98d6dfa603072acf5e9936dbb2c5e..5dccf56d19dd217ec4b18a390779f0da0c428b98 100644
+--- a/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -235,4 +235,32 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         return !this.level().paperConfig().fixes.preventTntFromMovingInWater && super.isPushedByFluid();
+     }
+     // Paper end - Option to prevent TNT from moving in water
++
++    // Purpur start - Shears can defuse TNT
++    @Override
++    public net.minecraft.world.InteractionResult interact(net.minecraft.world.entity.player.Player player, net.minecraft.world.InteractionHand hand) {
++        Level world = this.level();
++
++        if (world instanceof ServerLevel serverWorld && level().purpurConfig.shearsCanDefuseTnt) {
++            final net.minecraft.world.item.ItemStack inHand = player.getItemInHand(hand);
++
++            if (!inHand.is(net.minecraft.world.item.Items.SHEARS) || !player.getBukkitEntity().hasPermission("purpur.tnt.defuse") ||
++                    serverWorld.random.nextFloat() > serverWorld.purpurConfig.shearsCanDefuseTntChance) return net.minecraft.world.InteractionResult.PASS;
++
++            net.minecraft.world.entity.item.ItemEntity tntItem = new net.minecraft.world.entity.item.ItemEntity(serverWorld, getX(), getY(), getZ(),
++                    new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.TNT));
++            tntItem.setPickUpDelay(10);
++
++            inHand.hurtAndBreak(1, player, hand.asEquipmentSlot());
++            serverWorld.addFreshEntity(tntItem, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.CUSTOM);
++
++            this.playSound(net.minecraft.sounds.SoundEvents.SHEEP_SHEAR);
++
++            this.kill(serverWorld);
++            return net.minecraft.world.InteractionResult.SUCCESS;
++        }
++
++        return super.interact(player, hand);
++    }
++    // Purpur end - Shears can defuse TNT
+ }

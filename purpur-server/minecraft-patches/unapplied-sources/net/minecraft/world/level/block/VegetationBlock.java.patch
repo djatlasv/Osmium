@@ -1,0 +1,35 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/VegetationBlock.java b/net/minecraft/world/level/block/VegetationBlock.java
+index 0aa7c1084fd6ed35260469572cdd914d87f3922a..a1b5e815425fccbc601c8062fcc24598512e47dd 100644
+--- a/net/minecraft/world/level/block/VegetationBlock.java
++++ b/net/minecraft/world/level/block/VegetationBlock.java
+@@ -61,4 +61,24 @@ public abstract class VegetationBlock extends Block {
+     protected boolean isPathfindable(BlockState state, PathComputationType pathComputationType) {
+         return pathComputationType == PathComputationType.AIR && !this.hasCollision || super.isPathfindable(state, pathComputationType);
+     }
++
++    // Purpur start - Ability for hoe to replant crops
++    public void playerDestroyAndReplant(net.minecraft.world.level.Level world, net.minecraft.world.entity.player.Player player, BlockPos pos, BlockState state, @javax.annotation.Nullable net.minecraft.world.level.block.entity.BlockEntity blockEntity, net.minecraft.world.item.ItemStack itemInHand, net.minecraft.world.level.ItemLike itemToReplant) {
++        player.awardStat(net.minecraft.stats.Stats.BLOCK_MINED.get(this));
++        player.causeFoodExhaustion(0.005F, org.bukkit.event.entity.EntityExhaustionEvent.ExhaustionReason.BLOCK_MINED);
++        java.util.List<net.minecraft.world.item.ItemStack> dropList = Block.getDrops(state, (net.minecraft.server.level.ServerLevel) world, pos, blockEntity, player, itemInHand);
++
++        boolean planted = false;
++        for (net.minecraft.world.item.ItemStack itemToDrop : dropList) {
++            if (!planted && itemToDrop.getItem() == itemToReplant) {
++                world.setBlock(pos, defaultBlockState(), 3);
++                itemToDrop.setCount(itemToDrop.getCount() - 1);
++                planted = true;
++            }
++            Block.popResource(world, pos, itemToDrop);
++        }
++
++        state.spawnAfterBreak((net.minecraft.server.level.ServerLevel) world, pos, itemInHand, true);
++    }
++    // Purpur end - Ability for hoe to replant crops
+ }

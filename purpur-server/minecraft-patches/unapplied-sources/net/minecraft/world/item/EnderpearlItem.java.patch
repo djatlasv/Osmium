@@ -1,0 +1,27 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/item/EnderpearlItem.java b/net/minecraft/world/item/EnderpearlItem.java
+index 7f1bc41d2ad20f2d96397e6e2eaedc4bbe5a7ba1..647f2fb76b1e1d8ca5046348b216a8ca0fa02de9 100644
+--- a/net/minecraft/world/item/EnderpearlItem.java
++++ b/net/minecraft/world/item/EnderpearlItem.java
+@@ -24,7 +24,7 @@ public class EnderpearlItem extends Item {
+         if (level instanceof ServerLevel serverLevel) {
+             // CraftBukkit start
+             // Paper start - PlayerLaunchProjectileEvent
+-            final Projectile.Delayed<ThrownEnderpearl> thrownEnderpearl = Projectile.spawnProjectileFromRotationDelayed(ThrownEnderpearl::new, serverLevel, itemInHand, player, 0.0F, EnderpearlItem.PROJECTILE_SHOOT_POWER, 1.0F);
++            final Projectile.Delayed<ThrownEnderpearl> thrownEnderpearl = Projectile.spawnProjectileFromRotationDelayed(ThrownEnderpearl::new, serverLevel, itemInHand, player, 0.0F, EnderpearlItem.PROJECTILE_SHOOT_POWER, (float) serverLevel.purpurConfig.enderPearlProjectileOffset); // Purpur - Projectile offset config
+             com.destroystokyo.paper.event.player.PlayerLaunchProjectileEvent event = new com.destroystokyo.paper.event.player.PlayerLaunchProjectileEvent((org.bukkit.entity.Player) player.getBukkitEntity(), org.bukkit.craftbukkit.inventory.CraftItemStack.asCraftMirror(itemInHand), (org.bukkit.entity.Projectile) thrownEnderpearl.projectile().getBukkitEntity());
+             if (event.callEvent() && thrownEnderpearl.attemptSpawn()) {
+                 if (event.shouldConsume()) {
+@@ -44,6 +44,7 @@ public class EnderpearlItem extends Item {
+                     0.4F / (level.getRandom().nextFloat() * 0.4F + 0.8F)
+                 );
+                 player.awardStat(Stats.ITEM_USED.get(this));
++                player.getCooldowns().addCooldown(itemInHand, player.getAbilities().instabuild ? level.purpurConfig.enderPearlCooldownCreative : level.purpurConfig.enderPearlCooldown); // Purpur - Configurable Ender Pearl cooldown
+             } else {
+                 if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+                     serverPlayer.deregisterEnderPearl(thrownEnderpearl.projectile());

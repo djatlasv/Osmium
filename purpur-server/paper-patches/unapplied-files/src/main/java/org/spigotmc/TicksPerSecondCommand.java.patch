@@ -1,0 +1,19 @@
+From 641e5706903b49be5e7541af8d07dd1dea4ba4e4 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur paperServer File Patches
+
+
+diff --git a/src/main/java/org/spigotmc/TicksPerSecondCommand.java b/src/main/java/org/spigotmc/TicksPerSecondCommand.java
+index 2756ca738b99792495f4fe6128b75e03f73936f1..2e252d9b1f8323670c91abe4832f1c63303fbf88 100644
+--- a/src/main/java/org/spigotmc/TicksPerSecondCommand.java
++++ b/src/main/java/org/spigotmc/TicksPerSecondCommand.java
+@@ -47,7 +47,7 @@ public class TicksPerSecondCommand extends Command {
+         }
+ 
+         TextComponent.Builder builder = text();
+-        builder.append(text("TPS from last 1m, 5m, 15m: ", NamedTextColor.GOLD));
++        builder.append(text("TPS from last 5s, 1m, 5m, 15m: ", NamedTextColor.GOLD)); // Purpur - Add 5 second tps average in /tps
+         builder.append(Component.join(JoinConfiguration.commas(true), tpsAvg));
+         sender.sendMessage(builder.asComponent());
+         if (args.length > 0 && args[0].equals("mem") && sender.hasPermission("bukkit.command.tpsmemory")) {

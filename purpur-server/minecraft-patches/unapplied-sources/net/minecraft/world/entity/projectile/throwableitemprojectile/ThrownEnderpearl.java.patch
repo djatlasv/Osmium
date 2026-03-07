@@ -1,0 +1,31 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java
+index 66df6c69a95c5ca6b07294fdb3b13eee6651d22d..6ad07d8f82c0f745d3c3c742f25d05b9b38193c2 100644
+--- a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java
++++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java
+@@ -112,9 +112,10 @@ public class ThrownEnderpearl extends ThrowableItemProjectile {
+                             return;
+                         }
+                         // CraftBukkit end
+-                        if (this.random.nextFloat() < 0.05F && serverLevel.isSpawningMonsters()) {
++                        if (this.random.nextFloat() < serverLevel.purpurConfig.enderPearlEndermiteChance && serverLevel.isSpawningMonsters()) { // Purpur - Configurable Ender Pearl RNG
+                             Endermite endermite = EntityType.ENDERMITE.create(serverLevel, EntitySpawnReason.TRIGGERED);
+                             if (endermite != null) {
++                                endermite.setPlayerSpawned(true); // Purpur - Add back player spawned endermite API
+                                 endermite.snapTo(preTeleportX, preTeleportY, preTeleportZ, preTeleportYRot, preTeleportXRot); // Paper - spawn endermite at pre teleport position as teleport has been moved up
+                                 serverLevel.addFreshEntity(endermite, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.ENDER_PEARL); // Paper - add reason
+                             }
+@@ -134,7 +135,7 @@ public class ThrownEnderpearl extends ThrowableItemProjectile {
+                         if (serverPlayer1 != null) {
+                             serverPlayer1.resetFallDistance();
+                             serverPlayer1.resetCurrentImpulseContext();
+-                            serverPlayer1.hurtServer(serverPlayer.level(), this.damageSources().enderPearl().eventEntityDamager(this), 5.0F); // CraftBukkit // Paper - fix DamageSource API
++                            serverPlayer1.hurtServer(serverPlayer.level(), this.damageSources().enderPearl().eventEntityDamager(this), this.level().purpurConfig.enderPearlDamage); // CraftBukkit // Paper - fix DamageSource API // Purpur - Configurable Ender Pearl damage
+                         }
+ 
+                         this.playSound(serverLevel, vec3);

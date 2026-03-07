@@ -1,0 +1,19 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/portal/PortalShape.java b/net/minecraft/world/level/portal/PortalShape.java
+index 275e98ea476a790ff3cedf19689a9538b3b2ee53..c88339479dd59a399ff4b250208311a18eea950f 100644
+--- a/net/minecraft/world/level/portal/PortalShape.java
++++ b/net/minecraft/world/level/portal/PortalShape.java
+@@ -29,7 +29,7 @@ public class PortalShape {
+     public static final int MAX_WIDTH = 21;
+     private static final int MIN_HEIGHT = 3;
+     public static final int MAX_HEIGHT = 21;
+-    public static final BlockBehaviour.StatePredicate FRAME = (state, level, pos) -> state.is(Blocks.OBSIDIAN);
++    public static final BlockBehaviour.StatePredicate FRAME = (state, level, pos) -> state.is(Blocks.OBSIDIAN) || (org.purpurmc.purpur.PurpurConfig.cryingObsidianValidForPortalFrame && state.is(Blocks.CRYING_OBSIDIAN)); // Purpur - Crying obsidian valid for portal frames
+     private static final float SAFE_TRAVEL_MAX_ENTITY_XY = 4.0F;
+     private static final double SAFE_TRAVEL_MAX_VERTICAL_DELTA = 1.0;
+     private final Direction.Axis axis;

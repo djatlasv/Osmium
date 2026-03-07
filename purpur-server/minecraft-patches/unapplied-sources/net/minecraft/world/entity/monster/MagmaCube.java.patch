@@ -1,0 +1,22 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/monster/MagmaCube.java b/net/minecraft/world/entity/monster/MagmaCube.java
+index c534fd2a8639ed6a587692a7e85e560a2fc0b3e5..969736a46c85b2fcaa641c2863e6000b51611df5 100644
+--- a/net/minecraft/world/entity/monster/MagmaCube.java
++++ b/net/minecraft/world/entity/monster/MagmaCube.java
+@@ -31,6 +31,11 @@ public class MagmaCube extends Slime {
+     public static boolean checkMagmaCubeSpawnRules(
+         EntityType<MagmaCube> entityType, LevelAccessor level, EntitySpawnReason spawnReason, BlockPos pos, RandomSource random
+     ) {
++        // Purpur start - Config to disable hostile mob spawn on ice
++        if (net.minecraft.world.entity.monster.Monster.canSpawnInBlueAndPackedIce(level, pos)) {
++            return false;
++        }
++        // Purpur end - Config to disable hostile mob spawn on ice
+         return level.getDifficulty() != Difficulty.PEACEFUL;
+     }
+ 

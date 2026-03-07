@@ -1,0 +1,18 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/ObserverBlock.java b/net/minecraft/world/level/block/ObserverBlock.java
+index 3c12d8e23f20b666b0005e597ba2e803c02d5d78..df0a900c249f0fd778287d055a5ad92787c7ceb5 100644
+--- a/net/minecraft/world/level/block/ObserverBlock.java
++++ b/net/minecraft/world/level/block/ObserverBlock.java
+@@ -81,6 +81,7 @@ public class ObserverBlock extends DirectionalBlock {
+         RandomSource random
+     ) {
+         if (state.getValue(FACING) == direction && !state.getValue(POWERED)) {
++            if (!(level.getWorldBorder().world != null && level.getWorldBorder().world.purpurConfig.disableObserverClocks) || !(neighborState.getBlock() instanceof ObserverBlock) || neighborState.getValue(ObserverBlock.FACING).getOpposite() != direction) // Purpur - Add Option for disable observer clocks
+             this.startSignal(level, scheduledTickAccess, pos);
+         }
+ 

@@ -1,0 +1,18 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/level/block/DragonEggBlock.java b/net/minecraft/world/level/block/DragonEggBlock.java
+index 52160294e39e3f0f471087a1fcb6e46763862954..c38fbff78f1acef9328c91d7b88d5db1971c9474 100644
+--- a/net/minecraft/world/level/block/DragonEggBlock.java
++++ b/net/minecraft/world/level/block/DragonEggBlock.java
+@@ -46,6 +46,7 @@ public class DragonEggBlock extends FallingBlock {
+     }
+ 
+     private void teleport(BlockState state, Level level, BlockPos pos) {
++        if (!level.purpurConfig.dragonEggTeleport) return; // Purpur - Option to disable dragon egg teleporting
+         WorldBorder worldBorder = level.getWorldBorder();
+ 
+         for (int i = 0; i < 1000; i++) {

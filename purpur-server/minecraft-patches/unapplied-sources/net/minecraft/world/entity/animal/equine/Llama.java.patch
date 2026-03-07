@@ -1,0 +1,50 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/world/entity/animal/equine/Llama.java b/net/minecraft/world/entity/animal/equine/Llama.java
+index 1522efc1e6937bc8a24a2df77d5421ae04a6642b..cceb66525a4d017b2db21bd301e63670c639223f 100644
+--- a/net/minecraft/world/entity/animal/equine/Llama.java
++++ b/net/minecraft/world/entity/animal/equine/Llama.java
+@@ -76,6 +76,7 @@ public class Llama extends AbstractChestedHorse implements RangedAttackMob {
+     boolean didSpit;
+     private @Nullable Llama caravanHead;
+     public @Nullable Llama caravanTail; // Paper - public
++    public boolean shouldJoinCaravan = true; // Purpur - Llama API
+ 
+     public Llama(EntityType<? extends Llama> type, Level level) {
+         super(type, level);
+@@ -105,6 +106,7 @@ public class Llama extends AbstractChestedHorse implements RangedAttackMob {
+         super.addAdditionalSaveData(output);
+         output.store("Variant", Llama.Variant.LEGACY_CODEC, this.getVariant());
+         output.putInt("Strength", this.getStrength());
++        output.putBoolean("Purpur.ShouldJoinCaravan", shouldJoinCaravan); // Purpur - Llama API
+     }
+ 
+     @Override
+@@ -112,6 +114,7 @@ public class Llama extends AbstractChestedHorse implements RangedAttackMob {
+         this.setStrength(input.getIntOr("Strength", 0));
+         super.readAdditionalSaveData(input);
+         this.setVariant(input.read("Variant", Llama.Variant.LEGACY_CODEC).orElse(Llama.Variant.DEFAULT));
++        this.shouldJoinCaravan = input.getBooleanOr("Purpur.ShouldJoinCaravan", true); // Purpur - Llama API
+     }
+ 
+     @Override
+@@ -388,6 +391,7 @@ public class Llama extends AbstractChestedHorse implements RangedAttackMob {
+ 
+     public void leaveCaravan() {
+         if (this.caravanHead != null) {
++            new org.purpurmc.purpur.event.entity.LlamaLeaveCaravanEvent((org.bukkit.entity.Llama) getBukkitEntity()).callEvent(); // Purpur - Llama API
+             this.caravanHead.caravanTail = null;
+         }
+ 
+@@ -395,6 +399,7 @@ public class Llama extends AbstractChestedHorse implements RangedAttackMob {
+     }
+ 
+     public void joinCaravan(Llama caravanHead) {
++        if (!this.level().purpurConfig.llamaJoinCaravans || !shouldJoinCaravan || !new org.purpurmc.purpur.event.entity.LlamaJoinCaravanEvent((org.bukkit.entity.Llama) getBukkitEntity(), (org.bukkit.entity.Llama) caravanHead.getBukkitEntity()).callEvent()) return; // Purpur - Llama API // Purpur - Config to disable Llama caravans
+         this.caravanHead = caravanHead;
+         this.caravanHead.caravanTail = this;
+     }

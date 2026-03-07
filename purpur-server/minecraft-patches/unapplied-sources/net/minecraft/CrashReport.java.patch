@@ -1,0 +1,36 @@
+From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
+From: File <noreply+automated@papermc.io>
+Date: Sun, 20 Apr 1997 05:37:42 -0800
+Subject: [PATCH] purpur File Patches
+
+
+diff --git a/net/minecraft/CrashReport.java b/net/minecraft/CrashReport.java
+index ad10eda79e6b76fc1896b4cdb27546b515d1cfa4..2c60f1d955b17cbc79b5372c536e5463f6c0a186 100644
+--- a/net/minecraft/CrashReport.java
++++ b/net/minecraft/CrashReport.java
+@@ -30,6 +30,7 @@ public class CrashReport {
+     private boolean trackingStackTrace = true;
+     private StackTraceElement[] uncategorizedStackTrace = new StackTraceElement[0];
+     private final SystemReport systemReport = new SystemReport();
++    private List<String> extraInfo = List.of("", "DO NOT REPORT THIS TO PAPER! REPORT TO PURPUR INSTEAD!", ""); // Purpur - Rebrand
+ 
+     public CrashReport(String title, Throwable exception) {
+         this.title = title;
+@@ -129,7 +130,7 @@ public class CrashReport {
+     }
+ 
+     public String getFriendlyReport(ReportType type) {
+-        return this.getFriendlyReport(type, List.of());
++        return this.getFriendlyReport(type, extraInfo); // Purpur - Rebrand
+     }
+ 
+     public @Nullable Path getSaveFile() {
+@@ -159,7 +160,7 @@ public class CrashReport {
+     }
+ 
+     public boolean saveToFile(Path path, ReportType type) {
+-        return this.saveToFile(path, type, List.of());
++        return this.saveToFile(path, type, extraInfo); // Purpur - Rebrand
+     }
+ 
+     public SystemReport getSystemReport() {
