@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -1519,7 +_,7 @@
+     }
+ 
+     @Override
+-    public boolean canGlide() {
++    protected boolean canGlide() {
+         return !this.abilities.flying && super.canGlide();
+     }
+ 

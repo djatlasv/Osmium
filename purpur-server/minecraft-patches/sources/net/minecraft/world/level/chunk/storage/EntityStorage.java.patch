@@ -1,0 +1,10 @@
+--- a/net/minecraft/world/level/chunk/storage/EntityStorage.java
++++ b/net/minecraft/world/level/chunk/storage/EntityStorage.java
+@@ -97,6 +_,7 @@
+                 ListTag entities = new ListTag();
+                 chunk.getEntities().forEach(e -> {
+                     TagValueOutput output = TagValueOutput.createWithContext(reporter.forChild(e.problemPath()), e.registryAccess());
++                    if (!e.canSaveToDisk()) return; // Purpur - Add canSaveToDisk to Entity
+                     if (e.save(output)) {
+                         CompoundTag result = output.buildResult();
+                         entities.add(result);
