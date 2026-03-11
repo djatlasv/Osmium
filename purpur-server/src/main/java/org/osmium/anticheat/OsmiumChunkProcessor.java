@@ -27,6 +27,12 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     private final int deepslateId;
     private final Set<Integer> hiddenBlockIds = new HashSet<>();
 
+    // Stores the current player between shouldModify/getChunkPacketInfo/modifyBlocks calls.
+    // ThreadLocal ensures each thread has its own copy — chunk sending happens on the main
+    // thread so this is safe, but ThreadLocal future-proofs it.
+    // Java concept: ThreadLocal<T> — like a per-thread global variable.
+    private final ThreadLocal<ServerPlayer> currentPlayer = new ThreadLocal<>();
+
     public OsmiumChunkProcessor(ChunkPacketBlockController delegate, Level level, boolean enabled, int hideBelow) {
         this.delegate = delegate;
         this.enabled = enabled;
@@ -94,23 +100,44 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     @Override
     public boolean shouldModify(ServerPlayer player, LevelChunk chunk) {
+        // Store player so getChunkPacketInfo and modifyBlocks can access it
+        currentPlayer.set(player);
         return enabled || delegate.shouldModify(player, chunk);
     }
 
     @Override
     public ChunkPacketInfo<BlockState> getChunkPacketInfo(
             ClientboundLevelChunkWithLightPacket chunkPacket, LevelChunk chunk) {
-        return delegate.getChunkPacketInfo(chunkPacket, chunk);
+        ServerPlayer player = currentPlayer.get();
+        if (!enabled || player == null) {
+            return delegate.getChunkPacketInfo(chunkPacket, chunk);
+        }
+        // Create our info object that carries the player reference
+        OsmiumChunkPacketInfo osmiumInfo = new OsmiumChunkPacketInfo(chunkPacket, chunk, player);
+        // Also get delegate's info so Paper's xray pass still has what it needs
+        ChunkPacketInfo<BlockState> delegateInfo = delegate.getChunkPacketInfo(chunkPacket, chunk);
+        osmiumInfo.setDelegateInfo(delegateInfo);
+        return osmiumInfo;
     }
 
     @Override
     public void modifyBlocks(ClientboundLevelChunkWithLightPacket chunkPacket,
                              ChunkPacketInfo<BlockState> chunkPacketInfo) {
-        delegate.modifyBlocks(chunkPacket, chunkPacketInfo);
-        if (!enabled || chunkPacketInfo == null) {
-            return;
+        if (chunkPacketInfo instanceof OsmiumChunkPacketInfo osmiumInfo) {
+            // Run delegate with its own info object
+            ChunkPacketInfo<BlockState> delegateInfo = osmiumInfo.getDelegateInfo();
+            delegate.modifyBlocks(chunkPacket, delegateInfo != null ? delegateInfo : chunkPacketInfo);
+
+            if (!enabled) return;
+
+            // Skip hiding if player is within proximity radius
+            if (osmiumInfo.isPlayerNearby(org.osmium.OsmiumConfig.chunkHidingProximityRadius)) return;
+
+            applyOsmiumPass(chunkPacket, osmiumInfo);
+        } else {
+            // Fallback — not our info object, just delegate
+            delegate.modifyBlocks(chunkPacket, chunkPacketInfo);
         }
-        applyOsmiumPass(chunkPacket, chunkPacketInfo);
     }
 
     private void applyOsmiumPass(ClientboundLevelChunkWithLightPacket chunkPacket,

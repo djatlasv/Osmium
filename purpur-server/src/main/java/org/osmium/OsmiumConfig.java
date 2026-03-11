@@ -1,0 +1,110 @@
+package org.osmium;
+
+import com.google.common.base.Throwables;
+import org.bukkit.Bukkit;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
+
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.logging.Level;
+
+public class OsmiumConfig {
+
+    private static final String HEADER = "Osmium Configuration\n"
+            + "Osmium is a custom Purpur fork with native anticheat and security features.\n"
+            + "\n"
+            + "GitHub: https://github.com/djatlasv/Osmium\n";
+
+    public static File CONFIG_FILE;
+    public static YamlConfiguration config;
+    public static int version = 1;
+
+    public static void init(File configFile) {
+        CONFIG_FILE = configFile;
+        config = new YamlConfiguration();
+
+        try {
+            config.load(CONFIG_FILE);
+        } catch (IOException ignore) {
+        } catch (InvalidConfigurationException ex) {
+            Bukkit.getLogger().log(Level.SEVERE, "Could not load osmium.yml, please correct your syntax errors", ex);
+            throw Throwables.propagate(ex);
+        }
+
+        config.options().header(HEADER);
+        config.options().copyDefaults(true);
+
+        set("config-version", version);
+        readConfig(OsmiumConfig.class, null);
+    }
+
+    static void readConfig(Class<?> clazz, Object instance) {
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (Modifier.isPrivate(method.getModifiers())
+                    && method.getParameterCount() == 0
+                    && method.getReturnType() == Void.TYPE) {
+                try {
+                    method.setAccessible(true);
+                    method.invoke(instance);
+                } catch (InvocationTargetException ex) {
+                    throw Throwables.propagate(ex.getCause());
+                } catch (Exception ex) {
+                    Bukkit.getLogger().log(Level.SEVERE, "Error invoking " + method, ex);
+                }
+            }
+        }
+
+        try {
+            config.save(CONFIG_FILE);
+        } catch (IOException ex) {
+            Bukkit.getLogger().log(Level.SEVERE, "Could not save osmium.yml", ex);
+        }
+    }
+
+    private static void set(String path, Object val) {
+        config.addDefault(path, val);
+        config.set(path, config.get(path, val));
+    }
+
+    private static boolean getBoolean(String path, boolean def) {
+        config.addDefault(path, def);
+        return config.getBoolean(path, config.getBoolean(path));
+    }
+
+    private static int getInt(String path, int def) {
+        config.addDefault(path, def);
+        return config.getInt(path, config.getInt(path));
+    }
+
+    // -------------------------------------------------------------------------
+    // Chunk hiding settings
+    // -------------------------------------------------------------------------
+
+    public static boolean chunkHidingEnabled = true;
+    public static int chunkHidingYThreshold = 0;
+    public static int chunkHidingProximityRadius = 32;
+
+    private static void chunkHiding() {
+        chunkHidingEnabled = getBoolean("chunk-hiding.enabled", true);
+        chunkHidingYThreshold = getInt("chunk-hiding.y-threshold", 0);
+        chunkHidingProximityRadius = getInt("chunk-hiding.proximity-radius", 32);
+    }
+
+    // -------------------------------------------------------------------------
+    // Brand enforcement settings
+    // -------------------------------------------------------------------------
+
+    public static boolean brandEnforcementEnabled = false;
+    public static String brandEnforcementKickMessage = "You must use the HandShaker mod. Get it at: discord.gg/yourserver";
+
+    private static void brandEnforcement() {
+        brandEnforcementEnabled = getBoolean("brand-enforcement.enabled", false);
+        brandEnforcementKickMessage = config.getString("brand-enforcement.kick-message",
+                "You must use the HandShaker mod. Get it at: discord.gg/yourserver");
+        config.addDefault("brand-enforcement.kick-message", brandEnforcementKickMessage);
+    }
+}
