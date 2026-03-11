@@ -119,10 +119,85 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         int minSectionY = chunk.getMinSectionY();
         int hideBelowSection = (hideBelow >> 4);
 
+        // Get the raw packet buffer — this is the byte array the client will receive
+        byte[] buffer = chunkPacketInfo.getBuffer();
+        if (buffer == null) return;
+
+        // Reuse reader/writer per call — these are lightweight, no allocation overhead
+        io.papermc.paper.antixray.BitStorageReader reader = new io.papermc.paper.antixray.BitStorageReader();
+        io.papermc.paper.antixray.BitStorageWriter writer = new io.papermc.paper.antixray.BitStorageWriter();
+        reader.setBuffer(buffer);
+        writer.setBuffer(buffer);
+
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             int sectionY = sectionIndex + minSectionY;
+
+            // Only hide blocks in sections entirely below our Y threshold
             if (sectionY >= hideBelowSection) continue;
-            // TODO: BitStorageReader/Writer pass — next session
+
+            // ChunkPacketInfo only has data for sections that were actually written
+            // isWritten() returns false for empty/skipped sections — skip those
+            if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
+
+            int bits = chunkPacketInfo.getBits(sectionIndex);
+            // bits == 0 means this section was skipped by Paper's serializer
+            if (bits == 0) continue;
+
+            // Get the palette for this section so we can resolve block IDs
+            // Java concept: generics — getPalette() returns Palette<BlockState>
+            // which maps local palette index -> BlockState
+            io.papermc.paper.antixray.ChunkPacketInfo<net.minecraft.world.level.block.state.BlockState> typedInfo = chunkPacketInfo;
+            net.minecraft.world.level.chunk.Palette<net.minecraft.world.level.block.state.BlockState> palette =
+                typedInfo.getPalette(sectionIndex);
+            if (palette == null) continue;
+
+            // Determine replacement ID for this section
+            // Sections with sectionY < 0 are in deepslate territory, use deepslate replacement
+            // Sections at sectionY >= 0 use stone
+            // Java concept: ternary operator — condition ? valueIfTrue : valueIfFalse
+            int replacementId = sectionY < 0 ? deepslateId : stoneId;
+
+            // Point reader and writer at the start of this section's block data
+            int index = chunkPacketInfo.getIndex(sectionIndex);
+            reader.setBits(bits);
+            reader.setIndex(index);
+            writer.setBits(bits);
+            writer.setIndex(index);
+
+            // A chunk section is always 16x16x16 = 4096 blocks
+            // We read every block, check if it should be hidden, write replacement or skip
+            for (int i = 0; i < 4096; i++) {
+                int paletteId = reader.read();
+
+                // Resolve palette-local ID to global block state ID
+                // Java concept: try-catch — palette.valueFor() can throw if the palette
+                // was modified concurrently (race condition). We treat that as transparent.
+                net.minecraft.world.level.block.state.BlockState blockState;
+                try {
+                    blockState = palette.valueFor(paletteId);
+                } catch (Exception e) {
+                    writer.skip();
+                    continue;
+                }
+
+                if (blockState == null) {
+                    writer.skip();
+                    continue;
+                }
+
+                // Get the global registry ID for this block state
+                int globalId = net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY.getId(blockState);
+
+                // If this block is in our hidden set, replace it — otherwise leave it alone
+                if (hiddenBlockIds.contains(globalId)) {
+                    writer.write(replacementId);
+                } else {
+                    writer.skip();
+                }
+            }
+
+            // Flush any buffered writes for this section back to the byte array
+            writer.flush();
         }
     }
 
