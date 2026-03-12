@@ -226,6 +226,36 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             // Flush any buffered writes for this section back to the byte array
             writer.flush();
         }
+
+        // Y-level hiding pass — hide ALL blocks below threshold, not just specific types
+        if (org.osmium.OsmiumConfig.yLevelHidingEnabled) {
+            int yHideSection = (org.osmium.OsmiumConfig.yLevelHidingThreshold >> 4);
+
+            for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
+                int sectionY = sectionIndex + minSectionY;
+                if (sectionY >= yHideSection) continue;
+                if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
+
+                int bits = chunkPacketInfo.getBits(sectionIndex);
+                if (bits == 0) continue;
+
+                int replacementId = sectionY < 0 ? deepslateId : stoneId;
+                int index = chunkPacketInfo.getIndex(sectionIndex);
+
+                reader.setBits(bits);
+                reader.setIndex(index);
+                writer.setBits(bits);
+                writer.setIndex(index);
+
+                // Replace every block in this section unconditionally
+                for (int i = 0; i < 4096; i++) {
+                    reader.read(); // advance reader
+                    writer.write(replacementId);
+                }
+
+                writer.flush();
+            }
+        }
     }
 
     @Override

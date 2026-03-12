@@ -95,6 +95,18 @@ public class OsmiumConfig {
     }
 
     // -------------------------------------------------------------------------
+    // Y-level hiding settings
+    // -------------------------------------------------------------------------
+
+    public static boolean yLevelHidingEnabled = false;
+    public static int yLevelHidingThreshold = -32;
+
+    private static void yLevelHiding() {
+        yLevelHidingEnabled = getBoolean("y-level-hiding.enabled", false);
+        yLevelHidingThreshold = getInt("y-level-hiding.threshold", -32);
+    }
+
+    // -------------------------------------------------------------------------
     // Brand enforcement settings
     // -------------------------------------------------------------------------
 
