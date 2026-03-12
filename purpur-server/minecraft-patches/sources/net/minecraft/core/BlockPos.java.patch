@@ -1,0 +1,15 @@
+--- a/net/minecraft/core/BlockPos.java
++++ b/net/minecraft/core/BlockPos.java
+@@ -58,6 +_,12 @@
+     private static final int X_OFFSET = PACKED_Y_LENGTH + PACKED_HORIZONTAL_LENGTH;
+     public static final int MAX_HORIZONTAL_COORDINATE = (1 << PACKED_HORIZONTAL_LENGTH) / 2 - 1;
+ 
++    // Purpur start - Ridables
++    public BlockPos(net.minecraft.world.entity.Entity entity) {
++        super(entity.getBlockX(), entity.getBlockY(), entity.getBlockZ());
++    }
++    // Purpur end - Ridables
++
+     public BlockPos(final int x, final int y, final int z) {
+         super(x, y, z);
+     }
