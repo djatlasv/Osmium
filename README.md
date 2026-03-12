@@ -66,6 +66,8 @@ To produce a server-ready jar:
 
 The compiled jar will be in `purpur-server/build/libs`.
 
+* Note: this is a personal project meant for **small servers** only. This is also for me to learn minecraft specific java.
+
 ## Credits
 
 Osmium is built on top of [Purpur](https://github.com/PurpurMC/Purpur) by PurpurMC, which is built on [Paper](https://github.com/PaperMC/Paper). The Osmium-specific patches were written with the assistance of Claude (Anthropic).
