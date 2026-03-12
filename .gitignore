@@ -54,8 +54,7 @@ manifest.mf
 /run
 
 /purpur-server/build.gradle.kts
-/purpur-server/src/minecraft
-/paper-server
+# purpur-server/src/minecraft and paper-server are tracked for Osmium patches
 /purpur-api/build.gradle.kts
 /paper-api
 *.jar
