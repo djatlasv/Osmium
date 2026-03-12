@@ -214,6 +214,25 @@
                      org.bukkit.event.player.PlayerInteractEvent event = CraftEventFactory.callPlayerInteractEvent(this.player, Action.RIGHT_CLICK_AIR, itemInHand, hand);
                      cancelled = event.useItemInHand() == Event.Result.DENY;
                  } else {
+@@ -2664,6 +_,19 @@
+         // CraftBukkit start
+         String rawMessage = message.signedContent();
++        // Osmium start - chat filter
++        String filterMatch = org.osmium.anticheat.OsmiumChatFilter.check(rawMessage);
++        if (filterMatch != null) {
++            String action = org.osmium.anticheat.OsmiumChatFilter.getAction();
++            if ("kick".equals(action)) {
++                this.disconnect(Component.literal(org.osmium.OsmiumConfig.chatFilterMessage), org.bukkit.event.player.PlayerKickEvent.Cause.ILLEGAL_CHARACTERS);
++            } else {
++                // "block" or "mute" — silently drop the message, notify sender
++                this.player.sendSystemMessage(Component.literal(org.osmium.OsmiumConfig.chatFilterMessage).withStyle(ChatFormatting.RED));
++            }
++            return;
++        }
++        // Osmium end - chat filter
+         if (rawMessage.isEmpty()) {
+             LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
+         } else if (this.getCraftPlayer().isConversing()) {
 @@ -2821,6 +_,7 @@
  
                  AABB boundingBox = target.getBoundingBox();

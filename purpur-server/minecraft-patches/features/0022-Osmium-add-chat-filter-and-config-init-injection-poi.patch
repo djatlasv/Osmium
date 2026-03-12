@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <behen.nick@gmail.com>
+Date: Thu, 12 Mar 2026 15:59:53 -0600
+Subject: [PATCH] Osmium: add chat filter and config init injection points
+
+
+diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
+index 19a25ee84a4211256a1dbb614db9ebf2ce53182f..14dd9990d9cb53a2329cfe5ca377f9433506d75d 100644
+--- a/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -266,6 +266,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+             return false;
+         }
+         org.purpurmc.purpur.PurpurConfig.registerCommands();
++        org.osmium.OsmiumConfig.init((java.io.File) options.valueOf("osmium-settings")); // Osmium
++        org.osmium.anticheat.OsmiumAltTracker.init(new java.io.File(".")); // Osmium - alt ban IP tracking
++        org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File(".")); // Osmium - chat filter
+         // Purpur end - Migrate Setting to reintroduce end void rings
+         // Paper start - initialize global and world-defaults configuration
+         this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 91f9739bf34b824c5955ad0a9ef04dcb7c2e6736..53cad47df99b83e71ba6bfde47ca7c4784e173a4 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2662,6 +2662,19 @@ public class ServerGamePacketListenerImpl
+     private void broadcastChatMessage(PlayerChatMessage message) {
+         // CraftBukkit start
+         String rawMessage = message.signedContent();
++        // Osmium start - chat filter
++        String filterMatch = org.osmium.anticheat.OsmiumChatFilter.check(rawMessage);
++        if (filterMatch != null) {
++            String action = org.osmium.anticheat.OsmiumChatFilter.getAction();
++            if ("kick".equals(action)) {
++                this.disconnect(Component.literal(org.osmium.OsmiumConfig.chatFilterMessage), org.bukkit.event.player.PlayerKickEvent.Cause.ILLEGAL_CHARACTERS);
++            } else {
++                // "block" or "mute" — silently drop the message, notify sender
++                this.player.sendSystemMessage(Component.literal(org.osmium.OsmiumConfig.chatFilterMessage).withStyle(ChatFormatting.RED));
++            }
++            return;
++        }
++        // Osmium end - chat filter
+         if (rawMessage.isEmpty()) {
+             LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
+         } else if (this.getCraftPlayer().isConversing()) {
