@@ -133,4 +133,20 @@ public class OsmiumConfig {
                 "You are banned (alt account detected).");
         config.addDefault("alt-ban.kick-message", altBanKickMessage);
     }
+
+    // -------------------------------------------------------------------------
+    // Chat filter settings
+    // -------------------------------------------------------------------------
+
+    public static boolean chatFilterEnabled = false;
+    public static String chatFilterAction = "block";
+    public static String chatFilterMessage = "Your message was blocked by the chat filter.";
+
+    private static void chatFilter() {
+        chatFilterEnabled = getBoolean("chat-filter.enabled", false);
+        chatFilterAction = config.getString("chat-filter.action", "block");
+        config.addDefault("chat-filter.action", chatFilterAction);
+        chatFilterMessage = config.getString("chat-filter.message", "Your message was blocked by the chat filter.");
+        config.addDefault("chat-filter.message", chatFilterMessage);
+    }
 }
