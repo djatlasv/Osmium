@@ -119,4 +119,18 @@ public class OsmiumConfig {
                 "You must use the HandShaker mod. Get it at: discord.gg/yourserver");
         config.addDefault("brand-enforcement.kick-message", brandEnforcementKickMessage);
     }
+
+    // -------------------------------------------------------------------------
+    // Alt ban / IP tracking settings
+    // -------------------------------------------------------------------------
+
+    public static boolean altBanEnabled = false;
+    public static String altBanKickMessage = "You are banned (alt account detected).";
+
+    private static void altBan() {
+        altBanEnabled = getBoolean("alt-ban.enabled", false);
+        altBanKickMessage = config.getString("alt-ban.kick-message",
+                "You are banned (alt account detected).");
+        config.addDefault("alt-ban.kick-message", altBanKickMessage);
+    }
 }

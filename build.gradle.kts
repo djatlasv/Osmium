@@ -70,7 +70,7 @@ subprojects {
     extensions.configure<PublishingExtension> {
         repositories {
             maven("https://repo.purpurmc.org/snapshots") {
-                name = "purpur"
+                name = "osmium"
                 credentials(PasswordCredentials::class)
             }
         }

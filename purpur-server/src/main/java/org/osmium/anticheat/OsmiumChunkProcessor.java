@@ -15,6 +15,10 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 
+import net.minecraft.world.level.chunk.GlobalPalette;
+import net.minecraft.world.level.chunk.Palette;
+import net.minecraft.world.level.chunk.PaletteResize;
+
 import java.util.HashSet;
 import java.util.Set;
 
@@ -23,22 +27,20 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     private final ChunkPacketBlockController delegate;
     private final int hideBelow;
     private final boolean enabled;
-    private final int stoneId;
-    private final int deepslateId;
+    private final BlockState stoneState = Blocks.STONE.defaultBlockState();
+    private final BlockState deepslateState = Blocks.DEEPSLATE.defaultBlockState();
+    private final int stoneGlobalId;
+    private final int deepslateGlobalId;
     private final Set<Integer> hiddenBlockIds = new HashSet<>();
 
-    // Stores the current player between shouldModify/getChunkPacketInfo/modifyBlocks calls.
-    // ThreadLocal ensures each thread has its own copy — chunk sending happens on the main
-    // thread so this is safe, but ThreadLocal future-proofs it.
-    // Java concept: ThreadLocal<T> — like a per-thread global variable.
     private final ThreadLocal<ServerPlayer> currentPlayer = new ThreadLocal<>();
 
     public OsmiumChunkProcessor(ChunkPacketBlockController delegate, Level level, boolean enabled, int hideBelow) {
         this.delegate = delegate;
         this.enabled = enabled;
         this.hideBelow = hideBelow;
-        this.stoneId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState());
-        this.deepslateId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.DEEPSLATE.defaultBlockState());
+        this.stoneGlobalId = Block.BLOCK_STATE_REGISTRY.getId(stoneState);
+        this.deepslateGlobalId = Block.BLOCK_STATE_REGISTRY.getId(deepslateState);
         if (enabled) {
             populateHiddenBlocks();
         }
@@ -140,17 +142,27 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         }
     }
 
+    /**
+     * Resolves the palette-local ID for a replacement block state.
+     * GlobalPalette uses global registry IDs directly; local palettes need idFor() lookup.
+     */
+    private int getReplacementPaletteId(Palette<BlockState> palette, boolean deepslateRegion) {
+        if (palette instanceof GlobalPalette) {
+            return deepslateRegion ? deepslateGlobalId : stoneGlobalId;
+        }
+        BlockState replacement = deepslateRegion ? deepslateState : stoneState;
+        return palette.idFor(replacement, PaletteResize.noResizeExpected());
+    }
+
     private void applyOsmiumPass(ClientboundLevelChunkWithLightPacket chunkPacket,
                                   ChunkPacketInfo<BlockState> chunkPacketInfo) {
         LevelChunk chunk = chunkPacketInfo.getChunk();
         int minSectionY = chunk.getMinSectionY();
         int hideBelowSection = (hideBelow >> 4);
 
-        // Get the raw packet buffer — this is the byte array the client will receive
         byte[] buffer = chunkPacketInfo.getBuffer();
         if (buffer == null) return;
 
-        // Reuse reader/writer per call — these are lightweight, no allocation overhead
         io.papermc.paper.antixray.BitStorageReader reader = new io.papermc.paper.antixray.BitStorageReader();
         io.papermc.paper.antixray.BitStorageWriter writer = new io.papermc.paper.antixray.BitStorageWriter();
         reader.setBuffer(buffer);
@@ -158,76 +170,64 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             int sectionY = sectionIndex + minSectionY;
-
-            // Only hide blocks in sections entirely below our Y threshold
             if (sectionY >= hideBelowSection) continue;
-
-            // ChunkPacketInfo only has data for sections that were actually written
-            // isWritten() returns false for empty/skipped sections — skip those
             if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
 
             int bits = chunkPacketInfo.getBits(sectionIndex);
-            // bits == 0 means this section was skipped by Paper's serializer
             if (bits == 0) continue;
 
-            // Get the palette for this section so we can resolve block IDs
-            // Java concept: generics — getPalette() returns Palette<BlockState>
-            // which maps local palette index -> BlockState
-            io.papermc.paper.antixray.ChunkPacketInfo<net.minecraft.world.level.block.state.BlockState> typedInfo = chunkPacketInfo;
-            net.minecraft.world.level.chunk.Palette<net.minecraft.world.level.block.state.BlockState> palette =
-                typedInfo.getPalette(sectionIndex);
+            Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
             if (palette == null) continue;
 
-            // Determine replacement ID for this section
-            // Sections with sectionY < 0 are in deepslate territory, use deepslate replacement
-            // Sections at sectionY >= 0 use stone
-            // Java concept: ternary operator — condition ? valueIfTrue : valueIfFalse
-            int replacementId = sectionY < 0 ? deepslateId : stoneId;
+            // Resolve replacement to a palette-local ID (not a global ID)
+            int replacementPaletteId = getReplacementPaletteId(palette, sectionY < 0);
+            if (replacementPaletteId < 0) continue; // replacement not in palette, skip section
 
-            // Point reader and writer at the start of this section's block data
+            // Pre-scan palette to build a per-palette-index replace flag.
+            // Palettes are small (typically <20 entries) vs 4096 blocks per section,
+            // so this avoids valueFor + registry lookup + set check on every block.
+            int paletteSize = palette.getSize();
+            boolean[] shouldReplace = new boolean[paletteSize];
+            boolean anyHidden = false;
+
+            for (int pid = 0; pid < paletteSize; pid++) {
+                BlockState state;
+                try {
+                    state = palette.valueFor(pid);
+                } catch (Exception e) {
+                    continue;
+                }
+                if (state == null) continue;
+
+                int globalId = Block.BLOCK_STATE_REGISTRY.getId(state);
+                if (hiddenBlockIds.contains(globalId)) {
+                    shouldReplace[pid] = true;
+                    anyHidden = true;
+                }
+            }
+
+            // If no palette entries need hiding, skip the entire 4096-block scan
+            if (!anyHidden) continue;
+
             int index = chunkPacketInfo.getIndex(sectionIndex);
             reader.setBits(bits);
             reader.setIndex(index);
             writer.setBits(bits);
             writer.setIndex(index);
 
-            // A chunk section is always 16x16x16 = 4096 blocks
-            // We read every block, check if it should be hidden, write replacement or skip
             for (int i = 0; i < 4096; i++) {
                 int paletteId = reader.read();
-
-                // Resolve palette-local ID to global block state ID
-                // Java concept: try-catch — palette.valueFor() can throw if the palette
-                // was modified concurrently (race condition). We treat that as transparent.
-                net.minecraft.world.level.block.state.BlockState blockState;
-                try {
-                    blockState = palette.valueFor(paletteId);
-                } catch (Exception e) {
-                    writer.skip();
-                    continue;
-                }
-
-                if (blockState == null) {
-                    writer.skip();
-                    continue;
-                }
-
-                // Get the global registry ID for this block state
-                int globalId = net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY.getId(blockState);
-
-                // If this block is in our hidden set, replace it — otherwise leave it alone
-                if (hiddenBlockIds.contains(globalId)) {
-                    writer.write(replacementId);
+                if (paletteId < paletteSize && shouldReplace[paletteId]) {
+                    writer.write(replacementPaletteId);
                 } else {
                     writer.skip();
                 }
             }
 
-            // Flush any buffered writes for this section back to the byte array
             writer.flush();
         }
 
-        // Y-level hiding pass — hide ALL blocks below threshold, not just specific types
+        // Y-level hiding pass — replace ALL blocks below threshold unconditionally
         if (org.osmium.OsmiumConfig.yLevelHidingEnabled) {
             int yHideSection = (org.osmium.OsmiumConfig.yLevelHidingThreshold >> 4);
 
@@ -239,18 +239,21 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                 int bits = chunkPacketInfo.getBits(sectionIndex);
                 if (bits == 0) continue;
 
-                int replacementId = sectionY < 0 ? deepslateId : stoneId;
-                int index = chunkPacketInfo.getIndex(sectionIndex);
+                Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
+                if (palette == null) continue;
 
+                int replacementPaletteId = getReplacementPaletteId(palette, sectionY < 0);
+                if (replacementPaletteId < 0) continue;
+
+                int index = chunkPacketInfo.getIndex(sectionIndex);
                 reader.setBits(bits);
                 reader.setIndex(index);
                 writer.setBits(bits);
                 writer.setIndex(index);
 
-                // Replace every block in this section unconditionally
                 for (int i = 0; i < 4096; i++) {
-                    reader.read(); // advance reader
-                    writer.write(replacementId);
+                    reader.read();
+                    writer.write(replacementPaletteId);
                 }
 
                 writer.flush();
