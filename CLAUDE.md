@@ -40,7 +40,8 @@ purpur-server/src/main/java/org/osmium/
     ├── OsmiumChunkPacketInfo.java          # Carries ServerPlayer through packet pipeline
     ├── OsmiumAltTracker.java              # IP-to-UUID tracking for alt detection
     ├── OsmiumChatFilter.java              # Offline chat filter with word list
-    └── OsmiumBrandEnforcement.java        # Native HandShaker protocol — mod list enforcement
+    ├── OsmiumBrandEnforcement.java        # Native HandShaker protocol — mod list enforcement
+    └── OsmiumDiscordWebhook.java          # Discord webhook notifications (bans, alts, server status)
 ```
 
 ### Key injection points (NMS / CraftBukkit)
@@ -50,6 +51,9 @@ purpur-server/src/main/java/org/osmium/
 - `purpur-server/src/minecraft/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java` handleCustomPayload() — intercepts `hand-shaker:mods` channel
 - `purpur-server/src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java` markClientLoaded() — schedules brand check; onDisconnect() — cleanup
 - `purpur-server/src/minecraft/java/net/minecraft/server/MinecraftServer.java` tickChildren() — processes brand enforcement tick queue
+- `purpur-server/src/minecraft/java/net/minecraft/server/players/PlayerList.java` placeNewPlayer() — alt tracker recordJoin + alt ban check + webhook
+- `purpur-server/src/minecraft/java/net/minecraft/server/commands/BanPlayerCommands.java` banPlayers() — webhook on ban
+- `purpur-server/src/minecraft/java/net/minecraft/server/dedicated/DedicatedServer.java` initServer()/stopServer() — webhook on start/stop
 - `paper-server/src/main/java/org/bukkit/craftbukkit/CraftServer.java` ~line 1009 — OsmiumConfig.init() after PurpurConfig
 - `paper-server/src/main/java/org/bukkit/craftbukkit/Main.java` — `--osmium-settings` CLI option
 
@@ -73,6 +77,8 @@ purpur-server/src/main/java/org/osmium/
 | `chat-filter.enabled` | bool | `false` | Master toggle for chat filter |
 | `chat-filter.action` | string | `"block"` | Action on match: block, kick, or mute |
 | `chat-filter.message` | string | *(see code)* | Message shown to player |
+| `discord-webhook.enabled` | bool | `false` | Master toggle for Discord webhooks |
+| `discord-webhook.url` | string | `""` | Discord webhook URL |
 
 ### Adding a new config key
 
@@ -87,6 +93,7 @@ purpur-server/src/main/java/org/osmium/
 - **OsmiumAltTracker** persists IP-to-UUID mappings to `osmium-ips.json` using Gson. ConcurrentHashMap for thread safety. Called from PlayerList on join to record associations and check bans.
 - **OsmiumChatFilter** loads word list from `osmium-words.json`. Supports exact (case-insensitive) and `regex:` prefixed patterns.
 - **OsmiumBrandEnforcement** intercepts `hand-shaker:mods` plugin channel at the NMS level, decodes VarInt-prefixed mod list + SHA-256 hash, tracks per-player state in ConcurrentHashMaps, and runs delayed checks via a tick queue in MinecraftServer. Fixes the upstream HandShaker vanilla-mode bug where vanilla clients bypassed all mod checks.
+- **OsmiumDiscordWebhook** sends Discord embed notifications via HTTP POST to a configured webhook URL. Uses a daemon single-thread executor for async delivery (sync for server stop). Handles rate limiting with retry. Events: server start/stop, player ban, alt detected/kicked, chat filter triggered, brand enforcement kick.
 
 ## Roadmap
 

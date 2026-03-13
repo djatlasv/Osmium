@@ -161,4 +161,17 @@ public class OsmiumConfig {
         chatFilterMessage = config.getString("chat-filter.message", "Your message was blocked by the chat filter.");
         config.addDefault("chat-filter.message", chatFilterMessage);
     }
+
+    // -------------------------------------------------------------------------
+    // Discord webhook settings
+    // -------------------------------------------------------------------------
+
+    public static boolean discordWebhookEnabled = false;
+    public static String discordWebhookUrl = "";
+
+    private static void discordWebhook() {
+        discordWebhookEnabled = getBoolean("discord-webhook.enabled", false);
+        discordWebhookUrl = config.getString("discord-webhook.url", "");
+        config.addDefault("discord-webhook.url", discordWebhookUrl);
+    }
 }

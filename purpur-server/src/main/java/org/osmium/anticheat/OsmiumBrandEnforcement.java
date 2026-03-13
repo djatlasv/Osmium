@@ -103,6 +103,7 @@ public class OsmiumBrandEnforcement {
 
                 String kickMsg = checkPlayer(uuid);
                 if (kickMsg != null) {
+                    OsmiumDiscordWebhook.sendBrandKick(player.getPlainTextName(), uuid, kickMsg); // Osmium - discord webhook
                     player.connection.disconnect(net.minecraft.network.chat.Component.literal(kickMsg));
                 }
             }
