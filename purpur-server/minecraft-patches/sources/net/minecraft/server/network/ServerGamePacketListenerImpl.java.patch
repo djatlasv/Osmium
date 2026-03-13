@@ -214,6 +214,14 @@
                      org.bukkit.event.player.PlayerInteractEvent event = CraftEventFactory.callPlayerInteractEvent(this.player, Action.RIGHT_CLICK_AIR, itemInHand, hand);
                      cancelled = event.useItemInHand() == Event.Result.DENY;
                  } else {
+@@ -2238,6 +_,7 @@
+         }
+         // CraftBukkit end
+         LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
++        org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
+         // Paper start - Fix kick event leave message not being sent
+         final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
+         this.removePlayerFromWorld(quitMessage);
 @@ -2821,6 +_,7 @@
  
                  AABB boundingBox = target.getBoundingBox();
@@ -231,3 +239,18 @@
              LOGGER.warn(
                  "Player {} tried to change game mode to {} without required permissions",
                  this.player.getGameProfile().name(),
+@@ -3727,6 +_,14 @@
+         if (!hasClientLoaded()) {
+             final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
+             event.callEvent();
++            // Osmium start - brand enforcement delayed check
++            if (org.osmium.OsmiumConfig.brandEnforcementEnabled) {
++                org.osmium.anticheat.OsmiumBrandEnforcement.scheduleCheck(
++                        this.player.getUUID(),
++                        this.server.getTickCount() + org.osmium.OsmiumConfig.brandEnforcementCheckDelayTicks
++                );
++            }
++            // Osmium end - brand enforcement delayed check
+         }
+         // Paper end - Add PlayerLoadedWorldEvent
+         this.clientLoadedTimeoutTimer = 0;

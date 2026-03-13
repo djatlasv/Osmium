@@ -85,6 +85,14 @@
  
                      // adjust ticksBehind so that it is not greater-than catchup
                      if (ticksBehind > catchup) {
+@@ -1766,6 +_,7 @@
+         // Paper end - optimise Folia entity scheduler
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.ADVENTURE_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.DIALOG_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
++        org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
+         profilerFiller.push("commandFunctions");
+         this.getFunctions().tick();
+         profilerFiller.popPush("levels");
 @@ -1785,7 +_,7 @@
              long worldTime = level.getGameTime();
              final ClientboundSetTimePacket worldPacket = new ClientboundSetTimePacket(worldTime, dayTime, doDaylight);

@@ -19,10 +19,10 @@ index 19a25ee84a4211256a1dbb614db9ebf2ce53182f..14dd9990d9cb53a2329cfe5ca377f943
          // Paper start - initialize global and world-defaults configuration
          this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 91f9739bf34b824c5955ad0a9ef04dcb7c2e6736..53cad47df99b83e71ba6bfde47ca7c4784e173a4 100644
+index bed4e8fa733fd435a4c76f9a1f731a1f7c07a95b..61c7d3a99da1cc32cb0eced0c524a5fb24a64b18 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2662,6 +2662,19 @@ public class ServerGamePacketListenerImpl
+@@ -2663,6 +2663,19 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();

@@ -18,10 +18,10 @@ index 05eb0c3273ffa1b5a1ebd8f8ae42c11830d755c7..49d3154afe2ca5789e63bdf972c79196
              public boolean isClientAuthoritative() {
                  return false;
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 7a54f6bc2a364c1d3ac1ed58b33ecf720a305840..9f3aec24bd8aa75ea116375c1cf0a54bcc229fa2 100644
+index 53a749f46b68b6113b9217ea3c361e13698fdd37..a8f5f1baf99df8cb444c761e907fba8702aacee6 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -1831,6 +1831,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1832,6 +1832,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              serverLevel.hasEntityMoveEvent = io.papermc.paper.event.entity.EntityMoveEvent.getHandlerList().getRegisteredListeners().length > 0; // Paper - Add EntityMoveEvent
              serverLevel.updateLagCompensationTick(); // Paper - lag compensation
              net.minecraft.world.level.block.entity.HopperBlockEntity.skipHopperEvents = serverLevel.paperConfig().hopper.disableMoveEvent || org.bukkit.event.inventory.InventoryMoveItemEvent.getHandlerList().getRegisteredListeners().length == 0; // Paper - Perf: Optimize Hoppers
@@ -62,10 +62,10 @@ index a16813766ad244c002a752b0c03779c550d39e75..74f1230a2a7ca443ef4dc95720695292
  
      private void updatePlayerAttributes() {
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 74f8f1c8a3d688fadcbc266bac126e13d9d93dc5..91f9739bf34b824c5955ad0a9ef04dcb7c2e6736 100644
+index f4f92ecf5bbaa85bd723c367a33a0e10aa6cc530..bed4e8fa733fd435a4c76f9a1f731a1f7c07a95b 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2916,6 +2916,8 @@ public class ServerGamePacketListenerImpl
+@@ -2917,6 +2917,8 @@ public class ServerGamePacketListenerImpl
                                      ServerGamePacketListenerImpl.this.cserver.getPluginManager().callEvent(event);
                                      final boolean resendData = event.isCancelled() || !ServerGamePacketListenerImpl.this.player.getItemInHand(hand).is(itemType);
  

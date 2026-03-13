@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.List;
 import java.util.logging.Level;
 
 public class OsmiumConfig {
@@ -111,13 +112,24 @@ public class OsmiumConfig {
     // -------------------------------------------------------------------------
 
     public static boolean brandEnforcementEnabled = false;
+    public static String brandEnforcementMode = "vanilla";
     public static String brandEnforcementKickMessage = "You must use the HandShaker mod. Get it at: discord.gg/yourserver";
+    public static int brandEnforcementCheckDelayTicks = 100;
+    public static List<String> brandEnforcementRequiredMods = List.of();
+    public static List<String> brandEnforcementBlacklistedMods = List.of();
 
     private static void brandEnforcement() {
         brandEnforcementEnabled = getBoolean("brand-enforcement.enabled", false);
+        brandEnforcementMode = config.getString("brand-enforcement.mode", "vanilla");
+        config.addDefault("brand-enforcement.mode", brandEnforcementMode);
         brandEnforcementKickMessage = config.getString("brand-enforcement.kick-message",
                 "You must use the HandShaker mod. Get it at: discord.gg/yourserver");
         config.addDefault("brand-enforcement.kick-message", brandEnforcementKickMessage);
+        brandEnforcementCheckDelayTicks = getInt("brand-enforcement.check-delay-ticks", 100);
+        brandEnforcementRequiredMods = config.getStringList("brand-enforcement.required-mods");
+        config.addDefault("brand-enforcement.required-mods", List.of());
+        brandEnforcementBlacklistedMods = config.getStringList("brand-enforcement.blacklisted-mods");
+        config.addDefault("brand-enforcement.blacklisted-mods", List.of());
     }
 
     // -------------------------------------------------------------------------

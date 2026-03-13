@@ -25,7 +25,7 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 **Native chat filter** replaces chat filter plugins with a built-in word list. Supports exact (case-insensitive) and regex patterns via `osmium-words.json`. Configurable actions: block, kick, or mute.
 
-**Brand enforcement** (in progress) detects Fabric clients that have not completed the HandShaker handshake and kicks them with a configurable message and Discord link.
+**Brand enforcement** integrates [HandShaker](https://github.com/djatlasv/hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced). Includes the vanilla-mode fix for the upstream HandShaker plugin bug where vanilla clients bypassed all mod checks.
 
 **GrimAC integration** (planned) embeds GrimAC as a module rather than a plugin for direct packet access.
 
@@ -44,7 +44,11 @@ y-level-hiding:
 
 brand-enforcement:
   enabled: false
+  mode: vanilla              # strict or vanilla
   kick-message: "You must use the HandShaker mod. Get it at: discord.gg/yourserver"
+  check-delay-ticks: 100     # 5 seconds — time to wait for HandShaker payload
+  required-mods: []          # e.g. [hand-shaker]
+  blacklisted-mods: []       # e.g. [wurst, meteor-client]
 
 alt-ban:
   enabled: false

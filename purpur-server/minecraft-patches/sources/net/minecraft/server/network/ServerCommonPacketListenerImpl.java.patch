@@ -43,7 +43,7 @@
          if (pending != null && pending.challengeId() == packet.getId()) {
              this.keepAlive.pendingKeepAlives.remove(pending);
  
-@@ -179,6 +_,12 @@
+@@ -179,10 +_,28 @@
                  return;
              }
  
@@ -56,6 +56,22 @@
              if (identifier.equals(MINECRAFT_BRAND)) {
                  this.playerBrand = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.wrappedBuffer(data)).readUtf(256);
              }
+ 
++            // Osmium start - brand enforcement (HandShaker mod list interception)
++            if (identifier.toString().equals(org.osmium.anticheat.OsmiumBrandEnforcement.MODS_CHANNEL)) {
++                if (this instanceof ServerGamePacketListenerImpl gameListener) {
++                    org.osmium.anticheat.OsmiumBrandEnforcement.handleModsPayload(
++                            gameListener.player.getUUID(),
++                            gameListener.player.getPlainTextName(),
++                            data
++                    );
++                }
++            }
++            // Osmium end - brand enforcement
++
+             this.cserver.getMessenger().dispatchIncomingMessage(paperConnection(), identifier.toString(), data);
+         } catch (final Exception e) {
+             ServerGamePacketListenerImpl.LOGGER.error("Couldn't handle custom payload on channel {}", identifier, e);
 @@ -264,6 +_,23 @@
          Profiler.get().push("keepAlive");
          long millis = Util.getMillis();
