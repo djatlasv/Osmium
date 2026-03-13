@@ -83,7 +83,7 @@ tasks.register("printMinecraftVersion") {
     }
 }
 
-tasks.register("printPurpurVersion") {
+tasks.register("printOsmiumVersion") {
     doLast {
         println(project.version)
     }
