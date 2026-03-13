@@ -21,11 +21,11 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 **Y-level hiding** hides all blocks below a configurable Y threshold, replacing Phantom. When enabled, every block below the threshold is replaced in the packet regardless of type.
 
+**Alt detection and ban** tracks IP-to-UUID associations and automatically bans alt accounts that share an IP with a banned player. Mappings are persisted to `osmium-ips.json` using a thread-safe ConcurrentHashMap.
+
+**Native chat filter** replaces chat filter plugins with a built-in word list. Supports exact (case-insensitive) and regex patterns via `osmium-words.json`. Configurable actions: block, kick, or mute.
+
 **Brand enforcement** (in progress) detects Fabric clients that have not completed the HandShaker handshake and kicks them with a configurable message and Discord link.
-
-**Alt ban and IP tracking** (planned) checks joining players against the IP addresses of banned players and auto-bans matches.
-
-**Native chat filter** (planned) replaces ChatFilter plugin with a built-in word list and configurable actions.
 
 **GrimAC integration** (planned) embeds GrimAC as a module rather than a plugin for direct packet access.
 
@@ -45,6 +45,15 @@ y-level-hiding:
 brand-enforcement:
   enabled: false
   kick-message: "You must use the HandShaker mod. Get it at: discord.gg/yourserver"
+
+alt-ban:
+  enabled: false
+  kick-message: "You are banned (alt account detected)."
+
+chat-filter:
+  enabled: false
+  action: block          # block, kick, or mute
+  message: "Your message was blocked by the chat filter."
 ```
 
 ## Building
