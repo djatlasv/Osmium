@@ -163,6 +163,16 @@ public class OsmiumConfig {
     }
 
     // -------------------------------------------------------------------------
+    // GrimAC embedded anticheat
+    // -------------------------------------------------------------------------
+
+    public static boolean grimEnabled = false;
+
+    private static void grim() {
+        grimEnabled = getBoolean("grim.enabled", false);
+    }
+
+    // -------------------------------------------------------------------------
     // Discord webhook settings
     // -------------------------------------------------------------------------
 

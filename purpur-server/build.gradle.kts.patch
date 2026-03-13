@@ -8,6 +8,29 @@
  
  plugins {
      `java-library`
+@@ -9,10 +_,22 @@
+     idea
+     id("io.papermc.paperweight.core")
+     id("io.papermc.fill.gradle") version "1.0.10"
++    id("io.freefair.lombok") version "9.0.0" // Osmium - GrimAC uses Lombok
+ }
+ 
+ val paperMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
+ 
++repositories {
++    // Osmium start - GrimAC dependencies
++    maven("https://repo.grim.ac/snapshots")
++    maven("https://nexus.scarsz.me/content/repositories/releases")
++    maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
++    maven("https://repo.opencollab.dev/maven-releases/")
++    maven("https://repo.opencollab.dev/maven-snapshots/")
++    maven("https://repo.viaversion.com")
++    // Osmium end - GrimAC dependencies
++}
++
+ dependencies {
+     mache("io.papermc:mache:1.21.11+build.1")
+     paperclip("io.papermc:paperclip:3.0.3")
 @@ -22,6 +_,18 @@
      minecraftVersion = providers.gradleProperty("mcVersion")
      gitFilePatches = false
@@ -70,6 +93,32 @@
      // Deps that were previously in the API but have now been moved here for backwards compat, eventually to be removed
      runtimeOnly("commons-lang:commons-lang:2.6")
      runtimeOnly("org.xerial:sqlite-jdbc:3.49.1.0")
+@@ -184,6 +_,25 @@
+     // Spark
+     implementation("me.lucko:spark-api:0.1-20240720.200737-2")
+     implementation("me.lucko:spark-paper:1.10.152")
++
++    // Osmium start - GrimAC embedded anticheat
++    implementation("com.github.retrooper:packetevents-spigot:2.11.2+675bc5c-SNAPSHOT")
++    implementation("com.github.retrooper:packetevents-api:2.11.2+675bc5c-SNAPSHOT")
++    implementation("org.incendo:cloud-core:2.0.0")
++    implementation("org.incendo:cloud-paper:2.0.0-beta.14")
++    implementation("org.incendo:cloud-processors-requirements:1.0.0-rc.1")
++    implementation("github.scarsz:configuralize:1.4.1:slim") { exclude("org.yaml", "snakeyaml") }
++    implementation("it.unimi.dsi:fastutil:8.5.15")
++    implementation("com.zaxxer:HikariCP:7.0.2")
++    implementation("ac.grim.grimac:GrimAPI:1.2.4.0")
++    implementation("ac.grim.grimac:grim-internal:1.2.4.0")
++    implementation("ac.grim.grimac:grim-bukkit-internal:1.2.4.0")
++    implementation("net.kyori:adventure-platform-bukkit:4.4.0")
++    compileOnly("me.clip:placeholderapi:2.11.6")
++    compileOnly("com.viaversion:viaversion:5.7.1")
++    compileOnly("org.geysermc.api:base-api:1.0.2")
++    compileOnly("org.geysermc.floodgate:api:2.0-SNAPSHOT")
++    // Osmium end - GrimAC embedded anticheat
+ }
+ 
+ tasks.jar {
 @@ -191,21 +_,21 @@
          val git = Git(rootProject.layout.projectDirectory.path)
          val mcVersion = rootProject.providers.gradleProperty("mcVersion").get()

@@ -27,7 +27,7 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 **Brand enforcement** integrates [HandShaker](https://github.com/djatlasv/hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced). Includes the vanilla-mode fix for the upstream HandShaker plugin bug where vanilla clients bypassed all mod checks.
 
-**GrimAC integration** (planned) embeds GrimAC as a module rather than a plugin for direct packet access.
+**GrimAC embedded anticheat** runs [GrimAC](https://github.com/GrimAnticheat/Grim) 2.3.74 as a native server module instead of a plugin. All movement, combat, and interaction checks work out of the box. GrimAC configs live in the `./grim/` directory. Toggle with `grim.enabled` in `osmium.yml`.
 
 ## Configuration
 
@@ -58,6 +58,9 @@ chat-filter:
   enabled: false
   action: block          # block, kick, or mute
   message: "Your message was blocked by the chat filter."
+
+grim:
+  enabled: false           # enable embedded GrimAC anticheat (configs in ./grim/)
 ```
 
 ## Building
@@ -85,7 +88,7 @@ The compiled jar will be in `purpur-server/build/libs`.
 
 Osmium is built on top of [Purpur](https://github.com/PurpurMC/Purpur) by PurpurMC, which is built on [Paper](https://github.com/PaperMC/Paper). The Osmium-specific patches were written with the assistance of Claude (Anthropic).
 
-Upstream credits: [PaperMC/Paper](https://github.com/PaperMC/Paper), [PaperMC/paperweight](https://github.com/PaperMC/paperweight), [PurpurMC/Purpur](https://github.com/PurpurMC/Purpur).
+Upstream credits: [PaperMC/Paper](https://github.com/PaperMC/Paper), [PaperMC/paperweight](https://github.com/PaperMC/paperweight), [PurpurMC/Purpur](https://github.com/PurpurMC/Purpur), [GrimAnticheat/Grim](https://github.com/GrimAnticheat/Grim).
 
 ## License
 
