@@ -1,0 +1,11 @@
+--- a/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
++++ b/net/minecraft/world/entity/ai/behavior/AcquirePoi.java
+@@ -89,7 +_,7 @@
+                                     }
+                                 };
+                                 Set<Pair<Holder<PoiType>, BlockPos>> poiPositions = poiManager.findAllClosestFirstWithType(
+-                                        poiType, cacheTest, body.blockPosition(), 48, PoiManager.Occupancy.HAS_SPACE
++                                        poiType, cacheTest, body.blockPosition(), level.purpurConfig.villagerAcquirePoiSearchRadius, PoiManager.Occupancy.HAS_SPACE // Purpur - Configurable villager search radius
+                                     )
+                                     .limit(5L)
+                                     .filter(px -> validPoi.test(level, (BlockPos)px.getSecond()))
