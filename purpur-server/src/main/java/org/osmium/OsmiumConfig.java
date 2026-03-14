@@ -22,7 +22,7 @@ public class OsmiumConfig {
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
-    public static int version = 1;
+    public static int version = 2;
 
     public static void init(File configFile) {
         CONFIG_FILE = configFile;
