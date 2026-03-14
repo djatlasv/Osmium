@@ -17,7 +17,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 
 import net.minecraft.world.level.chunk.GlobalPalette;
 import net.minecraft.world.level.chunk.Palette;
-import net.minecraft.world.level.chunk.PaletteResize;
+
 
 import java.util.HashSet;
 import java.util.Set;
@@ -143,15 +143,25 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     }
 
     /**
-     * Resolves the palette-local ID for a replacement block state.
-     * GlobalPalette uses global registry IDs directly; local palettes need idFor() lookup.
+     * Finds the palette-local ID for a replacement block state WITHOUT adding it.
+     * GlobalPalette uses global registry IDs directly; local palettes are scanned.
+     * Returns -1 if the replacement isn't in the palette (caller should skip the section).
      */
     private int getReplacementPaletteId(Palette<BlockState> palette, boolean deepslateRegion) {
         if (palette instanceof GlobalPalette) {
             return deepslateRegion ? deepslateGlobalId : stoneGlobalId;
         }
         BlockState replacement = deepslateRegion ? deepslateState : stoneState;
-        return palette.idFor(replacement, PaletteResize.noResizeExpected());
+        int size = palette.getSize();
+        for (int i = 0; i < size; i++) {
+            try {
+                BlockState state = palette.valueFor(i);
+                if (replacement.equals(state)) return i;
+            } catch (Exception e) {
+                continue;
+            }
+        }
+        return -1; // not in palette — cannot safely write this ID
     }
 
     private void applyOsmiumPass(ClientboundLevelChunkWithLightPacket chunkPacket,
