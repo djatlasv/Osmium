@@ -28,6 +28,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     private final int proximityRadius;
     private final BlockState replacementState;
     private final int replacementGlobalId;
+    // Preferred fallback blocks when the configured block isn't in a section's palette
+    private final BlockState[] fallbackStates;
 
     public OsmiumChunkProcessor(ChunkPacketBlockController delegate, Level level) {
         this.delegate = delegate;
@@ -43,6 +45,18 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         }
         this.replacementState = block.defaultBlockState();
         this.replacementGlobalId = Block.BLOCK_STATE_REGISTRY.getId(this.replacementState);
+
+        // Build fallback list: visually similar blocks to try when configured block isn't in palette
+        this.fallbackStates = new BlockState[] {
+            Blocks.DEEPSLATE.defaultBlockState(),
+            Blocks.STONE.defaultBlockState(),
+            Blocks.TUFF.defaultBlockState(),
+            Blocks.COBBLESTONE.defaultBlockState(),
+            Blocks.COBBLED_DEEPSLATE.defaultBlockState(),
+            Blocks.ANDESITE.defaultBlockState(),
+            Blocks.DIORITE.defaultBlockState(),
+            Blocks.GRANITE.defaultBlockState(),
+        };
     }
 
     @Override
@@ -80,8 +94,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     }
 
     /**
-     * Finds the configured replacement block in the palette WITHOUT adding it.
-     * If not found, falls back to any non-air, non-fluid solid block in the palette.
+     * Finds the best replacement block in the palette WITHOUT adding it.
+     * Priority: configured block > deepslate/stone/tuff/etc fallbacks > any solid block.
      * Returns -1 only if no suitable replacement exists (section must be skipped).
      */
     private int findInPalette(Palette<BlockState> palette) {
@@ -90,30 +104,39 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         }
 
         int size = palette.getSize();
-        int fallback = -1;
 
+        // First pass: check for exact match (configured block)
         for (int i = 0; i < size; i++) {
-            BlockState state;
             try {
-                state = palette.valueFor(i);
-            } catch (Exception e) {
-                continue;
-            }
-            if (state == null) continue;
+                BlockState state = palette.valueFor(i);
+                if (replacementState.equals(state)) return i;
+            } catch (Exception e) { continue; }
+        }
 
-            // Exact match — best case
-            if (replacementState.equals(state)) return i;
-
-            // Track a fallback: any solid opaque non-fluid block
-            if (fallback == -1
-                    && !state.isAir()
-                    && state.getFluidState().is(Fluids.EMPTY)
-                    && state.isSolidRender()) {
-                fallback = i;
+        // Second pass: try preferred fallback blocks in order
+        for (BlockState fallback : fallbackStates) {
+            if (fallback.equals(replacementState)) continue; // already checked
+            for (int i = 0; i < size; i++) {
+                try {
+                    BlockState state = palette.valueFor(i);
+                    if (fallback.equals(state)) return i;
+                } catch (Exception e) { continue; }
             }
         }
 
-        return fallback;
+        // Last resort: any solid opaque non-fluid block
+        for (int i = 0; i < size; i++) {
+            try {
+                BlockState state = palette.valueFor(i);
+                if (state != null && !state.isAir()
+                        && state.getFluidState().is(Fluids.EMPTY)
+                        && state.isSolidRender()) {
+                    return i;
+                }
+            } catch (Exception e) { continue; }
+        }
+
+        return -1;
     }
 
     private void applyHiding(ClientboundLevelChunkWithLightPacket chunkPacket,

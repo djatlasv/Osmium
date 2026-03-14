@@ -13,54 +13,56 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Tracks player positions and resends chunks when they move near the
+ * Tracks player positions and resends nearby chunks when they move near the
  * hidden zone so that the proximity-based reveal/re-hide stays in sync.
  *
- * Resends when:
- * - Player crosses the near/far Y boundary (entering or leaving the zone)
- * - Player moves to a different chunk while near the zone (XZ movement
- *   changes which sections are revealed)
+ * Only resends chunks near the player's old or new position — not all chunks.
+ * This keeps large proximity-radius values viable without flooding the connection.
  */
 public class OsmiumYLevelTracker {
 
-    // Pack chunkX, chunkZ, sectionY into a long for cheap comparison
-    private static final Map<UUID, Long> lastPosition = new ConcurrentHashMap<>();
+    private static final Map<UUID, long[]> lastPosition = new ConcurrentHashMap<>();
 
     public static void onPlayerTick(ServerPlayer player) {
         if (!OsmiumConfig.chunkHidingEnabled) return;
 
         UUID uuid = player.getUUID();
-        int chunkX = player.blockPosition().getX() >> 4;
-        int chunkZ = player.blockPosition().getZ() >> 4;
-        int sectionY = player.blockPosition().getY() >> 4;
-        long packed = pack(chunkX, chunkZ, sectionY);
+        int blockX = player.blockPosition().getX();
+        int blockY = player.blockPosition().getY();
+        int blockZ = player.blockPosition().getZ();
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        int sectionY = blockY >> 4;
 
-        Long previous = lastPosition.put(uuid, packed);
-        if (previous == null || previous == packed) return;
+        long[] prev = lastPosition.get(uuid);
+        if (prev != null && prev[0] == chunkX && prev[1] == chunkZ && prev[2] == sectionY) {
+            return; // no chunk/section change
+        }
 
-        int prevChunkX = unpackX(previous);
-        int prevChunkZ = unpackZ(previous);
-        int prevSectionY = unpackY(previous);
+        long[] current = new long[] { chunkX, chunkZ, sectionY };
+        lastPosition.put(uuid, current);
+
+        if (prev == null) return;
 
         int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
 
-        boolean wasNear = isNearHiddenZone(prevSectionY, thresholdSection, proximityRadius);
+        boolean wasNear = isNearHiddenZone((int) prev[2], thresholdSection, proximityRadius);
         boolean isNear = isNearHiddenZone(sectionY, thresholdSection, proximityRadius);
 
         boolean shouldResend = false;
 
-        // Crossed the near/far boundary
         if (wasNear != isNear) {
+            // Crossed the near/far boundary
             shouldResend = true;
-        }
-        // Moved to a different chunk while near the zone — proximity sphere shifted
-        else if (isNear && (chunkX != prevChunkX || chunkZ != prevChunkZ || sectionY != prevSectionY)) {
+        } else if (isNear && (chunkX != prev[0] || chunkZ != prev[1] || sectionY != prev[2])) {
+            // Moved to a different chunk while near the zone
             shouldResend = true;
         }
 
         if (shouldResend) {
-            resendChunks(player);
+            resendNearbyChunks(player, (int) prev[0], (int) prev[1], (int) prev[2],
+                                       chunkX, chunkZ, sectionY, proximityRadius);
         }
     }
 
@@ -69,45 +71,43 @@ public class OsmiumYLevelTracker {
     }
 
     private static boolean isNearHiddenZone(int playerSectionY, int thresholdSection, int proximityRadius) {
-        // Player is "near" if their Y is within proximityRadius blocks of the top of the hidden zone
         int hiddenTopBlockY = (thresholdSection << 4) - 1;
         int playerBlockY = playerSectionY << 4;
         return playerBlockY <= hiddenTopBlockY + proximityRadius;
     }
 
-    private static void resendChunks(ServerPlayer player) {
+    /**
+     * Only resend chunks that are near the player's old or new position.
+     * These are the only chunks whose hidden/revealed status could have changed.
+     */
+    private static void resendNearbyChunks(ServerPlayer player,
+                                            int oldChunkX, int oldChunkZ, int oldSectionY,
+                                            int newChunkX, int newChunkZ, int newSectionY,
+                                            int proximityRadius) {
         ServerLevel level = player.level();
         RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader =
                 ((ca.spottedleaf.moonrise.patches.chunk_system.player.ChunkSystemServerPlayer) player).moonrise$getChunkLoader();
         LongOpenHashSet sentChunks = loader.getSentChunksRaw();
 
+        // Chunks within this many chunks of the player could have changed status
+        int chunkRadius = (proximityRadius >> 4) + 2;
+
         for (long chunkKey : sentChunks) {
             int cx = (int) chunkKey;
             int cz = (int) (chunkKey >> 32);
+
+            // Only resend if this chunk is near the old OR new player position
+            boolean nearOld = Math.abs(cx - oldChunkX) <= chunkRadius
+                           && Math.abs(cz - oldChunkZ) <= chunkRadius;
+            boolean nearNew = Math.abs(cx - newChunkX) <= chunkRadius
+                           && Math.abs(cz - newChunkZ) <= chunkRadius;
+
+            if (!nearOld && !nearNew) continue;
+
             LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
             if (chunk != null) {
                 PlayerChunkSender.sendChunk(player.connection, level, chunk);
             }
         }
-    }
-
-    // Packing: X in bits 0-20, Z in bits 21-41, Y in bits 42-52
-    private static long pack(int x, int z, int y) {
-        return ((long) x & 0x1FFFFFL) | (((long) z & 0x1FFFFFL) << 21) | (((long) y & 0x7FFL) << 42);
-    }
-
-    private static int unpackX(long packed) {
-        int raw = (int) (packed & 0x1FFFFFL);
-        return (raw << 11) >> 11; // sign-extend from 21 bits
-    }
-
-    private static int unpackZ(long packed) {
-        int raw = (int) ((packed >> 21) & 0x1FFFFFL);
-        return (raw << 11) >> 11;
-    }
-
-    private static int unpackY(long packed) {
-        int raw = (int) ((packed >> 42) & 0x7FFL);
-        return (raw << 21) >> 21; // sign-extend from 11 bits
     }
 }
