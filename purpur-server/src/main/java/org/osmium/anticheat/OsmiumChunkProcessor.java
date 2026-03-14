@@ -18,6 +18,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.GlobalPalette;
 import net.minecraft.world.level.chunk.Palette;
+import net.minecraft.world.level.material.Fluids;
 
 public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
@@ -34,7 +35,6 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         this.hideBelow = org.osmium.OsmiumConfig.chunkHidingYThreshold;
         this.proximityRadius = org.osmium.OsmiumConfig.chunkHidingProximityRadius;
 
-        // Resolve replacement block from config string
         String blockName = org.osmium.OsmiumConfig.chunkHidingBlock;
         Block block = BuiltInRegistries.BLOCK.getValue(Identifier.withDefaultNamespace(blockName));
         if (block == null) {
@@ -47,7 +47,6 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     @Override
     public boolean shouldModify(ServerPlayer player, LevelChunk chunk) {
-        // Store player so getChunkPacketInfo and modifyBlocks can access it
         OsmiumChunkPacketInfo.CURRENT_PLAYER.set(player);
         return enabled || delegate.shouldModify(player, chunk);
     }
@@ -69,7 +68,6 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     public void modifyBlocks(ClientboundLevelChunkWithLightPacket chunkPacket,
                              ChunkPacketInfo<BlockState> chunkPacketInfo) {
         if (chunkPacketInfo instanceof OsmiumChunkPacketInfo osmiumInfo) {
-            // Run Paper's anti-xray delegate first
             ChunkPacketInfo<BlockState> delegateInfo = osmiumInfo.getDelegateInfo();
             delegate.modifyBlocks(chunkPacket, delegateInfo != null ? delegateInfo : chunkPacketInfo);
 
@@ -82,23 +80,40 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     }
 
     /**
-     * Finds the replacement block's palette-local ID WITHOUT adding it.
-     * Returns -1 if not in palette (section must be skipped).
+     * Finds the configured replacement block in the palette WITHOUT adding it.
+     * If not found, falls back to any non-air, non-fluid solid block in the palette.
+     * Returns -1 only if no suitable replacement exists (section must be skipped).
      */
     private int findInPalette(Palette<BlockState> palette) {
         if (palette instanceof GlobalPalette) {
             return replacementGlobalId;
         }
+
         int size = palette.getSize();
+        int fallback = -1;
+
         for (int i = 0; i < size; i++) {
+            BlockState state;
             try {
-                BlockState state = palette.valueFor(i);
-                if (replacementState.equals(state)) return i;
+                state = palette.valueFor(i);
             } catch (Exception e) {
                 continue;
             }
+            if (state == null) continue;
+
+            // Exact match — best case
+            if (replacementState.equals(state)) return i;
+
+            // Track a fallback: any solid opaque non-fluid block
+            if (fallback == -1
+                    && !state.isAir()
+                    && state.getFluidState().is(Fluids.EMPTY)
+                    && state.isSolidRender()) {
+                fallback = i;
+            }
         }
-        return -1;
+
+        return fallback;
     }
 
     private void applyHiding(ClientboundLevelChunkWithLightPacket chunkPacket,
@@ -111,14 +126,21 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         if (buffer == null) return;
 
         ServerPlayer player = chunkPacketInfo.getPlayer();
+        int playerBlockX = player.blockPosition().getX();
         int playerBlockY = player.blockPosition().getY();
-        int playerChunkX = player.blockPosition().getX() >> 4;
-        int playerChunkZ = player.blockPosition().getZ() >> 4;
-        int chunkX = chunk.getPos().x;
-        int chunkZ = chunk.getPos().z;
-        int chunkProximity = (proximityRadius + 15) >> 4;
-        boolean xzNear = Math.abs(playerChunkX - chunkX) <= chunkProximity
-                      && Math.abs(playerChunkZ - chunkZ) <= chunkProximity;
+        int playerBlockZ = player.blockPosition().getZ();
+
+        // XZ proximity in blocks, not chunks — more precise
+        int chunkBlockX = chunk.getPos().x << 4;  // chunk origin X
+        int chunkBlockZ = chunk.getPos().z << 4;  // chunk origin Z
+
+        // Nearest block in chunk to player on XZ plane
+        int nearestX = Math.max(chunkBlockX, Math.min(playerBlockX, chunkBlockX + 15));
+        int nearestZ = Math.max(chunkBlockZ, Math.min(playerBlockZ, chunkBlockZ + 15));
+        int xzDistSq = (playerBlockX - nearestX) * (playerBlockX - nearestX)
+                      + (playerBlockZ - nearestZ) * (playerBlockZ - nearestZ);
+        int proxSq = proximityRadius * proximityRadius;
+        boolean xzNear = xzDistSq <= proxSq;
 
         io.papermc.paper.antixray.BitStorageReader reader = new io.papermc.paper.antixray.BitStorageReader();
         io.papermc.paper.antixray.BitStorageWriter writer = new io.papermc.paper.antixray.BitStorageWriter();
@@ -137,7 +159,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                 int yDist = playerBlockY < sectionMinY ? sectionMinY - playerBlockY
                           : playerBlockY > sectionMaxY ? playerBlockY - sectionMaxY
                           : 0;
-                if (yDist <= proximityRadius) continue;
+                if (yDist * yDist + xzDistSq <= proxSq) continue;
             }
 
             int bits = chunkPacketInfo.getBits(sectionIndex);
