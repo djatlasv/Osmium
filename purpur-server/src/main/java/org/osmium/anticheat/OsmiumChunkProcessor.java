@@ -132,10 +132,10 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
             if (!enabled) return;
 
-            // Skip hiding if player is within proximity radius
-            if (osmiumInfo.isPlayerNearby(org.osmium.OsmiumConfig.chunkHidingProximityRadius)) return;
-
-            applyOsmiumPass(chunkPacket, osmiumInfo);
+            // Skip chunk hiding (ore/container pass) if player is horizontally nearby,
+            // but always run y-level hiding (it has its own 3D proximity check)
+            boolean skipChunkHiding = osmiumInfo.isPlayerNearby(org.osmium.OsmiumConfig.chunkHidingProximityRadius);
+            applyOsmiumPass(chunkPacket, osmiumInfo, skipChunkHiding);
         } else {
             // Fallback — not our info object, just delegate
             delegate.modifyBlocks(chunkPacket, chunkPacketInfo);
@@ -155,7 +155,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     }
 
     private void applyOsmiumPass(ClientboundLevelChunkWithLightPacket chunkPacket,
-                                  ChunkPacketInfo<BlockState> chunkPacketInfo) {
+                                  ChunkPacketInfo<BlockState> chunkPacketInfo,
+                                  boolean skipChunkHiding) {
         LevelChunk chunk = chunkPacketInfo.getChunk();
         int minSectionY = chunk.getMinSectionY();
         int hideBelowSection = (hideBelow >> 4);
@@ -168,6 +169,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         reader.setBuffer(buffer);
         writer.setBuffer(buffer);
 
+        if (!skipChunkHiding)
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             int sectionY = sectionIndex + minSectionY;
             if (sectionY >= hideBelowSection) continue;
@@ -227,14 +229,36 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             writer.flush();
         }
 
-        // Y-level hiding pass — replace ALL blocks below threshold unconditionally
-        if (org.osmium.OsmiumConfig.yLevelHidingEnabled) {
+        // Y-level hiding pass — replace ALL blocks below threshold with deepslate,
+        // but reveal sections within 3D proximity of the player
+        if (org.osmium.OsmiumConfig.yLevelHidingEnabled && chunkPacketInfo instanceof OsmiumChunkPacketInfo osmInfo) {
             int yHideSection = (org.osmium.OsmiumConfig.yLevelHidingThreshold >> 4);
+            int proximityRadius = org.osmium.OsmiumConfig.chunkHidingProximityRadius;
+
+            ServerPlayer player = osmInfo.getPlayer();
+            int playerBlockY = player.blockPosition().getY();
+            int playerChunkX = player.blockPosition().getX() >> 4;
+            int playerChunkZ = player.blockPosition().getZ() >> 4;
+            int chunkX = chunk.getPos().x;
+            int chunkZ = chunk.getPos().z;
+            int chunkProximity = (proximityRadius + 15) >> 4;
+            boolean xzNear = Math.abs(playerChunkX - chunkX) <= chunkProximity
+                          && Math.abs(playerChunkZ - chunkZ) <= chunkProximity;
 
             for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
                 int sectionY = sectionIndex + minSectionY;
                 if (sectionY >= yHideSection) continue;
                 if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
+
+                // 3D proximity: skip hiding if player is close to this section
+                if (xzNear) {
+                    int sectionMinY = sectionY << 4;
+                    int sectionMaxY = sectionMinY + 15;
+                    int yDist = playerBlockY < sectionMinY ? sectionMinY - playerBlockY
+                              : playerBlockY > sectionMaxY ? playerBlockY - sectionMaxY
+                              : 0;
+                    if (yDist <= proximityRadius) continue;
+                }
 
                 int bits = chunkPacketInfo.getBits(sectionIndex);
                 if (bits == 0) continue;
@@ -242,7 +266,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                 Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
                 if (palette == null) continue;
 
-                int replacementPaletteId = getReplacementPaletteId(palette, sectionY < 0);
+                // Always use deepslate for y-level hiding
+                int replacementPaletteId = getReplacementPaletteId(palette, true);
                 if (replacementPaletteId < 0) continue;
 
                 int index = chunkPacketInfo.getIndex(sectionIndex);
