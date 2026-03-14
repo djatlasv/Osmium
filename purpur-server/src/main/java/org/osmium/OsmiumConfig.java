@@ -85,26 +85,17 @@ public class OsmiumConfig {
     // Chunk hiding settings
     // -------------------------------------------------------------------------
 
-    public static boolean chunkHidingEnabled = true;
+    public static boolean chunkHidingEnabled = false;
     public static int chunkHidingYThreshold = 0;
+    public static String chunkHidingBlock = "deepslate";
     public static int chunkHidingProximityRadius = 32;
 
     private static void chunkHiding() {
-        chunkHidingEnabled = getBoolean("chunk-hiding.enabled", true);
+        chunkHidingEnabled = getBoolean("chunk-hiding.enabled", false);
         chunkHidingYThreshold = getInt("chunk-hiding.y-threshold", 0);
+        chunkHidingBlock = config.getString("chunk-hiding.block", "deepslate");
+        config.addDefault("chunk-hiding.block", chunkHidingBlock);
         chunkHidingProximityRadius = getInt("chunk-hiding.proximity-radius", 32);
-    }
-
-    // -------------------------------------------------------------------------
-    // Y-level hiding settings
-    // -------------------------------------------------------------------------
-
-    public static boolean yLevelHidingEnabled = false;
-    public static int yLevelHidingThreshold = -32;
-
-    private static void yLevelHiding() {
-        yLevelHidingEnabled = getBoolean("y-level-hiding.enabled", false);
-        yLevelHidingThreshold = getInt("y-level-hiding.threshold", -32);
     }
 
     // -------------------------------------------------------------------------

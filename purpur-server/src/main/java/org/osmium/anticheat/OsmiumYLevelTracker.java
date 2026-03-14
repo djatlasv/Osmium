@@ -13,15 +13,16 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Tracks player Y positions and resends chunks when they move away from
- * the y-level hiding zone, so fake deepslate reappears in the packet data.
+ * Tracks player Y positions and resends chunks when they cross the
+ * proximity boundary of the hidden zone — both entering (to reveal)
+ * and leaving (to re-hide).
  */
 public class OsmiumYLevelTracker {
 
     private static final Map<UUID, Integer> lastSectionY = new ConcurrentHashMap<>();
 
     public static void onPlayerTick(ServerPlayer player) {
-        if (!OsmiumConfig.yLevelHidingEnabled) return;
+        if (!OsmiumConfig.chunkHidingEnabled) return;
 
         UUID uuid = player.getUUID();
         int currentSection = player.blockPosition().getY() >> 4;
@@ -29,14 +30,15 @@ public class OsmiumYLevelTracker {
 
         if (previous == null || previous == currentSection) return;
 
-        int thresholdSection = OsmiumConfig.yLevelHidingThreshold >> 4;
+        int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
 
         boolean wasNear = isNearHiddenZone(previous, thresholdSection, proximityRadius);
         boolean isNear = isNearHiddenZone(currentSection, thresholdSection, proximityRadius);
 
-        // Player moved from near the hidden zone to far away — resend chunks to re-hide
-        if (wasNear && !isNear) {
+        // Resend when crossing the boundary in either direction:
+        // far→near = reveal real blocks, near→far = re-hide with replacement
+        if (wasNear != isNear) {
             resendChunks(player);
         }
     }
@@ -46,11 +48,8 @@ public class OsmiumYLevelTracker {
     }
 
     private static boolean isNearHiddenZone(int playerSectionY, int thresholdSection, int proximityRadius) {
-        // Hidden sections are below thresholdSection.
-        // Player is "near" if their block Y is within proximityRadius of any hidden section's top.
-        // The highest hidden section top is (thresholdSection - 1) * 16 + 15 = thresholdSection * 16 - 1.
         int hiddenTopBlockY = (thresholdSection << 4) - 1;
-        int playerBlockY = playerSectionY << 4; // approximate (bottom of section)
+        int playerBlockY = playerSectionY << 4;
         return playerBlockY <= hiddenTopBlockY + proximityRadius;
     }
 
