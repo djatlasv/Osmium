@@ -30,6 +30,9 @@ public class OsmiumBrandEnforcement {
     // UUID -> tick at which to run the check
     private static final Map<UUID, Integer> scheduledChecks = new ConcurrentHashMap<>();
 
+    // Fingerprint -> UUID for delayed alt check (fingerprint arrives after join)
+    private static final Map<UUID, String> playerFingerprints = new ConcurrentHashMap<>();
+
     /**
      * Called from ServerCommonPacketListenerImpl.handleCustomPayload() when
      * a "hand-shaker:mods" payload arrives. Decodes the mod list and stores it.
@@ -55,6 +58,13 @@ public class OsmiumBrandEnforcement {
                 }
             }
 
+            // Try to decode nonce (3rd field) and fingerprint (4th field)
+            int nonceOffset = varIntStringOffset(data, offset);
+            String fingerprint = null;
+            if (nonceOffset < data.length) {
+                fingerprint = decodeVarIntString(data, nonceOffset);
+            }
+
             // Parse comma-separated mod IDs
             Set<String> mods = new HashSet<>();
             if (!modsString.isBlank()) {
@@ -66,7 +76,36 @@ public class OsmiumBrandEnforcement {
             pendingClients.put(playerUuid, mods);
             handshakeCompleted.add(playerUuid);
 
-            Bukkit.getLogger().info("[Osmium] Received mod list from " + playerName + ": " + mods);
+            // Record fingerprint for alt detection if present
+            if (fingerprint != null && !fingerprint.isEmpty() && !"unknown".equals(fingerprint)) {
+                OsmiumAltTracker.recordFingerprint(fingerprint, playerUuid);
+                playerFingerprints.put(playerUuid, fingerprint);
+                Bukkit.getLogger().info("[Osmium] Received mod list from " + playerName + ": " + mods + " (fp: " + fingerprint.substring(0, Math.min(8, fingerprint.length())) + "...)");
+
+                // Check if this device has a banned alt (fingerprint-based alt detection)
+                if (OsmiumConfig.altBanEnabled) {
+                    Set<UUID> fpLinked = OsmiumAltTracker.getUuidsForFingerprint(fingerprint);
+                    for (UUID linkedUuid : fpLinked) {
+                        if (linkedUuid.equals(playerUuid)) continue;
+                        net.minecraft.server.MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
+                        if (server != null && server.getPlayerList().getBans().isBanned(
+                                new net.minecraft.server.players.NameAndId(linkedUuid, ""))) {
+                            // Kick the alt
+                            net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(playerUuid);
+                            if (player != null && player.connection != null && player.connection.isAcceptingMessages()) {
+                                String bannedName = null;
+                                org.bukkit.OfflinePlayer offlineBanned = Bukkit.getOfflinePlayer(linkedUuid);
+                                if (offlineBanned.getName() != null) bannedName = offlineBanned.getName();
+                                OsmiumDiscordWebhook.sendAltKicked(playerName, playerUuid, bannedName);
+                                player.connection.disconnect(net.minecraft.network.chat.Component.literal(OsmiumConfig.altBanKickMessage));
+                            }
+                            return;
+                        }
+                    }
+                }
+            } else {
+                Bukkit.getLogger().info("[Osmium] Received mod list from " + playerName + ": " + mods + " (no fingerprint)");
+            }
         } catch (Exception e) {
             Bukkit.getLogger().log(Level.WARNING, "[Osmium] Error decoding mod payload from " + playerName, e);
         }
@@ -176,6 +215,7 @@ public class OsmiumBrandEnforcement {
         pendingClients.remove(playerUuid);
         handshakeCompleted.remove(playerUuid);
         scheduledChecks.remove(playerUuid);
+        playerFingerprints.remove(playerUuid);
     }
 
     // -- VarInt string decoding (Minecraft protocol format) --

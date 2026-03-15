@@ -15,49 +15,57 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
- * Tracks IP-to-UUID associations for alt account detection.
- * Persists data to osmium-ips.json in the server root directory.
+ * Tracks IP-to-UUID and fingerprint-to-UUID associations for alt account detection.
+ * Fingerprints are hardware-based hashes sent by the HandShaker client mod.
+ * Persists data to osmium-ips.json and osmium-fingerprints.json.
  */
 public class OsmiumAltTracker {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type DATA_TYPE = new TypeToken<Map<String, Set<String>>>() {}.getType();
 
-    private static File dataFile;
+    private static File ipDataFile;
+    private static File fpDataFile;
     // IP -> Set of UUID strings
     private static final Map<String, Set<String>> ipToUuids = new ConcurrentHashMap<>();
+    // Fingerprint -> Set of UUID strings
+    private static final Map<String, Set<String>> fpToUuids = new ConcurrentHashMap<>();
 
     public static void init(File serverDir) {
-        dataFile = new File(serverDir, "osmium-ips.json");
-        load();
+        ipDataFile = new File(serverDir, "osmium-ips.json");
+        fpDataFile = new File(serverDir, "osmium-fingerprints.json");
+        loadMap(ipDataFile, ipToUuids);
+        loadMap(fpDataFile, fpToUuids);
     }
 
-    private static void load() {
-        if (dataFile == null || !dataFile.exists()) return;
+    private static void loadMap(File file, Map<String, Set<String>> target) {
+        if (file == null || !file.exists()) return;
 
-        try (FileReader reader = new FileReader(dataFile)) {
+        try (FileReader reader = new FileReader(file)) {
             Map<String, Set<String>> loaded = GSON.fromJson(reader, DATA_TYPE);
             if (loaded != null) {
-                ipToUuids.clear();
-                loaded.forEach((ip, uuids) -> ipToUuids.put(ip, ConcurrentHashMap.newKeySet()));
-                loaded.forEach((ip, uuids) -> ipToUuids.get(ip).addAll(uuids));
+                target.clear();
+                loaded.forEach((key, uuids) -> {
+                    Set<String> set = ConcurrentHashMap.newKeySet();
+                    set.addAll(uuids);
+                    target.put(key, set);
+                });
             }
         } catch (IOException ex) {
-            Bukkit.getLogger().log(Level.WARNING, "Could not load osmium-ips.json", ex);
+            Bukkit.getLogger().log(Level.WARNING, "Could not load " + file.getName(), ex);
         }
     }
 
-    private static void save() {
-        if (dataFile == null) return;
+    private static void saveMap(File file, Map<String, Set<String>> source) {
+        if (file == null) return;
 
-        // Convert ConcurrentHashMap.KeySetView to regular HashSet for serialization
         Map<String, Set<String>> serializable = new HashMap<>();
-        ipToUuids.forEach((ip, uuids) -> serializable.put(ip, new HashSet<>(uuids)));
+        source.forEach((key, uuids) -> serializable.put(key, new HashSet<>(uuids)));
 
-        try (FileWriter writer = new FileWriter(dataFile)) {
+        try (FileWriter writer = new FileWriter(file)) {
             GSON.toJson(serializable, DATA_TYPE, writer);
         } catch (IOException ex) {
-            Bukkit.getLogger().log(Level.WARNING, "Could not save osmium-ips.json", ex);
+            Bukkit.getLogger().log(Level.WARNING, "Could not save " + file.getName(), ex);
         }
     }
 
@@ -67,14 +75,46 @@ public class OsmiumAltTracker {
     public static void recordJoin(String ip, UUID uuid) {
         String uuidStr = uuid.toString();
         ipToUuids.computeIfAbsent(ip, k -> ConcurrentHashMap.newKeySet()).add(uuidStr);
-        save();
+        saveMap(ipDataFile, ipToUuids);
+    }
+
+    /**
+     * Records a player's hardware fingerprint association.
+     * Called from OsmiumBrandEnforcement when the HandShaker payload arrives.
+     */
+    public static void recordFingerprint(String fingerprint, UUID uuid) {
+        String uuidStr = uuid.toString();
+        fpToUuids.computeIfAbsent(fingerprint, k -> ConcurrentHashMap.newKeySet()).add(uuidStr);
+        saveMap(fpDataFile, fpToUuids);
     }
 
     /**
      * Returns the set of UUIDs that have connected from the given IP.
      */
     public static Set<UUID> getUuidsForIp(String ip) {
-        Set<String> uuidStrs = ipToUuids.get(ip);
+        return toUuidSet(ipToUuids.get(ip));
+    }
+
+    /**
+     * Returns the set of UUIDs that share the given hardware fingerprint.
+     */
+    public static Set<UUID> getUuidsForFingerprint(String fingerprint) {
+        return toUuidSet(fpToUuids.get(fingerprint));
+    }
+
+    /**
+     * Returns the fingerprints associated with a UUID (for lookup during join).
+     */
+    public static Set<String> getFingerprintsForUuid(UUID uuid) {
+        String uuidStr = uuid.toString();
+        Set<String> result = new HashSet<>();
+        fpToUuids.forEach((fp, uuids) -> {
+            if (uuids.contains(uuidStr)) result.add(fp);
+        });
+        return result;
+    }
+
+    private static Set<UUID> toUuidSet(Set<String> uuidStrs) {
         if (uuidStrs == null || uuidStrs.isEmpty()) return Collections.emptySet();
 
         Set<UUID> result = new HashSet<>();
