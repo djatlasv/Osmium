@@ -36,6 +36,9 @@ public class OsmiumGrimLoader {
         try {
             LOGGER.info("Initializing embedded GrimAC anticheat...");
 
+            // Pre-extract default config files so configuralize doesn't need getResource()
+            extractDefaultConfigs();
+
             // Create the plugin shim via reflection
             GrimACBukkitLoaderPlugin loader = createPluginShim();
             GrimACBukkitLoaderPlugin.LOADER = loader;
@@ -77,7 +80,11 @@ public class OsmiumGrimLoader {
             setEnabled.setAccessible(true);
             setEnabled.invoke(GrimACBukkitLoaderPlugin.LOADER, true);
             GrimAPI.INSTANCE.start();
-            GrimACBukkitLoaderPlugin.LOADER.registerAPIService();
+            try {
+                GrimACBukkitLoaderPlugin.LOADER.registerAPIService();
+            } catch (IllegalStateException ignored) {
+                // GrimAPI already initialized during load() — safe to ignore
+            }
             LOGGER.info("GrimAC started successfully.");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to start GrimAC", e);
@@ -268,6 +275,43 @@ public class OsmiumGrimLoader {
             }
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Could not register GrimAC with Bukkit plugin manager", e);
+        }
+    }
+
+    /**
+     * Pre-extract GrimAC's default config YAML files from the server JAR's
+     * resources into ./grim/ so that configuralize's saveAllDefaults() doesn't
+     * need to use getResource() (which fails for embedded modules).
+     */
+    private static void extractDefaultConfigs() {
+        File grimDir = new File("grim");
+        grimDir.mkdirs();
+
+        // Main config files — configuralize expects config.yml, messages.yml, discord.yml, punishments.yml
+        // The resources are stored as en.yml, messages/en.yml, discord/en.yml, punishments/en.yml
+        extractResource("/en.yml", new File(grimDir, "config.yml"));
+        extractResource("/messages/en.yml", new File(grimDir, "messages.yml"));
+        extractResource("/discord/en.yml", new File(grimDir, "discord.yml"));
+        extractResource("/punishments/en.yml", new File(grimDir, "punishments.yml"));
+    }
+
+    private static void extractResource(String resourcePath, File targetFile) {
+        if (targetFile.exists()) return; // don't overwrite existing configs
+        try (java.io.InputStream in = OsmiumGrimLoader.class.getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                LOGGER.warning("GrimAC resource not found in JAR: " + resourcePath);
+                return;
+            }
+            try (java.io.OutputStream out = new java.io.FileOutputStream(targetFile)) {
+                byte[] buf = new byte[4096];
+                int len;
+                while ((len = in.read(buf)) > 0) {
+                    out.write(buf, 0, len);
+                }
+            }
+            LOGGER.info("Extracted default config: " + targetFile.getName());
+        } catch (java.io.IOException e) {
+            LOGGER.log(Level.WARNING, "Failed to extract " + resourcePath, e);
         }
     }
 }
