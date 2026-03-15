@@ -17,36 +17,34 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 ## Features
 
-**Chunk hiding** replaces Orebfuscator and similar plugins. Deepslate variants and base indicator blocks (chests, furnaces, crafting tables, etc.) are replaced with stone or deepslate in the chunk packet before it leaves the server. Players within a configurable proximity radius receive the real chunk data. This runs as a second pass on top of Paper's existing anti-xray engine.
-
-**Y-level hiding** hides all blocks below a configurable Y threshold, replacing Phantom. When enabled, every block below the threshold is replaced in the packet regardless of type.
+**Chunk hiding** replaces all blocks below a configurable Y level with a fake block (default: deepslate) in the chunk packet before it leaves the server. Players within a configurable proximity radius see the real blocks, and the fake blocks reappear when they move away. Runs as a second pass on top of Paper's existing anti-xray engine. The replacement block is configurable — use any vanilla block name.
 
 **Alt detection and ban** tracks IP-to-UUID associations and automatically bans alt accounts that share an IP with a banned player. Mappings are persisted to `osmium-ips.json` using a thread-safe ConcurrentHashMap.
 
 **Native chat filter** replaces chat filter plugins with a built-in word list. Supports exact (case-insensitive) and regex patterns via `osmium-words.json`. Configurable actions: block, kick, or mute.
 
-**Brand enforcement** integrates [HandShaker](https://github.com/djatlasv/hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced). Includes the vanilla-mode fix for the upstream HandShaker plugin bug where vanilla clients bypassed all mod checks.
+**Brand enforcement** integrates [HandShaker](https://github.com/djatlasv/hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced).
 
 **GrimAC embedded anticheat** runs [GrimAC](https://github.com/GrimAnticheat/Grim) 2.3.74 as a native server module instead of a plugin. All movement, combat, and interaction checks work out of the box. GrimAC configs live in the `./grim/` directory. Toggle with `grim.enabled` in `osmium.yml`.
 
+**Discord webhooks** sends embed notifications to a Discord channel for server start/stop, player bans, alt detections, chat filter triggers, and brand enforcement kicks.
+
 ## Configuration
 
-Osmium generates `osmium.yml` in the server root on first start.
+Osmium generates `osmium.yml` in the server root on first start. Delete it to regenerate with defaults.
+
 ```yaml
 chunk-hiding:
-  enabled: true
-  y-threshold: 0
-  proximity-radius: 32
-
-y-level-hiding:
   enabled: false
-  threshold: -32
+  y-threshold: 0           # hide all blocks below this Y level
+  block: deepslate          # replacement block (any vanilla block name)
+  proximity-radius: 32      # blocks around the player where real blocks are revealed
 
 brand-enforcement:
   enabled: false
   mode: vanilla              # strict or vanilla
   kick-message: "You must use the HandShaker mod. Get it at: discord.gg/yourserver"
-  check-delay-ticks: 100     # 5 seconds — time to wait for HandShaker payload
+  check-delay-ticks: 100     # ticks to wait for HandShaker payload (100 = 5 seconds)
   required-mods: []          # e.g. [hand-shaker]
   blacklisted-mods: []       # e.g. [wurst, meteor-client]
 
@@ -56,11 +54,15 @@ alt-ban:
 
 chat-filter:
   enabled: false
-  action: block          # block, kick, or mute
+  action: block              # block, kick, or mute
   message: "Your message was blocked by the chat filter."
 
 grim:
-  enabled: false           # enable embedded GrimAC anticheat (configs in ./grim/)
+  enabled: false             # enable embedded GrimAC anticheat (configs in ./grim/)
+
+discord-webhook:
+  enabled: false
+  url: ""                    # your Discord webhook URL
 ```
 
 ## Building
