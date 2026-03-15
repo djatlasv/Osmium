@@ -1,6 +1,9 @@
 package org.osmium.anticheat.grim;
 
-import org.bukkit.Bukkit;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -14,14 +17,15 @@ import java.util.logging.Logger;
 
 /**
  * Auto-installs GrimAC as a plugin JAR into ./plugins/ on first startup.
- * Downloads from the GrimAC GitHub releases if not already present.
- * Paper's plugin loader handles the rest — no embedded shim needed.
+ * Uses the Modrinth API to find and download the latest version.
+ * Paper's plugin loader handles the rest.
  */
 public class OsmiumGrimLoader {
 
     private static final Logger LOGGER = Logger.getLogger("Osmium-GrimAC");
-    private static final String GRIM_JAR = "GrimAC.jar";
-    private static final String DOWNLOAD_URL = "https://github.com/GrimAnticheat/Grim/releases/download/2.3.74/GrimAC-2.3.74.jar";
+    private static final String MODRINTH_PROJECT = "LJNGWSvH"; // GrimAC project ID
+    private static final String MODRINTH_VERSIONS_URL =
+            "https://api.modrinth.com/v2/project/" + MODRINTH_PROJECT + "/version?loaders=[\"paper\"]";
 
     /**
      * Called during server init if grim.enabled is true.
@@ -31,64 +35,93 @@ public class OsmiumGrimLoader {
         File pluginsDir = new File("plugins");
         pluginsDir.mkdirs();
 
-        File grimJar = new File(pluginsDir, GRIM_JAR);
-
-        // Also check for any existing grim jar with a different name
-        if (!grimJar.exists()) {
-            File[] existing = pluginsDir.listFiles((dir, name) ->
-                    name.toLowerCase().startsWith("grim") && name.endsWith(".jar"));
-            if (existing != null && existing.length > 0) {
-                LOGGER.info("Found existing GrimAC JAR: " + existing[0].getName());
-                return;
-            }
-        }
-
-        if (grimJar.exists()) {
-            LOGGER.info("GrimAC plugin JAR found at plugins/" + GRIM_JAR);
+        // Check for any existing GrimAC jar
+        File[] existing = pluginsDir.listFiles((dir, name) ->
+                name.toLowerCase().startsWith("grim") && name.endsWith(".jar"));
+        if (existing != null && existing.length > 0) {
+            LOGGER.info("GrimAC plugin found: " + existing[0].getName());
             return;
         }
 
-        LOGGER.info("GrimAC not found in plugins/. Downloading...");
+        LOGGER.info("GrimAC not found in plugins/. Fetching latest version from Modrinth...");
         try {
-            downloadGrimAC(grimJar);
-            LOGGER.info("GrimAC downloaded successfully to plugins/" + GRIM_JAR);
-            LOGGER.info("GrimAC will load on next server restart.");
+            downloadLatestFromModrinth(pluginsDir);
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to download GrimAC. Download it manually from: " + DOWNLOAD_URL, e);
+            LOGGER.log(Level.SEVERE, "Failed to download GrimAC from Modrinth. Install it manually.", e);
         }
     }
 
-    /**
-     * No-op — GrimAC starts itself as a plugin via Paper's loader.
-     */
-    public static void start() {
-        // Plugin lifecycle handled by Paper
-    }
+    /** No-op — GrimAC starts itself as a plugin via Paper's loader. */
+    public static void start() {}
 
-    /**
-     * No-op — GrimAC stops itself as a plugin via Paper's loader.
-     */
-    public static void stop() {
-        // Plugin lifecycle handled by Paper
-    }
+    /** No-op — GrimAC stops itself as a plugin via Paper's loader. */
+    public static void stop() {}
 
-    private static void downloadGrimAC(File target) throws Exception {
+    private static void downloadLatestFromModrinth(File pluginsDir) throws Exception {
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .build();
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(DOWNLOAD_URL))
+        // Query Modrinth for latest Paper-compatible version
+        HttpRequest versionReq = HttpRequest.newBuilder()
+                .uri(URI.create(MODRINTH_VERSIONS_URL))
+                .header("User-Agent", "Osmium/1.0 (github.com/djatlasv/Osmium)")
                 .GET()
                 .build();
 
-        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("HTTP " + response.statusCode() + " downloading GrimAC");
+        HttpResponse<String> versionResp = client.send(versionReq, HttpResponse.BodyHandlers.ofString());
+        if (versionResp.statusCode() != 200) {
+            throw new RuntimeException("Modrinth API returned HTTP " + versionResp.statusCode());
         }
 
-        try (InputStream in = response.body();
+        JsonArray versions = JsonParser.parseString(versionResp.body()).getAsJsonArray();
+        if (versions.isEmpty()) {
+            throw new RuntimeException("No Paper versions found on Modrinth for GrimAC");
+        }
+
+        // First entry is the latest
+        JsonObject latest = versions.get(0).getAsJsonObject();
+        String versionName = latest.get("version_number").getAsString();
+        JsonArray files = latest.getAsJsonArray("files");
+
+        // Find the primary file
+        String downloadUrl = null;
+        String fileName = null;
+        for (JsonElement fileEl : files) {
+            JsonObject file = fileEl.getAsJsonObject();
+            if (file.has("primary") && file.get("primary").getAsBoolean()) {
+                downloadUrl = file.get("url").getAsString();
+                fileName = file.get("filename").getAsString();
+                break;
+            }
+        }
+        // Fallback to first file
+        if (downloadUrl == null && !files.isEmpty()) {
+            JsonObject file = files.get(0).getAsJsonObject();
+            downloadUrl = file.get("url").getAsString();
+            fileName = file.get("filename").getAsString();
+        }
+
+        if (downloadUrl == null) {
+            throw new RuntimeException("No downloadable file found for GrimAC " + versionName);
+        }
+
+        LOGGER.info("Downloading GrimAC " + versionName + " (" + fileName + ")...");
+
+        // Download the JAR
+        HttpRequest dlReq = HttpRequest.newBuilder()
+                .uri(URI.create(downloadUrl))
+                .header("User-Agent", "Osmium/1.0 (github.com/djatlasv/Osmium)")
+                .GET()
+                .build();
+
+        HttpResponse<InputStream> dlResp = client.send(dlReq, HttpResponse.BodyHandlers.ofInputStream());
+        if (dlResp.statusCode() != 200) {
+            throw new RuntimeException("Download failed: HTTP " + dlResp.statusCode());
+        }
+
+        File target = new File(pluginsDir, fileName);
+        try (InputStream in = dlResp.body();
              FileOutputStream out = new FileOutputStream(target)) {
             byte[] buf = new byte[8192];
             int len;
@@ -97,7 +130,9 @@ public class OsmiumGrimLoader {
                 out.write(buf, 0, len);
                 total += len;
             }
-            LOGGER.info("Downloaded " + (total / 1024) + " KB");
+            LOGGER.info("Downloaded " + (total / 1024) + " KB to plugins/" + fileName);
         }
+
+        LOGGER.info("GrimAC " + versionName + " installed. Restart the server to load it.");
     }
 }
