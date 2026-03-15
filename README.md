@@ -25,6 +25,8 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 **Brand enforcement** integrates [HandShaker](https://github.com/djatlasv/hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced).
 
+**You will need my own custom fork of the HandShaker for both brand enforcement and Alt-banning to work!**
+
 **GrimAC embedded anticheat** runs [GrimAC](https://github.com/GrimAnticheat/Grim) 2.3.74 as a native server module instead of a plugin. All movement, combat, and interaction checks work out of the box. GrimAC configs live in the `./grim/` directory. Toggle with `grim.enabled` in `osmium.yml`.
 
 **Discord webhooks** sends embed notifications to a Discord channel for server start/stop, player bans, alt detections, chat filter triggers, and brand enforcement kicks.
