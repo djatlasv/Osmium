@@ -72,6 +72,10 @@ public class OsmiumGrimLoader {
     public static void start() {
         if (!initialized) return;
         try {
+            // Mark plugin as enabled so Bukkit allows event/task registration
+            java.lang.reflect.Method setEnabled = JavaPlugin.class.getDeclaredMethod("setEnabled", boolean.class);
+            setEnabled.setAccessible(true);
+            setEnabled.invoke(GrimACBukkitLoaderPlugin.LOADER, true);
             GrimAPI.INSTANCE.start();
             GrimACBukkitLoaderPlugin.LOADER.registerAPIService();
             LOGGER.info("GrimAC started successfully.");

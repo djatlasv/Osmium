@@ -264,6 +264,27 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     @Override
     public BlockState[] getPresetBlockStates(Level level, ChunkPos chunkPos, int chunkSectionY) {
-        return delegate.getPresetBlockStates(level, chunkPos, chunkSectionY);
+        BlockState[] delegateStates = delegate.getPresetBlockStates(level, chunkPos, chunkSectionY);
+
+        // For sections below the hiding threshold, inject the replacement block
+        // into the palette preset values. This guarantees it's in every section's
+        // palette during serialization — fixes fluid-only/air-only/single-block
+        // sections that previously had holes because the replacement wasn't available.
+        if (!enabled || chunkSectionY >= (hideBelow >> 4)) {
+            return delegateStates;
+        }
+
+        if (delegateStates == null) {
+            return new BlockState[] { replacementState };
+        }
+
+        for (BlockState state : delegateStates) {
+            if (replacementState.equals(state)) return delegateStates;
+        }
+
+        BlockState[] combined = new BlockState[delegateStates.length + 1];
+        System.arraycopy(delegateStates, 0, combined, 0, delegateStates.length);
+        combined[delegateStates.length] = replacementState;
+        return combined;
     }
 }
