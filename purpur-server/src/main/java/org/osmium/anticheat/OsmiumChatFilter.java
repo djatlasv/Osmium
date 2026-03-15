@@ -117,13 +117,20 @@ public class OsmiumChatFilter {
 
     /**
      * Checks if a message contains any blocked words/patterns.
+     * Tests against both the original message and a stripped version
+     * (non-alphanumeric characters removed) to catch spacing/symbol bypasses
+     * like "n # i # g" or "f.u.c.k".
      * Returns the first matching pattern string, or null if clean.
      */
     public static String check(String message) {
         if (!OsmiumConfig.chatFilterEnabled) return null;
 
+        // Strip non-alphanumeric chars to defeat spacing/symbol bypasses
+        String stripped = message.replaceAll("[^a-zA-Z0-9]", "");
+
         for (int i = 0; i < compiledPatterns.size(); i++) {
-            if (compiledPatterns.get(i).matcher(message).find()) {
+            Pattern pattern = compiledPatterns.get(i);
+            if (pattern.matcher(message).find() || pattern.matcher(stripped).find()) {
                 return rawPatterns.get(i);
             }
         }
