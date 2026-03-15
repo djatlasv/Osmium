@@ -25,7 +25,7 @@ public class OsmiumGrimLoader {
     private static final Logger LOGGER = Logger.getLogger("Osmium-GrimAC");
     private static final String MODRINTH_PROJECT = "LJNGWSvH"; // GrimAC project ID
     private static final String MODRINTH_VERSIONS_URL =
-            "https://api.modrinth.com/v2/project/" + MODRINTH_PROJECT + "/version?loaders=[\"paper\"]";
+            "https://api.modrinth.com/v2/project/" + MODRINTH_PROJECT + "/version?loaders=%5B%22paper%22%5D";
 
     /**
      * Called during server init if grim.enabled is true.
