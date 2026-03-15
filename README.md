@@ -19,15 +19,15 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 **Chunk hiding** replaces all blocks below a configurable Y level with a fake block (default: deepslate) in the chunk packet before it leaves the server. Players within a configurable proximity radius see the real blocks, and the fake blocks reappear when they move away. Runs as a second pass on top of Paper's existing anti-xray engine. The replacement block is configurable — use any vanilla block name.
 
-**Alt detection and ban** tracks IP-to-UUID associations and automatically bans alt accounts that share an IP with a banned player. Mappings are persisted to `osmium-ips.json` using a thread-safe ConcurrentHashMap.
+**Alt detection and ban** tracks player associations using both IP addresses and hardware fingerprints for alt account detection. IP-to-UUID mappings are persisted to `osmium-ips.json`, and device fingerprints (sent via HandShaker) are stored in `osmium-fingerprints.json`. Fingerprint-based tracking identifies individual devices even on shared networks, avoiding false positives for players on the same WiFi.
 
 **Native chat filter** replaces chat filter plugins with a built-in word list. Supports exact (case-insensitive) and regex patterns via `osmium-words.json`. Configurable actions: block, kick, or mute.
 
-**Brand enforcement** integrates [HandShaker](https://github.com/djatlasv/hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced).
+**Brand enforcement** integrates the [HandShaker](https://github.com/djatlasv/Hand-shaker) protocol natively at the NMS level. Intercepts `hand-shaker:mods` plugin channel payloads, verifies SHA-256 hashes, and enforces required/blacklisted mod lists. Supports strict mode (all clients must have HandShaker) and vanilla mode (vanilla clients allowed, mod rules still enforced).
 
-**You will need my own custom fork of the HandShaker for both brand enforcement and Alt-banning to work!**
+> **Note:** You need the [custom Osmium fork of HandShaker](https://github.com/djatlasv/Hand-shaker) for brand enforcement and fingerprint-based alt detection to work. Pre-built JARs for Fabric and NeoForge are available in that repo.
 
-**GrimAC embedded anticheat** runs [GrimAC](https://github.com/GrimAnticheat/Grim) 2.3.74 as a native server module instead of a plugin. All movement, combat, and interaction checks work out of the box. GrimAC configs live in the `./grim/` directory. Toggle with `grim.enabled` in `osmium.yml`.
+**GrimAC auto-install** — when `grim.enabled` is set to `true`, Osmium automatically downloads the latest [GrimAC](https://github.com/GrimAnticheat/Grim) plugin from Modrinth into `./plugins/` on first startup. A server restart is required after the initial download. GrimAC configs live in `./plugins/GrimAC/`.
 
 **Discord webhooks** sends embed notifications to a Discord channel for server start/stop, player bans, alt detections, chat filter triggers, and brand enforcement kicks.
 
@@ -60,7 +60,7 @@ chat-filter:
   message: "Your message was blocked by the chat filter."
 
 grim:
-  enabled: false             # enable embedded GrimAC anticheat (configs in ./grim/)
+  enabled: false             # auto-download GrimAC plugin from Modrinth on first start
 
 discord-webhook:
   enabled: false
