@@ -28,7 +28,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     private final int proximityRadius;
     private final BlockState replacementState;
     private final int replacementGlobalId;
-    // Preferred fallback blocks when the configured block isn't in a section's palette
+    private final int replacementVarIntLen;
     private final BlockState[] fallbackStates;
 
     public OsmiumChunkProcessor(ChunkPacketBlockController delegate, Level level) {
@@ -45,8 +45,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         }
         this.replacementState = block.defaultBlockState();
         this.replacementGlobalId = Block.BLOCK_STATE_REGISTRY.getId(this.replacementState);
+        this.replacementVarIntLen = varIntLen(this.replacementGlobalId);
 
-        // Build fallback list: visually similar blocks to try when configured block isn't in palette
         this.fallbackStates = new BlockState[] {
             Blocks.DEEPSLATE.defaultBlockState(),
             Blocks.STONE.defaultBlockState(),
@@ -95,8 +95,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     /**
      * Finds the best replacement block in the palette WITHOUT adding it.
-     * Priority: configured block > deepslate/stone/tuff/etc fallbacks > any solid block.
-     * Returns -1 only if no suitable replacement exists (section must be skipped).
+     * Priority: configured block > deepslate/stone/tuff/etc > any solid block.
+     * Returns -1 only if no suitable replacement exists.
      */
     private int findInPalette(Palette<BlockState> palette) {
         if (palette instanceof GlobalPalette) {
@@ -105,7 +105,6 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
         int size = palette.getSize();
 
-        // First pass: check for exact match (configured block)
         for (int i = 0; i < size; i++) {
             try {
                 BlockState state = palette.valueFor(i);
@@ -113,9 +112,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             } catch (Exception e) { continue; }
         }
 
-        // Second pass: try preferred fallback blocks in order
         for (BlockState fallback : fallbackStates) {
-            if (fallback.equals(replacementState)) continue; // already checked
+            if (fallback.equals(replacementState)) continue;
             for (int i = 0; i < size; i++) {
                 try {
                     BlockState state = palette.valueFor(i);
@@ -124,7 +122,6 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             }
         }
 
-        // Last resort: any solid opaque non-fluid block
         for (int i = 0; i < size; i++) {
             try {
                 BlockState state = palette.valueFor(i);
@@ -153,11 +150,9 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         int playerBlockY = player.blockPosition().getY();
         int playerBlockZ = player.blockPosition().getZ();
 
-        // XZ proximity in blocks, not chunks — more precise
-        int chunkBlockX = chunk.getPos().x << 4;  // chunk origin X
-        int chunkBlockZ = chunk.getPos().z << 4;  // chunk origin Z
+        int chunkBlockX = chunk.getPos().x << 4;
+        int chunkBlockZ = chunk.getPos().z << 4;
 
-        // Nearest block in chunk to player on XZ plane
         int nearestX = Math.max(chunkBlockX, Math.min(playerBlockX, chunkBlockX + 15));
         int nearestZ = Math.max(chunkBlockZ, Math.min(playerBlockZ, chunkBlockZ + 15));
         int xzDistSq = (playerBlockX - nearestX) * (playerBlockX - nearestX)
@@ -173,7 +168,6 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         for (int sectionIndex = 0; sectionIndex < chunk.getSectionsCount(); sectionIndex++) {
             int sectionY = sectionIndex + minSectionY;
             if (sectionY >= hideBelowSection) continue;
-            if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
 
             // 3D proximity: skip hiding if player is close to this section
             if (xzNear) {
@@ -186,7 +180,31 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             }
 
             int bits = chunkPacketInfo.getBits(sectionIndex);
-            if (bits == 0) continue;
+
+            // Handle single-value sections (bits=0): the entire section is one block.
+            // The palette entry is a single VarInt in the buffer right before the data array index.
+            // We can replace it in-place if the VarInt byte lengths match.
+            if (bits == 0) {
+                Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
+                if (palette == null || palette.getSize() < 1) continue;
+
+                BlockState currentState;
+                try { currentState = palette.valueFor(0); } catch (Exception e) { continue; }
+                if (currentState == null) continue;
+
+                int currentGlobalId = Block.BLOCK_STATE_REGISTRY.getId(currentState);
+                if (currentGlobalId == replacementGlobalId) continue; // already the right block
+
+                int currentLen = varIntLen(currentGlobalId);
+                if (currentLen == replacementVarIntLen) {
+                    // Safe to overwrite in-place — same byte count
+                    int dataArrayIndex = chunkPacketInfo.getIndex(sectionIndex);
+                    writeVarInt(buffer, dataArrayIndex - currentLen, replacementGlobalId);
+                }
+                continue;
+            }
+
+            if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
 
             Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
             if (palette == null) continue;
@@ -207,6 +225,25 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
             writer.flush();
         }
+    }
+
+    // --- VarInt helpers for bits=0 palette replacement ---
+
+    private static int varIntLen(int value) {
+        int len = 0;
+        do {
+            len++;
+            value >>>= 7;
+        } while (value != 0);
+        return len;
+    }
+
+    private static void writeVarInt(byte[] buffer, int offset, int value) {
+        while ((value & ~0x7F) != 0) {
+            buffer[offset++] = (byte) ((value & 0x7F) | 0x80);
+            value >>>= 7;
+        }
+        buffer[offset] = (byte) value;
     }
 
     @Override

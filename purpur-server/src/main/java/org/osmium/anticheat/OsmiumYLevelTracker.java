@@ -1,6 +1,7 @@
 package org.osmium.anticheat;
 
 import ca.spottedleaf.moonrise.patches.chunk_system.player.RegionizedPlayerChunkLoader;
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -13,61 +14,84 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Tracks player positions and resends nearby chunks when they move near the
- * hidden zone so that the proximity-based reveal/re-hide stays in sync.
- *
- * Only resends chunks near the player's old or new position — not all chunks.
- * This keeps large proximity-radius values viable without flooding the connection.
+ * Tracks player positions and queues chunk resends when they move near the
+ * hidden zone. Rate-limited: processes a fixed number of chunks per tick
+ * to avoid flooding the client with packets.
  */
 public class OsmiumYLevelTracker {
 
-    private static final Map<UUID, long[]> lastPosition = new ConcurrentHashMap<>();
+    // Max chunks to resend per player per tick
+    private static final int CHUNKS_PER_TICK = 16;
+    // Min ticks between queueing new resend batches
+    private static final int RESEND_COOLDOWN = 5;
+
+    private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
+
+    private static class PlayerState {
+        int chunkX, chunkZ, sectionY;
+        long lastResendTick;
+        final LongArrayFIFOQueue resendQueue = new LongArrayFIFOQueue();
+    }
 
     public static void onPlayerTick(ServerPlayer player) {
         if (!OsmiumConfig.chunkHidingEnabled) return;
 
         UUID uuid = player.getUUID();
-        int blockX = player.blockPosition().getX();
-        int blockY = player.blockPosition().getY();
-        int blockZ = player.blockPosition().getZ();
-        int chunkX = blockX >> 4;
-        int chunkZ = blockZ >> 4;
-        int sectionY = blockY >> 4;
+        PlayerState state = states.computeIfAbsent(uuid, k -> new PlayerState());
 
-        long[] prev = lastPosition.get(uuid);
-        if (prev != null && prev[0] == chunkX && prev[1] == chunkZ && prev[2] == sectionY) {
-            return; // no chunk/section change
+        // Always drain the queue first — spread resends across ticks
+        drainQueue(player, state);
+
+        int chunkX = player.blockPosition().getX() >> 4;
+        int chunkZ = player.blockPosition().getZ() >> 4;
+        int sectionY = player.blockPosition().getY() >> 4;
+
+        // First tick — just record position
+        if (state.lastResendTick == 0) {
+            state.chunkX = chunkX;
+            state.chunkZ = chunkZ;
+            state.sectionY = sectionY;
+            state.lastResendTick = player.level().getGameTime();
+            return;
         }
 
-        long[] current = new long[] { chunkX, chunkZ, sectionY };
-        lastPosition.put(uuid, current);
-
-        if (prev == null) return;
+        // No movement at chunk/section level
+        if (chunkX == state.chunkX && chunkZ == state.chunkZ && sectionY == state.sectionY) {
+            return;
+        }
 
         int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
+        long currentTick = player.level().getGameTime();
 
-        boolean wasNear = isNearHiddenZone((int) prev[2], thresholdSection, proximityRadius);
+        boolean wasNear = isNearHiddenZone(state.sectionY, thresholdSection, proximityRadius);
         boolean isNear = isNearHiddenZone(sectionY, thresholdSection, proximityRadius);
 
-        boolean shouldResend = false;
+        boolean shouldQueue = false;
 
         if (wasNear != isNear) {
-            // Crossed the near/far boundary
-            shouldResend = true;
-        } else if (isNear && (chunkX != prev[0] || chunkZ != prev[1] || sectionY != prev[2])) {
-            // Moved to a different chunk while near the zone
-            shouldResend = true;
+            // Crossed the boundary
+            shouldQueue = true;
+        } else if (isNear) {
+            // Moved while near the zone
+            shouldQueue = true;
         }
 
-        if (shouldResend) {
-            resendNearbyChunks(player, (int) prev[0], (int) prev[1], (int) prev[2],
-                                       chunkX, chunkZ, sectionY, proximityRadius);
+        int oldChunkX = state.chunkX;
+        int oldChunkZ = state.chunkZ;
+
+        state.chunkX = chunkX;
+        state.chunkZ = chunkZ;
+        state.sectionY = sectionY;
+
+        if (shouldQueue && currentTick - state.lastResendTick >= RESEND_COOLDOWN) {
+            state.lastResendTick = currentTick;
+            queueBoundaryChunks(player, state, oldChunkX, oldChunkZ, chunkX, chunkZ, proximityRadius);
         }
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
-        lastPosition.remove(uuid);
+        states.remove(uuid);
     }
 
     private static boolean isNearHiddenZone(int playerSectionY, int thresholdSection, int proximityRadius) {
@@ -77,36 +101,67 @@ public class OsmiumYLevelTracker {
     }
 
     /**
-     * Only resend chunks that are near the player's old or new position.
-     * These are the only chunks whose hidden/revealed status could have changed.
+     * Queue only chunks near the boundary of the proximity sphere — the ones
+     * whose hidden/revealed status could have changed when the player moved.
+     * Chunks deep inside (always revealed) or far outside (always hidden)
+     * don't need resending.
      */
-    private static void resendNearbyChunks(ServerPlayer player,
-                                            int oldChunkX, int oldChunkZ, int oldSectionY,
-                                            int newChunkX, int newChunkZ, int newSectionY,
-                                            int proximityRadius) {
-        ServerLevel level = player.level();
+    private static void queueBoundaryChunks(ServerPlayer player, PlayerState state,
+                                             int oldChunkX, int oldChunkZ,
+                                             int newChunkX, int newChunkZ,
+                                             int proximityRadius) {
         RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader =
                 ((ca.spottedleaf.moonrise.patches.chunk_system.player.ChunkSystemServerPlayer) player).moonrise$getChunkLoader();
         LongOpenHashSet sentChunks = loader.getSentChunksRaw();
 
-        // Chunks within this many chunks of the player could have changed status
-        int chunkRadius = (proximityRadius >> 4) + 2;
+        // Chunks within this distance could have sections at the sphere boundary
+        int outerChunkRadius = (proximityRadius >> 4) + 2;
+        // Chunks closer than this are fully inside the sphere for all relevant Y levels
+        int innerChunkRadius = Math.max(0, (proximityRadius >> 4) - 3);
+
+        state.resendQueue.clear();
 
         for (long chunkKey : sentChunks) {
             int cx = (int) chunkKey;
             int cz = (int) (chunkKey >> 32);
 
-            // Only resend if this chunk is near the old OR new player position
-            boolean nearOld = Math.abs(cx - oldChunkX) <= chunkRadius
-                           && Math.abs(cz - oldChunkZ) <= chunkRadius;
-            boolean nearNew = Math.abs(cx - newChunkX) <= chunkRadius
-                           && Math.abs(cz - newChunkZ) <= chunkRadius;
+            // Check against both old and new position — transitioning chunks are near either
+            int dxOld = Math.abs(cx - oldChunkX);
+            int dzOld = Math.abs(cz - oldChunkZ);
+            int dxNew = Math.abs(cx - newChunkX);
+            int dzNew = Math.abs(cz - newChunkZ);
 
-            if (!nearOld && !nearNew) continue;
+            boolean nearOld = dxOld <= outerChunkRadius && dzOld <= outerChunkRadius;
+            boolean nearNew = dxNew <= outerChunkRadius && dzNew <= outerChunkRadius;
 
+            if (!nearOld && !nearNew) continue; // too far from both positions
+
+            // Skip chunks deep inside the sphere (always revealed, nothing changes)
+            boolean deepInsideOld = dxOld <= innerChunkRadius && dzOld <= innerChunkRadius;
+            boolean deepInsideNew = dxNew <= innerChunkRadius && dzNew <= innerChunkRadius;
+            if (deepInsideOld && deepInsideNew) continue;
+
+            state.resendQueue.enqueue(chunkKey);
+        }
+    }
+
+    /**
+     * Send up to CHUNKS_PER_TICK chunks from the player's resend queue.
+     */
+    private static void drainQueue(ServerPlayer player, PlayerState state) {
+        if (state.resendQueue.isEmpty()) return;
+
+        ServerLevel level = player.level();
+        int count = 0;
+
+        while (!state.resendQueue.isEmpty() && count < CHUNKS_PER_TICK) {
+            long chunkKey = state.resendQueue.dequeueLong();
+            int cx = (int) chunkKey;
+            int cz = (int) (chunkKey >> 32);
             LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
             if (chunk != null) {
                 PlayerChunkSender.sendChunk(player.connection, level, chunk);
+                count++;
             }
         }
     }
