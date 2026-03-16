@@ -58,11 +58,12 @@ public class OsmiumConfig {
             + "--- discord-webhook ---\n"
             + "Sends Discord embed notifications for server events (start/stop, bans, alts, etc.).\n"
             + "  enabled: master toggle\n"
-            + "  url: your Discord webhook URL\n";
+            + "  url: your Discord webhook URL\n"
+            + "  ping-on-stop: list of Discord user IDs to ping when the server stops (e.g. ['123456789'])\n";
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
-    public static int version = 3;
+    public static int version = 4;
 
     public static void init(File configFile) {
         CONFIG_FILE = configFile;
@@ -116,6 +117,13 @@ public class OsmiumConfig {
             if (!config.contains("brand-enforcement.blacklist-kick-message")) {
                 config.set("brand-enforcement.blacklist-kick-message",
                         "You have been kicked for using a blacklisted mod: {mods}");
+            }
+        }
+
+        if (oldVersion < 4) {
+            // v3 -> v4: added ping-on-stop
+            if (!config.contains("discord-webhook.ping-on-stop")) {
+                config.set("discord-webhook.ping-on-stop", List.of());
             }
         }
     }
@@ -252,10 +260,13 @@ public class OsmiumConfig {
 
     public static boolean discordWebhookEnabled = false;
     public static String discordWebhookUrl = "";
+    public static List<String> discordWebhookPingOnStop = List.of();
 
     private static void discordWebhook() {
         discordWebhookEnabled = getBoolean("discord-webhook.enabled", false);
         discordWebhookUrl = config.getString("discord-webhook.url", "");
         config.addDefault("discord-webhook.url", discordWebhookUrl);
+        discordWebhookPingOnStop = config.getStringList("discord-webhook.ping-on-stop");
+        config.addDefault("discord-webhook.ping-on-stop", List.of());
     }
 }

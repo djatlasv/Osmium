@@ -49,9 +49,17 @@ public class OsmiumDiscordWebhook {
 
     public static void sendServerStop() {
         if (!isEnabled()) return;
+        // Build ping string from configured user IDs
+        StringBuilder pings = new StringBuilder();
+        for (String userId : OsmiumConfig.discordWebhookPingOnStop) {
+            if (userId != null && !userId.isBlank()) {
+                pings.append("<@").append(userId.trim()).append("> ");
+            }
+        }
         sendEmbedSync("Server Stopped",
                 "The server has shut down.",
-                COLOR_RED);
+                COLOR_RED,
+                pings.toString().trim());
     }
 
     public static void sendBan(String playerName, UUID playerUuid, String reason, String source) {
@@ -116,26 +124,31 @@ public class OsmiumDiscordWebhook {
     }
 
     private static void sendEmbed(String title, String description, int color) {
-        EXECUTOR.submit(() -> doSend(title, description, color));
+        EXECUTOR.submit(() -> doSend(title, description, color, null));
     }
 
     /** Synchronous send — used for server stop so the message gets out before JVM exits. */
-    private static void sendEmbedSync(String title, String description, int color) {
-        doSend(title, description, color);
+    private static void sendEmbedSync(String title, String description, int color, String content) {
+        doSend(title, description, color, content);
     }
 
-    private static void doSend(String title, String description, int color) {
+    private static void doSend(String title, String description, int color, String content) {
         String url = OsmiumConfig.discordWebhookUrl;
         if (url == null || url.isBlank()) return;
 
         String timestamp = Instant.now().toString();
-        String json = "{\"embeds\":[{" +
-                "\"title\":\"" + escapeJson(title) + "\"," +
-                "\"description\":\"" + escapeJson(description) + "\"," +
-                "\"color\":" + color + "," +
-                "\"footer\":{\"text\":\"Osmium\"}," +
-                "\"timestamp\":\"" + timestamp + "\"" +
-                "}]}";
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        if (content != null && !content.isBlank()) {
+            json.append("\"content\":\"").append(escapeJson(content)).append("\",");
+        }
+        json.append("\"embeds\":[{")
+            .append("\"title\":\"").append(escapeJson(title)).append("\",")
+            .append("\"description\":\"").append(escapeJson(description)).append("\",")
+            .append("\"color\":").append(color).append(",")
+            .append("\"footer\":{\"text\":\"Osmium\"},")
+            .append("\"timestamp\":\"").append(timestamp).append("\"")
+            .append("}]}");
 
         try {
             HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
@@ -146,7 +159,7 @@ public class OsmiumDiscordWebhook {
             conn.setReadTimeout(5000);
 
             try (OutputStream os = conn.getOutputStream()) {
-                os.write(json.getBytes(StandardCharsets.UTF_8));
+                os.write(json.toString().getBytes(StandardCharsets.UTF_8));
             }
 
             int code = conn.getResponseCode();
@@ -156,7 +169,7 @@ public class OsmiumDiscordWebhook {
                 long waitMs = retryAfter != null ? (long) (Double.parseDouble(retryAfter) * 1000) : 1000;
                 Thread.sleep(Math.min(waitMs, 10000));
                 conn.disconnect();
-                doSend(title, description, color);
+                doSend(title, description, color, content);
                 return;
             }
             if (code < 200 || code >= 300) {
