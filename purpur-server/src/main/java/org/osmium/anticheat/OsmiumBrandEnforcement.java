@@ -140,7 +140,8 @@ public class OsmiumBrandEnforcement {
                     continue;
                 }
 
-                String kickMsg = checkPlayer(uuid);
+                String brand = player.connection.playerBrand;
+                String kickMsg = checkPlayer(uuid, brand);
                 if (kickMsg != null) {
                     OsmiumDiscordWebhook.sendBrandKick(player.getPlainTextName(), uuid, kickMsg); // Osmium - discord webhook
                     player.connection.disconnect(net.minecraft.network.chat.Component.literal(kickMsg));
@@ -152,41 +153,43 @@ public class OsmiumBrandEnforcement {
     /**
      * Checks a player against brand enforcement rules.
      * Returns a kick message if the player should be kicked, or null if they pass.
+     *
+     * Modes:
+     * - strict: ALL clients must have HandShaker
+     * - vanilla: vanilla clients pass, modded clients without HandShaker get kicked
      */
-    public static String checkPlayer(UUID playerUuid) {
+    public static String checkPlayer(UUID playerUuid, String brand) {
         if (!OsmiumConfig.brandEnforcementEnabled) return null;
 
         boolean hasHandshake = handshakeCompleted.contains(playerUuid);
         Set<String> mods = pendingClients.getOrDefault(playerUuid, Collections.emptySet());
+        boolean isModdedClient = brand != null && !brand.isEmpty()
+                && !"vanilla".equalsIgnoreCase(brand)
+                && !"Osmium".equalsIgnoreCase(brand); // our own brand shouldn't count
 
         // In strict mode, all clients must have the HandShaker mod
         if ("strict".equalsIgnoreCase(OsmiumConfig.brandEnforcementMode) && !hasHandshake) {
             return OsmiumConfig.brandEnforcementKickMessage;
         }
 
-        // Check required mods — applies in BOTH strict and vanilla modes
+        // In vanilla mode, modded clients without HandShaker get kicked
+        // Vanilla clients are completely ignored
+        if ("vanilla".equalsIgnoreCase(OsmiumConfig.brandEnforcementMode) && isModdedClient && !hasHandshake) {
+            return OsmiumConfig.brandEnforcementKickMessage;
+        }
+
+        // Check required mods — only for clients that sent a HandShaker payload
         List<String> requiredMods = OsmiumConfig.brandEnforcementRequiredMods;
-        if (!requiredMods.isEmpty()) {
-            // In vanilla mode, skip required-mod check if client has no handshake
-            // (they can't report mods they don't know about)
-            // BUT if hand-shaker itself is required, vanilla clients get kicked
-            if (!hasHandshake) {
-                for (String required : requiredMods) {
-                    if ("hand-shaker".equalsIgnoreCase(required)) {
-                        return OsmiumConfig.brandEnforcementKickMessage;
-                    }
+        if (!requiredMods.isEmpty() && hasHandshake) {
+            Set<String> missing = new LinkedHashSet<>();
+            for (String required : requiredMods) {
+                if (!mods.contains(required.toLowerCase(Locale.ROOT))) {
+                    missing.add(required);
                 }
-            } else {
-                Set<String> missing = new LinkedHashSet<>();
-                for (String required : requiredMods) {
-                    if (!mods.contains(required.toLowerCase(Locale.ROOT))) {
-                        missing.add(required);
-                    }
-                }
-                if (!missing.isEmpty()) {
-                    return OsmiumConfig.brandEnforcementKickMessage
-                            .replace("{mods}", String.join(", ", missing));
-                }
+            }
+            if (!missing.isEmpty()) {
+                return OsmiumConfig.brandEnforcementKickMessage
+                        .replace("{mods}", String.join(", ", missing));
             }
         }
 
