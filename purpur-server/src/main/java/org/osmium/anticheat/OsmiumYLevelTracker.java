@@ -14,15 +14,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Resends chunks when the player moves vertically near the hidden zone.
+ * Resends chunks when the player moves near the hidden zone.
  *
- * Key design decisions:
- * - Only resend on VERTICAL movement (section Y change). Horizontal movement
- *   doesn't need resends because new chunks sent by the server already have
- *   the correct proximity check applied at send time.
- * - The player's own chunk (and immediate neighbors) are resent IMMEDIATELY
- *   when their section Y changes, preventing fall damage from stale data.
- * - Surrounding chunks are queued and drained at a limited rate.
+ * - Section Y change: immediate 3x3 resend + queue surrounding
+ * - Chunk XZ change while near zone: immediate 3x3 resend only (no queue)
+ * - Same chunk/section: no resend
  */
 public class OsmiumYLevelTracker {
 
@@ -31,7 +27,7 @@ public class OsmiumYLevelTracker {
     private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
 
     private static class PlayerState {
-        int sectionY;
+        int chunkX, chunkZ, sectionY;
         boolean initialized;
         final LongArrayFIFOQueue resendQueue = new LongArrayFIFOQueue();
     }
@@ -42,49 +38,47 @@ public class OsmiumYLevelTracker {
         UUID uuid = player.getUUID();
         PlayerState state = states.computeIfAbsent(uuid, k -> new PlayerState());
 
-        // Drain queued surrounding chunks
+        // Always drain queued chunks
         drainQueue(player, state);
 
+        int chunkX = player.blockPosition().getX() >> 4;
+        int chunkZ = player.blockPosition().getZ() >> 4;
         int sectionY = player.blockPosition().getY() >> 4;
 
         if (!state.initialized) {
+            state.chunkX = chunkX;
+            state.chunkZ = chunkZ;
             state.sectionY = sectionY;
             state.initialized = true;
             return;
         }
 
-        // Only act on vertical section changes
-        if (sectionY == state.sectionY) return;
+        boolean chunkChanged = chunkX != state.chunkX || chunkZ != state.chunkZ;
+        boolean sectionYChanged = sectionY != state.sectionY;
 
-        int oldSectionY = state.sectionY;
-        state.sectionY = sectionY;
+        if (!chunkChanged && !sectionYChanged) return;
 
         int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
 
-        boolean wasNear = isNearHiddenZone(oldSectionY, thresholdSection, proximityRadius);
+        boolean wasNear = isNearHiddenZone(state.sectionY, thresholdSection, proximityRadius);
         boolean isNear = isNearHiddenZone(sectionY, thresholdSection, proximityRadius);
+
+        state.chunkX = chunkX;
+        state.chunkZ = chunkZ;
+        state.sectionY = sectionY;
 
         // Only resend if the player is near or was near the hidden zone
         if (!wasNear && !isNear) return;
 
-        ServerLevel level = player.level();
-        int chunkX = player.blockPosition().getX() >> 4;
-        int chunkZ = player.blockPosition().getZ() >> 4;
+        // Immediate 3x3 resend around the player
+        resendImmediate(player, chunkX, chunkZ);
 
-        // IMMEDIATE: resend the player's chunk and direct neighbors (3x3)
-        // This prevents fall damage from stale hidden blocks
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX + dx, chunkZ + dz);
-                if (chunk != null) {
-                    PlayerChunkSender.sendChunk(player.connection, level, chunk);
-                }
-            }
+        // Only queue surrounding chunks for vertical movement (expensive)
+        // Horizontal-only movement just needs the 3x3
+        if (sectionYChanged) {
+            queueSurroundingChunks(player, state, chunkX, chunkZ, proximityRadius);
         }
-
-        // QUEUED: surrounding chunks beyond the 3x3 that might have boundary changes
-        queueSurroundingChunks(player, state, chunkX, chunkZ, proximityRadius);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
@@ -95,6 +89,18 @@ public class OsmiumYLevelTracker {
         int hiddenTopBlockY = (thresholdSection << 4) - 1;
         int playerBlockY = playerSectionY << 4;
         return playerBlockY <= hiddenTopBlockY + proximityRadius;
+    }
+
+    private static void resendImmediate(ServerPlayer player, int chunkX, int chunkZ) {
+        ServerLevel level = player.level();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX + dx, chunkZ + dz);
+                if (chunk != null) {
+                    PlayerChunkSender.sendChunk(player.connection, level, chunk);
+                }
+            }
+        }
     }
 
     private static void queueSurroundingChunks(ServerPlayer player, PlayerState state,
@@ -115,10 +121,7 @@ public class OsmiumYLevelTracker {
             int dx = Math.abs(cx - playerChunkX);
             int dz = Math.abs(cz - playerChunkZ);
 
-            // Skip the 3x3 we already sent immediately
             if (dx <= 1 && dz <= 1) continue;
-
-            // Only queue chunks within range
             if (dx > outerChunkRadius || dz > outerChunkRadius) continue;
 
             state.resendQueue.enqueue(chunkKey);
