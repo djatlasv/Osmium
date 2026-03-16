@@ -58,11 +58,12 @@ public class OsmiumBrandEnforcement {
                 }
             }
 
-            // Try to decode nonce (3rd field) and fingerprint (4th field)
+            // Skip nonce (3rd field) to get fingerprint (4th field)
             int nonceOffset = varIntStringOffset(data, offset);
+            int fingerprintOffset = varIntStringOffset(data, nonceOffset);
             String fingerprint = null;
-            if (nonceOffset < data.length) {
-                fingerprint = decodeVarIntString(data, nonceOffset);
+            if (fingerprintOffset < data.length) {
+                fingerprint = decodeVarIntString(data, fingerprintOffset);
             }
 
             // Parse comma-separated mod IDs
@@ -141,6 +142,10 @@ public class OsmiumBrandEnforcement {
                 }
 
                 String brand = player.connection.playerBrand;
+                boolean hs = handshakeCompleted.contains(uuid);
+                Bukkit.getLogger().info("[Osmium] Brand check for " + player.getPlainTextName()
+                        + ": brand=" + brand + ", handshake=" + hs
+                        + ", mods=" + pendingClients.getOrDefault(uuid, java.util.Collections.emptySet()));
                 String kickMsg = checkPlayer(uuid, brand);
                 if (kickMsg != null) {
                     OsmiumDiscordWebhook.sendBrandKick(player.getPlainTextName(), uuid, kickMsg); // Osmium - discord webhook

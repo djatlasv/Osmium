@@ -113,7 +113,10 @@ public class OsmiumConfig {
 
         if (oldVersion < 3) {
             // v2 -> v3: added blacklist-kick-message
-            // New key will be added automatically by readConfig via addDefault
+            if (!config.contains("brand-enforcement.blacklist-kick-message")) {
+                config.set("brand-enforcement.blacklist-kick-message",
+                        "You have been kicked for using a blacklisted mod: {mods}");
+            }
         }
     }
 
