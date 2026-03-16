@@ -203,7 +203,7 @@ public class OsmiumBrandEnforcement {
                 }
             }
             if (!found.isEmpty()) {
-                return OsmiumConfig.brandEnforcementKickMessage
+                return OsmiumConfig.brandEnforcementBlacklistKickMessage
                         .replace("{mods}", String.join(", ", found));
             }
         }

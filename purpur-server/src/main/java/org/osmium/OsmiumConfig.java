@@ -32,7 +32,8 @@ public class OsmiumConfig {
             + "Enforces client mod rules using the HandShaker protocol at the NMS level.\n"
             + "  enabled: master toggle\n"
             + "  mode: 'strict' requires all clients to have HandShaker, 'vanilla' allows vanilla clients\n"
-            + "  kick-message: message shown when a player is kicked for mod violations\n"
+            + "  kick-message: message shown when a player is kicked for missing HandShaker or required mods\n"
+            + "  blacklist-kick-message: message shown when kicked for a blacklisted mod — {mods} = detected mods\n"
             + "  check-delay-ticks: ticks to wait for HandShaker payload before checking (100 = 5 seconds)\n"
             + "  required-mods: mod IDs that must be installed (e.g. [hand-shaker])\n"
             + "  blacklisted-mods: mod IDs that trigger a kick (e.g. [wurst, meteor-client])\n"
@@ -61,7 +62,7 @@ public class OsmiumConfig {
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
-    public static int version = 2;
+    public static int version = 3;
 
     public static void init(File configFile) {
         CONFIG_FILE = configFile;
@@ -146,6 +147,7 @@ public class OsmiumConfig {
     public static boolean brandEnforcementEnabled = false;
     public static String brandEnforcementMode = "vanilla";
     public static String brandEnforcementKickMessage = "You must use the HandShaker mod. Get it at: discord.gg/yourserver";
+    public static String brandEnforcementBlacklistKickMessage = "You have been kicked for using a blacklisted mod: {mods}";
     public static int brandEnforcementCheckDelayTicks = 100;
     public static List<String> brandEnforcementRequiredMods = List.of();
     public static List<String> brandEnforcementBlacklistedMods = List.of();
@@ -157,6 +159,9 @@ public class OsmiumConfig {
         brandEnforcementKickMessage = config.getString("brand-enforcement.kick-message",
                 "You must use the HandShaker mod. Get it at: discord.gg/yourserver");
         config.addDefault("brand-enforcement.kick-message", brandEnforcementKickMessage);
+        brandEnforcementBlacklistKickMessage = config.getString("brand-enforcement.blacklist-kick-message",
+                "You have been kicked for using a blacklisted mod: {mods}");
+        config.addDefault("brand-enforcement.blacklist-kick-message", brandEnforcementBlacklistKickMessage);
         brandEnforcementCheckDelayTicks = getInt("brand-enforcement.check-delay-ticks", 100);
         brandEnforcementRequiredMods = config.getStringList("brand-enforcement.required-mods");
         config.addDefault("brand-enforcement.required-mods", List.of());
