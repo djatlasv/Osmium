@@ -14,20 +14,18 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Resends chunks when the player moves near the hidden zone.
- *
- * - Section Y change: immediate 3x3 resend + queue surrounding
- * - Chunk XZ change while near zone: immediate 3x3 resend only (no queue)
- * - Same chunk/section: no resend
+ * Resends only chunks whose hidden/revealed status actually changed when
+ * the player moves. Instead of blasting the 3x3 or all nearby chunks,
+ * computes which chunks crossed the proximity boundary and resends only those.
  */
 public class OsmiumYLevelTracker {
 
-    private static final int QUEUED_CHUNKS_PER_TICK = 8;
+    private static final int QUEUED_CHUNKS_PER_TICK = 10;
 
     private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
 
     private static class PlayerState {
-        int chunkX, chunkZ, sectionY;
+        int blockX, blockY, blockZ;
         boolean initialized;
         final LongArrayFIFOQueue resendQueue = new LongArrayFIFOQueue();
     }
@@ -38,47 +36,49 @@ public class OsmiumYLevelTracker {
         UUID uuid = player.getUUID();
         PlayerState state = states.computeIfAbsent(uuid, k -> new PlayerState());
 
-        // Always drain queued chunks
         drainQueue(player, state);
 
-        int chunkX = player.blockPosition().getX() >> 4;
-        int chunkZ = player.blockPosition().getZ() >> 4;
-        int sectionY = player.blockPosition().getY() >> 4;
+        int blockX = player.blockPosition().getX();
+        int blockY = player.blockPosition().getY();
+        int blockZ = player.blockPosition().getZ();
 
         if (!state.initialized) {
-            state.chunkX = chunkX;
-            state.chunkZ = chunkZ;
-            state.sectionY = sectionY;
+            state.blockX = blockX;
+            state.blockY = blockY;
+            state.blockZ = blockZ;
             state.initialized = true;
             return;
         }
 
-        boolean chunkChanged = chunkX != state.chunkX || chunkZ != state.chunkZ;
-        boolean sectionYChanged = sectionY != state.sectionY;
+        // Only act when the player enters a new chunk or section
+        boolean chunkChanged = (blockX >> 4) != (state.blockX >> 4) || (blockZ >> 4) != (state.blockZ >> 4);
+        boolean sectionYChanged = (blockY >> 4) != (state.blockY >> 4);
 
-        if (!chunkChanged && !sectionYChanged) return;
+        if (!chunkChanged && !sectionYChanged) {
+            state.blockX = blockX;
+            state.blockY = blockY;
+            state.blockZ = blockZ;
+            return;
+        }
 
         int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
 
-        boolean wasNear = isNearHiddenZone(state.sectionY, thresholdSection, proximityRadius);
-        boolean isNear = isNearHiddenZone(sectionY, thresholdSection, proximityRadius);
+        boolean wasNear = isNearHiddenZone(state.blockY >> 4, thresholdSection, proximityRadius);
+        boolean isNear = isNearHiddenZone(blockY >> 4, thresholdSection, proximityRadius);
 
-        state.chunkX = chunkX;
-        state.chunkZ = chunkZ;
-        state.sectionY = sectionY;
+        int oldX = state.blockX;
+        int oldY = state.blockY;
+        int oldZ = state.blockZ;
 
-        // Only resend if the player is near or was near the hidden zone
+        state.blockX = blockX;
+        state.blockY = blockY;
+        state.blockZ = blockZ;
+
         if (!wasNear && !isNear) return;
 
-        // Immediate 3x3 resend around the player
-        resendImmediate(player, chunkX, chunkZ);
-
-        // Only queue surrounding chunks for vertical movement (expensive)
-        // Horizontal-only movement just needs the 3x3
-        if (sectionYChanged) {
-            queueSurroundingChunks(player, state, chunkX, chunkZ, proximityRadius);
-        }
+        // Find chunks whose proximity status changed and queue them
+        queueChangedChunks(player, state, oldX, oldY, oldZ, blockX, blockY, blockZ, proximityRadius);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
@@ -91,26 +91,30 @@ public class OsmiumYLevelTracker {
         return playerBlockY <= hiddenTopBlockY + proximityRadius;
     }
 
-    private static void resendImmediate(ServerPlayer player, int chunkX, int chunkZ) {
-        ServerLevel level = player.level();
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX + dx, chunkZ + dz);
-                if (chunk != null) {
-                    PlayerChunkSender.sendChunk(player.connection, level, chunk);
-                }
-            }
-        }
-    }
-
-    private static void queueSurroundingChunks(ServerPlayer player, PlayerState state,
-                                                int playerChunkX, int playerChunkZ,
-                                                int proximityRadius) {
+    /**
+     * For each sent chunk, check if any section below the threshold crossed
+     * the proximity boundary (was hidden, now revealed, or vice versa).
+     * Only queue chunks where the status actually changed.
+     */
+    private static void queueChangedChunks(ServerPlayer player, PlayerState state,
+                                            int oldX, int oldY, int oldZ,
+                                            int newX, int newY, int newZ,
+                                            int proximityRadius) {
         RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader =
                 ((ca.spottedleaf.moonrise.patches.chunk_system.player.ChunkSystemServerPlayer) player).moonrise$getChunkLoader();
         LongOpenHashSet sentChunks = loader.getSentChunksRaw();
 
+        int proxSq = proximityRadius * proximityRadius;
+        int thresholdY = OsmiumConfig.chunkHidingYThreshold;
+        // Check at the top of the hidden zone — the boundary that matters most
+        int checkY = thresholdY - 8; // middle of the top hidden section
+
+        // Only consider chunks within possible range of the sphere
         int outerChunkRadius = (proximityRadius >> 4) + 2;
+        int newChunkX = newX >> 4;
+        int newChunkZ = newZ >> 4;
+        int oldChunkX = oldX >> 4;
+        int oldChunkZ = oldZ >> 4;
 
         state.resendQueue.clear();
 
@@ -118,13 +122,38 @@ public class OsmiumYLevelTracker {
             int cx = (int) chunkKey;
             int cz = (int) (chunkKey >> 32);
 
-            int dx = Math.abs(cx - playerChunkX);
-            int dz = Math.abs(cz - playerChunkZ);
+            // Quick range filter — skip chunks far from both positions
+            int dxNew = Math.abs(cx - newChunkX);
+            int dzNew = Math.abs(cz - newChunkZ);
+            int dxOld = Math.abs(cx - oldChunkX);
+            int dzOld = Math.abs(cz - oldChunkZ);
 
-            if (dx <= 1 && dz <= 1) continue;
-            if (dx > outerChunkRadius || dz > outerChunkRadius) continue;
+            if ((dxNew > outerChunkRadius || dzNew > outerChunkRadius)
+             && (dxOld > outerChunkRadius || dzOld > outerChunkRadius)) continue;
 
-            state.resendQueue.enqueue(chunkKey);
+            // Compute XZ distance to nearest block in chunk from old and new positions
+            int chunkMinX = cx << 4;
+            int chunkMinZ = cz << 4;
+
+            int nearXold = Math.max(chunkMinX, Math.min(oldX, chunkMinX + 15));
+            int nearZold = Math.max(chunkMinZ, Math.min(oldZ, chunkMinZ + 15));
+            int nearXnew = Math.max(chunkMinX, Math.min(newX, chunkMinX + 15));
+            int nearZnew = Math.max(chunkMinZ, Math.min(newZ, chunkMinZ + 15));
+
+            // 3D distance to the check point (top of hidden zone)
+            int dyOld = oldY - checkY;
+            int dyNew = newY - checkY;
+
+            int distSqOld = (oldX - nearXold) * (oldX - nearXold) + dyOld * dyOld + (oldZ - nearZold) * (oldZ - nearZold);
+            int distSqNew = (newX - nearXnew) * (newX - nearXnew) + dyNew * dyNew + (newZ - nearZnew) * (newZ - nearZnew);
+
+            boolean wasRevealed = distSqOld <= proxSq;
+            boolean nowRevealed = distSqNew <= proxSq;
+
+            // Only resend if status changed
+            if (wasRevealed != nowRevealed) {
+                state.resendQueue.enqueue(chunkKey);
+            }
         }
     }
 
