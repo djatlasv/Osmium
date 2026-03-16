@@ -127,9 +127,13 @@ public class OsmiumDiscordWebhook {
         EXECUTOR.submit(() -> doSend(title, description, color, null));
     }
 
-    /** Synchronous send — used for server stop so the message gets out before JVM exits. */
+    /** Semi-async send — used for server stop. Sends on the executor thread with a short wait. */
     private static void sendEmbedSync(String title, String description, int color, String content) {
-        doSend(title, description, color, content);
+        try {
+            EXECUTOR.submit(() -> doSend(title, description, color, content)).get(3, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            // Timed out or failed — don't block shutdown
+        }
     }
 
     private static void doSend(String title, String description, int color, String content) {
