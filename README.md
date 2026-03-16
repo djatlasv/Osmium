@@ -19,7 +19,7 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 **Chunk hiding** replaces all blocks below a configurable Y level with a fake block (default: deepslate) in the chunk packet before it leaves the server. Players within a configurable proximity radius see the real blocks, and the fake blocks reappear when they move away. Runs as a second pass on top of Paper's existing anti-xray engine. The replacement block is configurable — use any vanilla block name. Optionally hides entities (mobs, items, minecarts, etc.) below the threshold from distant players too.
 
-**Alt detection and ban** tracks player associations using both IP addresses and hardware fingerprints for alt account detection. IP-to-UUID mappings are persisted to `osmium-ips.json`, and device fingerprints (sent via HandShaker) are stored in `osmium-fingerprints.json`. Fingerprint-based tracking identifies individual devices even on shared networks, avoiding false positives for players on the same WiFi.
+**Alt detection and ban** tracks player associations using both IP addresses and hardware fingerprints for alt account detection. IP-to-UUID mappings are persisted to `osmium-ips.json`, and device fingerprints (sent via HandShaker) are stored in `osmium-fingerprints.json`. Fingerprint-based tracking identifies individual devices even on shared networks, avoiding false positives for players on the same WiFi. **Requires `brand-enforcement.enabled: true`** — the fingerprint is received through the HandShaker protocol, so brand enforcement must be on for fingerprint-based alt detection to work. IP-based alt detection works regardless.
 
 **Native chat filter** replaces chat filter plugins with a built-in word list. Supports exact (case-insensitive) and regex patterns via `osmium-words.json`. Configurable actions: block, kick, or mute.
 
@@ -52,7 +52,7 @@ brand-enforcement:
   blacklisted-mods: []       # e.g. [wurst, meteor-client]
 
 alt-ban:
-  enabled: false
+  enabled: false             # requires brand-enforcement.enabled for fingerprint-based detection
   kick-message: "You are banned (alt account detected)."
 
 chat-filter:
