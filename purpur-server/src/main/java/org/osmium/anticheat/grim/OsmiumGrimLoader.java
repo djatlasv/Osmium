@@ -51,8 +51,10 @@ public class OsmiumGrimLoader {
         }
     }
 
-    /** No-op — GrimAC starts itself as a plugin via Paper's loader. */
-    public static void start() {}
+    /** Sync webhook URL on every startup so GrimAC always uses Osmium's URL. */
+    public static void start() {
+        syncWebhookUrl();
+    }
 
     /** No-op — GrimAC stops itself as a plugin via Paper's loader. */
     public static void stop() {}
@@ -135,8 +137,37 @@ public class OsmiumGrimLoader {
 
         LOGGER.info("GrimAC " + versionName + " installed. Restart the server to load it.");
 
-        // Extract optimized default configs
+        // Extract optimized default configs and sync webhook URL
         extractDefaultConfigs();
+        syncWebhookUrl();
+    }
+
+    /**
+     * Syncs Osmium's discord-webhook.url into GrimAC's discord.yml so the
+     * user only has to configure the webhook URL in one place (osmium.yml).
+     */
+    private static void syncWebhookUrl() {
+        try {
+            String osmiumUrl = org.osmium.OsmiumConfig.discordWebhookUrl;
+            if (osmiumUrl == null || osmiumUrl.isBlank()) return;
+
+            File discordYml = new File("plugins/GrimAC/discord.yml");
+            if (!discordYml.exists()) return;
+
+            String content = new String(java.nio.file.Files.readAllBytes(discordYml.toPath()));
+
+            // Replace the webhook line with Osmium's URL and enable it
+            String updated = content
+                    .replaceAll("(?m)^webhook:.*$", "webhook: \"" + osmiumUrl.replace("\"", "\\\"") + "\"")
+                    .replaceAll("(?m)^enabled:.*$", "enabled: " + org.osmium.OsmiumConfig.discordWebhookEnabled);
+
+            if (!updated.equals(content)) {
+                java.nio.file.Files.write(discordYml.toPath(), updated.getBytes());
+                LOGGER.info("Synced Osmium webhook URL to GrimAC discord.yml");
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Could not sync webhook URL to GrimAC", e);
+        }
     }
 
     /**
