@@ -69,13 +69,16 @@ public class OsmiumYLevelTracker {
 
         if (!wasNear && !isNear) return;
 
-        // Immediate 3x3 on any movement — prevents fall damage and stale blocks
-        resendImmediate(player, chunkX, chunkZ);
+        ServerLevel level = player.level();
 
-        // Queue boundary chunks only on Y changes (the expensive part)
-        if (sectionYChanged) {
-            queueBoundaryChunks(player, state, chunkX, chunkZ, proximityRadius);
+        // Immediate: resend ONLY the player's own chunk (1 packet, no jitter)
+        LevelChunk ownChunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
+        if (ownChunk != null) {
+            PlayerChunkSender.sendChunk(player.connection, level, ownChunk);
         }
+
+        // Queue the 8 neighbors + boundary chunks — drained smoothly across ticks
+        queueNearbyChunks(player, state, chunkX, chunkZ, proximityRadius, sectionYChanged);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
@@ -88,41 +91,40 @@ public class OsmiumYLevelTracker {
         return playerBlockY <= hiddenTopBlockY + proximityRadius;
     }
 
-    private static void resendImmediate(ServerPlayer player, int chunkX, int chunkZ) {
-        ServerLevel level = player.level();
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX + dx, chunkZ + dz);
-                if (chunk != null) {
-                    PlayerChunkSender.sendChunk(player.connection, level, chunk);
-                }
-            }
-        }
-    }
-
-    private static void queueBoundaryChunks(ServerPlayer player, PlayerState state,
-                                             int playerChunkX, int playerChunkZ,
-                                             int proximityRadius) {
-        RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader =
-                ((ca.spottedleaf.moonrise.patches.chunk_system.player.ChunkSystemServerPlayer) player).moonrise$getChunkLoader();
-        LongOpenHashSet sentChunks = loader.getSentChunksRaw();
-
-        int outerChunkRadius = (proximityRadius >> 4) + 2;
-
+    private static void queueNearbyChunks(ServerPlayer player, PlayerState state,
+                                          int playerChunkX, int playerChunkZ,
+                                          int proximityRadius, boolean includeOuter) {
         state.resendQueue.clear();
 
-        for (long chunkKey : sentChunks) {
-            int cx = (int) chunkKey;
-            int cz = (int) (chunkKey >> 32);
+        // Always queue the 8 neighbors (player's own chunk sent immediately above)
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                state.resendQueue.enqueue(
+                    ((long)(playerChunkX + dx) & 0xFFFFFFFFL) | (((long)(playerChunkZ + dz) & 0xFFFFFFFFL) << 32));
+            }
+        }
 
-            int dx = Math.abs(cx - playerChunkX);
-            int dz = Math.abs(cz - playerChunkZ);
+        // On Y changes, also queue boundary chunks beyond the 3x3
+        if (includeOuter) {
+            RegionizedPlayerChunkLoader.PlayerChunkLoaderData loader =
+                    ((ca.spottedleaf.moonrise.patches.chunk_system.player.ChunkSystemServerPlayer) player).moonrise$getChunkLoader();
+            LongOpenHashSet sentChunks = loader.getSentChunksRaw();
 
-            // Skip the 3x3 already sent immediately
-            if (dx <= 1 && dz <= 1) continue;
-            if (dx > outerChunkRadius || dz > outerChunkRadius) continue;
+            int outerChunkRadius = (proximityRadius >> 4) + 2;
 
-            state.resendQueue.enqueue(chunkKey);
+            for (long chunkKey : sentChunks) {
+                int cx = (int) chunkKey;
+                int cz = (int) (chunkKey >> 32);
+
+                int dx = Math.abs(cx - playerChunkX);
+                int dz = Math.abs(cz - playerChunkZ);
+
+                if (dx <= 1 && dz <= 1) continue; // already queued above
+                if (dx > outerChunkRadius || dz > outerChunkRadius) continue;
+
+                state.resendQueue.enqueue(chunkKey);
+            }
         }
     }
 
