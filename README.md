@@ -17,7 +17,7 @@ The result is less overhead, no plugin conflicts, and obfuscation that runs in t
 
 ## Features
 
-**Chunk hiding** replaces all blocks below a configurable Y level with a fake block (default: deepslate) in the chunk packet before it leaves the server. Players within a configurable proximity radius see the real blocks, and the fake blocks reappear when they move away. Runs as a second pass on top of Paper's existing anti-xray engine. The replacement block is configurable — use any vanilla block name.
+**Chunk hiding** replaces all blocks below a configurable Y level with a fake block (default: deepslate) in the chunk packet before it leaves the server. Players within a configurable proximity radius see the real blocks, and the fake blocks reappear when they move away. Runs as a second pass on top of Paper's existing anti-xray engine. The replacement block is configurable — use any vanilla block name. Optionally hides entities (mobs, items, minecarts, etc.) below the threshold from distant players too.
 
 **Alt detection and ban** tracks player associations using both IP addresses and hardware fingerprints for alt account detection. IP-to-UUID mappings are persisted to `osmium-ips.json`, and device fingerprints (sent via HandShaker) are stored in `osmium-fingerprints.json`. Fingerprint-based tracking identifies individual devices even on shared networks, avoiding false positives for players on the same WiFi.
 
@@ -41,6 +41,7 @@ chunk-hiding:
   y-threshold: 0           # hide all blocks below this Y level
   block: deepslate          # replacement block (any vanilla block name)
   proximity-radius: 32      # blocks around the player where real blocks are revealed
+  hide-entities: true        # also hide entities (mobs, items, etc.) below the threshold
 
 brand-enforcement:
   enabled: false

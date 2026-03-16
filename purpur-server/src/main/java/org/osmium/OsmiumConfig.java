@@ -25,6 +25,7 @@ public class OsmiumConfig {
             + "  enabled: master toggle\n"
             + "  y-threshold: blocks below this Y level are hidden (0 = hide everything below sea level)\n"
             + "  block: the block to replace hidden blocks with (e.g. deepslate, stone, netherrack)\n"
+            + "  hide-entities: also hide entities (mobs, items, etc.) below the threshold from distant players\n"
             + "  proximity-radius: how many blocks around the player to reveal real blocks\n"
             + "\n"
             + "--- brand-enforcement ---\n"
@@ -127,6 +128,7 @@ public class OsmiumConfig {
     public static int chunkHidingYThreshold = 0;
     public static String chunkHidingBlock = "deepslate";
     public static int chunkHidingProximityRadius = 32;
+    public static boolean chunkHidingHideEntities = true;
 
     private static void chunkHiding() {
         chunkHidingEnabled = getBoolean("chunk-hiding.enabled", false);
@@ -134,6 +136,7 @@ public class OsmiumConfig {
         chunkHidingBlock = config.getString("chunk-hiding.block", "deepslate");
         config.addDefault("chunk-hiding.block", chunkHidingBlock);
         chunkHidingProximityRadius = getInt("chunk-hiding.proximity-radius", 32);
+        chunkHidingHideEntities = getBoolean("chunk-hiding.hide-entities", true);
     }
 
     // -------------------------------------------------------------------------
