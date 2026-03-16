@@ -25,9 +25,13 @@ public class OsmiumUpdateChecker {
     public static void checkAsync() {
         Thread.ofVirtual().name("Osmium-UpdateChecker").start(() -> {
             try {
+                Bukkit.getLogger().info("[Osmium] Checking for updates...");
                 check();
             } catch (Exception e) {
-                Bukkit.getLogger().log(Level.FINE, "[Osmium] Update check failed", e);
+                Bukkit.getLogger().warning("[Osmium] Update check failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                if (e.getCause() != null) {
+                    Bukkit.getLogger().warning("[Osmium]   Caused by: " + e.getCause());
+                }
             }
         });
     }
@@ -35,10 +39,13 @@ public class OsmiumUpdateChecker {
     private static void check() throws Exception {
         // Get running version from server brand string (contains commit hash)
         String serverVersion = Bukkit.getVersion(); // e.g. "1.21.11-DEV-osmium/main@ca2ea07 (...)"
+        Bukkit.getLogger().info("[Osmium] Server version string: " + serverVersion);
         String runningHash = extractHash(serverVersion);
         if (runningHash == null) {
-            return; // can't determine running version
+            Bukkit.getLogger().warning("[Osmium] Could not extract commit hash from version string");
+            return;
         }
+        Bukkit.getLogger().info("[Osmium] Running commit: " + runningHash);
 
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.ALWAYS)
@@ -52,7 +59,11 @@ public class OsmiumUpdateChecker {
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) return;
+        Bukkit.getLogger().info("[Osmium] GitHub API response: HTTP " + response.statusCode());
+        if (response.statusCode() != 200) {
+            Bukkit.getLogger().warning("[Osmium] GitHub API returned non-200: " + response.body().substring(0, Math.min(200, response.body().length())));
+            return;
+        }
 
         JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
         String latestHash = json.get("sha").getAsString();
