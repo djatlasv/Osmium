@@ -183,6 +183,12 @@ public class OsmiumBrandEnforcement {
             return OsmiumConfig.brandEnforcementKickMessage;
         }
 
+        // Require Osmium's HandShaker fork (sends fingerprint) — reject stock HandShaker
+        if (OsmiumConfig.brandEnforcementRequireOsmiumHandshaker && hasHandshake
+                && !playerFingerprints.containsKey(playerUuid)) {
+            return OsmiumConfig.brandEnforcementKickMessage;
+        }
+
         // Check required mods — only for clients that sent a HandShaker payload
         List<String> requiredMods = OsmiumConfig.brandEnforcementRequiredMods;
         if (!requiredMods.isEmpty() && hasHandshake) {
