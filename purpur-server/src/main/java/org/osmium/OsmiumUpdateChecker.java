@@ -37,15 +37,14 @@ public class OsmiumUpdateChecker {
     }
 
     private static void check() throws Exception {
-        // Get running version from server brand string (contains commit hash)
-        String serverVersion = Bukkit.getVersion(); // e.g. "1.21.11-DEV-osmium/main@ca2ea07 (...)"
-        Bukkit.getLogger().info("[Osmium] Server version string: " + serverVersion);
-        String runningHash = extractHash(serverVersion);
+        // Get running commit hash from Paper's ServerBuildInfo
+        io.papermc.paper.ServerBuildInfo buildInfo = io.papermc.paper.ServerBuildInfo.buildInfo();
+        String runningHash = buildInfo.gitCommit().orElse(null);
         if (runningHash == null) {
-            Bukkit.getLogger().warning("[Osmium] Could not extract commit hash from version string");
+            Bukkit.getLogger().warning("[Osmium] Could not determine running commit hash");
             return;
         }
-        Bukkit.getLogger().info("[Osmium] Running commit: " + runningHash);
+        Bukkit.getLogger().info("[Osmium] Running commit: " + runningHash.substring(0, 7));
 
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.ALWAYS)
@@ -68,23 +67,13 @@ public class OsmiumUpdateChecker {
         JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
         String latestHash = json.get("sha").getAsString();
         String shortLatest = latestHash.substring(0, 7);
-        String shortRunning = runningHash.length() >= 7 ? runningHash.substring(0, 7) : runningHash;
+        String shortRunning = runningHash.substring(0, Math.min(7, runningHash.length()));
 
-        if (latestHash.startsWith(runningHash) || runningHash.startsWith(shortLatest)) {
+        if (latestHash.startsWith(runningHash) || runningHash.startsWith(latestHash)) {
             Bukkit.getLogger().info("[Osmium] You are up to date! (" + shortRunning + ")");
         } else {
             Bukkit.getLogger().warning("[Osmium] Update available! Running: " + shortRunning + " | Latest: " + shortLatest);
             Bukkit.getLogger().warning("[Osmium] Download at: https://github.com/" + REPO);
         }
-    }
-
-    private static String extractHash(String version) {
-        // Format: "1.21.11-DEV-osmium/main@HASH (...)" or similar
-        int at = version.indexOf('@');
-        if (at == -1) return null;
-        int end = version.indexOf(' ', at);
-        if (end == -1) end = version.indexOf(')', at);
-        if (end == -1) end = version.length();
-        return version.substring(at + 1, end);
     }
 }
