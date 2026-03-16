@@ -56,6 +56,10 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             Blocks.ANDESITE.defaultBlockState(),
             Blocks.DIORITE.defaultBlockState(),
             Blocks.GRANITE.defaultBlockState(),
+            Blocks.CALCITE.defaultBlockState(),
+            Blocks.SMOOTH_BASALT.defaultBlockState(),
+            Blocks.AMETHYST_BLOCK.defaultBlockState(),
+            Blocks.BUDDING_AMETHYST.defaultBlockState(),
         };
     }
 
@@ -130,6 +134,15 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                         && state.isSolidRender()) {
                     return i;
                 }
+            } catch (Exception e) { continue; }
+        }
+
+        // Absolute last resort: ANY non-air block (even fluids, non-solid)
+        // Hides lava pools, amethyst clusters, etc. — better than leaving gaps
+        for (int i = 0; i < size; i++) {
+            try {
+                BlockState state = palette.valueFor(i);
+                if (state != null && !state.isAir()) return i;
             } catch (Exception e) { continue; }
         }
 
