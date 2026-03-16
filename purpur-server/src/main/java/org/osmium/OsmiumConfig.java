@@ -79,8 +79,42 @@ public class OsmiumConfig {
         config.options().header(HEADER);
         config.options().copyDefaults(true);
 
-        set("config-version", version);
+        // Run migrations if config is outdated
+        int oldVersion = config.getInt("config-version", 0);
+        if (oldVersion < version) {
+            migrate(oldVersion);
+            Bukkit.getLogger().info("[Osmium] Config migrated from v" + oldVersion + " to v" + version);
+        }
+
+        config.set("config-version", version);
         readConfig(OsmiumConfig.class, null);
+    }
+
+    /**
+     * Runs incremental migrations from oldVersion to current version.
+     * Each migration step handles one version bump, preserving user settings
+     * while adding new keys and removing obsolete ones.
+     */
+    private static void migrate(int oldVersion) {
+        if (oldVersion < 2) {
+            // v1 -> v2: merged chunk-hiding + y-level-hiding into one section
+            if (config.contains("y-level-hiding")) {
+                // Carry over y-level-hiding values if user had them set
+                if (config.getBoolean("y-level-hiding.enabled", false)) {
+                    config.set("chunk-hiding.enabled", true);
+                }
+                if (config.contains("y-level-hiding.threshold")) {
+                    config.set("chunk-hiding.y-threshold", config.getInt("y-level-hiding.threshold"));
+                }
+                config.set("y-level-hiding", null); // remove obsolete section
+            }
+            // Old chunk-hiding had no 'block' key — default will be added by readConfig
+        }
+
+        if (oldVersion < 3) {
+            // v2 -> v3: added blacklist-kick-message
+            // New key will be added automatically by readConfig via addDefault
+        }
     }
 
     static void readConfig(Class<?> clazz, Object instance) {
