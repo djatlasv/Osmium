@@ -1,0 +1,104 @@
+# GrimAC configuration — optimized for Osmium semi-vanilla SMP
+# Tuned to minimize false flags from Fabric/optimization mods
+# while still catching real cheats effectively.
+
+alerts:
+  print-to-console: true
+  proxy:
+    send: false
+    receive: false
+
+verbose:
+  print-to-console: false
+
+client-brand:
+  ignored-clients:
+    - "^vanilla$"
+    - "^fabric$"
+    - "^lunarclient:v\\d+\\.\\d+\\.\\d+-\\d{4}$"
+    - "^Feather Fabric$"
+
+spectators:
+  hide-regardless: false
+  allowed-worlds:
+    - ""
+
+max-transaction-time: 60
+cancel-duplicate-packet: true
+ignore-duplicate-packet-rotation: false
+
+# Movement prediction — tuned to reduce false flags from optimization mods
+Simulation:
+  setback-decay-multiplier: 0.999
+  threshold: 0.001
+  immediate-setback-threshold: 0.1
+  max-advantage: 0.1
+  max-ceiling: 0.7
+
+Phase:
+  setbackvl: 1
+  decay: 0.005
+
+AirLiquidPlace:
+  cancelvl: 0
+
+FabricatedPlace:
+  cancelvl: 5
+
+FarPlace:
+  cancelvl: 5
+
+PositionPlace:
+  cancelvl: 5
+
+RotationPlace:
+  cancelvl: 5
+
+NoSlowA:
+  threshold: 0.001
+  setbackvl: 10
+  decay: 0.05
+
+Knockback:
+  setback-decay-multiplier: 0.999
+  threshold: 0.001
+  immediate-setback-threshold: 0.1
+  max-advantage: 1
+  max-ceiling: 4
+
+Explosion:
+  threshold: 0.001
+  setbackvl: 3
+
+TimerA:
+  setbackvl: 10
+  drift: 120
+  ping-abuse-limit-threshold: 1000
+
+NegativeTimer:
+  drift: 1200
+
+TimerVehicle:
+  setbackvl: 10
+
+EntityControl:
+  setbackvl: 25
+
+Reach:
+  threshold: 0.0005
+  block-impossible-hits: true
+  # Disable post-packet for semi-vanilla — saves bandwidth, only useful for 1.8 PvP
+  enable-post-packet: false
+
+exploit:
+  allow-sprint-jumping-when-using-elytra: true
+  allow-building-on-ghostblocks: true
+  distance-to-check-if-ghostblocks: 2
+
+debug-pipeline-on-join: false
+experimental-checks: true
+packet-spam-threshold: 100
+max-ping-out-of-flying: 1000
+max-ping-firework-boost: 1000
+
+config-version: 9

@@ -134,5 +134,40 @@ public class OsmiumGrimLoader {
         }
 
         LOGGER.info("GrimAC " + versionName + " installed. Restart the server to load it.");
+
+        // Extract optimized default configs
+        extractDefaultConfigs();
+    }
+
+    /**
+     * Extracts Osmium's optimized GrimAC configs into plugins/GrimAC/
+     * on first install. Only writes files that don't already exist.
+     */
+    private static void extractDefaultConfigs() {
+        File grimConfigDir = new File("plugins/GrimAC");
+        grimConfigDir.mkdirs();
+
+        String[] configs = {"config.yml", "punishments.yml", "messages.yml", "discord.yml"};
+        for (String name : configs) {
+            File target = new File(grimConfigDir, name);
+            if (target.exists()) continue;
+
+            try (InputStream in = OsmiumGrimLoader.class.getResourceAsStream("/osmium-grim/" + name)) {
+                if (in == null) {
+                    LOGGER.warning("Missing bundled GrimAC config: " + name);
+                    continue;
+                }
+                try (FileOutputStream out = new FileOutputStream(target)) {
+                    byte[] buf = new byte[4096];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                }
+                LOGGER.info("Extracted GrimAC config: " + name);
+            } catch (java.io.IOException e) {
+                LOGGER.log(Level.WARNING, "Failed to extract GrimAC config: " + name, e);
+            }
+        }
     }
 }

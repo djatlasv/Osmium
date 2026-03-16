@@ -1,0 +1,18 @@
+# GrimAC Discord webhook — set your webhook URL below
+
+enabled: false
+webhook: ""
+embed-title: "**Anticheat Alert**"
+embed-color: "#E67E22"
+violation-content:
+  - "**%player% information:**"
+  - "> Client: %version%"
+  - "> Brand: %brand%"
+  - "> Ping: %ping%"
+  - " "
+  - "**Server information:**"
+  - "> TPS: %tps%"
+  - " "
+  - "**Anticheat information:**"
+  - "> Check: %check%"
+  - "> Violations: %violations%"
