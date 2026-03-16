@@ -26,8 +26,13 @@ public class OsmiumYLevelTracker {
 
     private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
 
+    // Minimum vertical block distance before triggering a Y resend.
+    // Prevents jumping at a section boundary from oscillating chunks.
+    private static final int Y_HYSTERESIS = 4;
+
     private static class PlayerState {
-        int chunkX, chunkZ, sectionY;
+        int chunkX, chunkZ, blockY;
+        int lastResendY; // the Y at which we last triggered a Y resend
         boolean initialized;
         final LongArrayFIFOQueue resendQueue = new LongArrayFIFOQueue();
     }
@@ -42,32 +47,40 @@ public class OsmiumYLevelTracker {
 
         int chunkX = player.blockPosition().getX() >> 4;
         int chunkZ = player.blockPosition().getZ() >> 4;
-        int sectionY = player.blockPosition().getY() >> 4;
+        int blockY = player.blockPosition().getY();
 
         if (!state.initialized) {
             state.chunkX = chunkX;
             state.chunkZ = chunkZ;
-            state.sectionY = sectionY;
+            state.blockY = blockY;
+            state.lastResendY = blockY;
             state.initialized = true;
             return;
         }
 
         boolean chunkChanged = chunkX != state.chunkX || chunkZ != state.chunkZ;
-        boolean sectionYChanged = sectionY != state.sectionY;
+        // Only trigger Y resend if moved far enough vertically from last resend
+        boolean yMovedEnough = Math.abs(blockY - state.lastResendY) >= Y_HYSTERESIS;
 
-        if (!chunkChanged && !sectionYChanged) return;
+        if (!chunkChanged && !yMovedEnough) {
+            state.blockY = blockY;
+            return;
+        }
 
         int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
 
-        boolean wasNear = isNearHiddenZone(state.sectionY, thresholdSection, proximityRadius);
-        boolean isNear = isNearHiddenZone(sectionY, thresholdSection, proximityRadius);
+        boolean wasNear = isNearHiddenZone(state.blockY >> 4, thresholdSection, proximityRadius);
+        boolean isNear = isNearHiddenZone(blockY >> 4, thresholdSection, proximityRadius);
 
         state.chunkX = chunkX;
         state.chunkZ = chunkZ;
-        state.sectionY = sectionY;
+        state.blockY = blockY;
 
         if (!wasNear && !isNear) return;
+
+        // Update last resend Y so hysteresis is relative to the last actual resend
+        if (yMovedEnough) state.lastResendY = blockY;
 
         ServerLevel level = player.level();
 
@@ -78,7 +91,7 @@ public class OsmiumYLevelTracker {
         }
 
         // Queue the 8 neighbors + boundary chunks — drained smoothly across ticks
-        queueNearbyChunks(player, state, chunkX, chunkZ, proximityRadius, sectionYChanged);
+        queueNearbyChunks(player, state, chunkX, chunkZ, proximityRadius, yMovedEnough);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
