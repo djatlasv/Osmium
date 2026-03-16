@@ -25,13 +25,8 @@ public class OsmiumUpdateChecker {
     public static void checkAsync() {
         Thread.ofVirtual().name("Osmium-UpdateChecker").start(() -> {
             try {
-                Bukkit.getLogger().info("[Osmium] Checking for updates...");
                 check();
-            } catch (Exception e) {
-                Bukkit.getLogger().warning("[Osmium] Update check failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-                if (e.getCause() != null) {
-                    Bukkit.getLogger().warning("[Osmium]   Caused by: " + e.getCause());
-                }
+            } catch (Exception ignored) {
             }
         });
     }
@@ -44,7 +39,6 @@ public class OsmiumUpdateChecker {
             Bukkit.getLogger().warning("[Osmium] Could not determine running commit hash");
             return;
         }
-        Bukkit.getLogger().info("[Osmium] Running commit: " + runningHash.substring(0, 7));
 
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.ALWAYS)
@@ -58,11 +52,7 @@ public class OsmiumUpdateChecker {
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        Bukkit.getLogger().info("[Osmium] GitHub API response: HTTP " + response.statusCode());
-        if (response.statusCode() != 200) {
-            Bukkit.getLogger().warning("[Osmium] GitHub API returned non-200: " + response.body().substring(0, Math.min(200, response.body().length())));
-            return;
-        }
+        if (response.statusCode() != 200) return;
 
         JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
         String latestHash = json.get("sha").getAsString();
