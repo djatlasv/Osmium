@@ -31,9 +31,13 @@ public class OsmiumYLevelTracker {
 
     private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
 
+    // Clear stale revealed state every 10 seconds to prevent chunks getting stuck
+    private static final int CLEAR_INTERVAL_TICKS = 200;
+
     private static class PlayerState {
         int chunkX, chunkZ, blockY;
         int lastResendY;
+        long lastClearTick;
         boolean initialized;
         // Tracks which chunks were last sent as "revealed" (real blocks visible)
         // If a chunk key is in this set, it was sent with proximity reveal.
@@ -49,6 +53,13 @@ public class OsmiumYLevelTracker {
         PlayerState state = states.computeIfAbsent(uuid, k -> new PlayerState());
 
         drainQueue(player, state);
+
+        // Periodically clear revealed state so stale entries don't prevent resends
+        long currentTick = player.level().getGameTime();
+        if (currentTick - state.lastClearTick >= CLEAR_INTERVAL_TICKS) {
+            state.lastClearTick = currentTick;
+            state.revealedChunks.clear();
+        }
 
         int chunkX = player.blockPosition().getX() >> 4;
         int chunkZ = player.blockPosition().getZ() >> 4;
