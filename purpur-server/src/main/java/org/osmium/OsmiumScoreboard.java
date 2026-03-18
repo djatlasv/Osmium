@@ -158,17 +158,22 @@ public class OsmiumScoreboard {
 
     private static String getBalance(org.bukkit.entity.Player player) {
         // Retry until economy is found — plugins may register late
-        if (economy == null) {
+        if (economy == null && !vaultChecked) {
             try {
-                Class<?> economyClass = Class.forName("net.milkbowl.vault.economy.Economy");
+                // Use Vault's own classloader to find the Economy class
+                org.bukkit.plugin.Plugin vaultPlugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Vault");
+                if (vaultPlugin == null) {
+                    vaultChecked = true;
+                    return "0.00";
+                }
+                Class<?> economyClass = Class.forName("net.milkbowl.vault.economy.Economy", true, vaultPlugin.getClass().getClassLoader());
                 org.bukkit.plugin.RegisteredServiceProvider<?> rsp =
                         org.bukkit.Bukkit.getServicesManager().getRegistration(economyClass);
                 if (rsp != null) {
                     economy = rsp.getProvider();
-                    getBalanceMethod = economyClass.getMethod("getBalance", org.bukkit.OfflinePlayer.class);
+                    getBalanceMethod = economy.getClass().getMethod("getBalance", org.bukkit.OfflinePlayer.class);
                 }
             } catch (ClassNotFoundException e) {
-                // Vault not installed — stop trying
                 vaultChecked = true;
             } catch (Exception ignored) {}
         }
