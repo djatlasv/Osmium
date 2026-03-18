@@ -38,28 +38,26 @@ public class OsmiumChatFilter {
         if (dataFile == null || !dataFile.exists()) {
             // Create default file with common filter patterns
             rawPatterns.addAll(List.of(
-                "regex:n+[i!1|l]+[gq9]+[gq9]*[e3]*[ra@]*s?",
-                "regex:f+[ua@]+[gq9]+[gq9]*[o0]*[t+]*s?",
-                "regex:r+[e3]+[t+]+[a@]+r+[d]+s?",
-                "regex:f+[u]+c+k+",
-                "regex:s+h+[i!1]+t+",
-                "regex:b+[i!1]+t+c+h+",
-                "regex:a+s+s+h+o+l+e+",
-                "regex:c+[u]+n+t+",
-                "regex:d+[i!1]+c+k+",
-                "regex:w+h+[o0]+r+e+",
-                "regex:s+l+[u]+t+",
-                "regex:k+[i!1]+k+e+s?",
-                "regex:s+p+[i!1]+c+s?",
-                "regex:c+h+[i!1]+n+k+s?",
-                "regex:t+r+[a@]+n+n+[yi!1]+e?s?",
-                "regex:d+y+k+e+s?",
-                "regex:k+y+s+",
-                "regex:k+[i!1]+l+l+\\s*(y+o+u+r+)?\\s*s+e+l+f+",
-                "regex:g+[o0]+\\s*k+[i!1]+l+l+",
-                "regex:n+[e3]+g+r+[o0]+s?",
-                "regex:(?i)(?:[^a-z]|^)(n\\s*i\\s*g\\s*g\\s*[ae3]\\s*r?)(?:[^a-z]|$)",
-                "regex:(?i)(?:[^a-z]|^)(f\\s*a\\s*g\\s*g?\\s*[o0]?\\s*t?)(?:[^a-z]|$)"
+                "regex:\\bn+[i!1|l]+[gq9]{2,}[e3]*[ra@]*s?\\b",
+                "regex:\\bf+[ua@]+[gq9]{2,}[o0]*[t+]*s?\\b",
+                "regex:\\br+[e3]+[t+]+[a@]+r+[d]+s?\\b",
+                "regex:\\bf+[u]+c+k+\\b",
+                "regex:\\bs+h+[i!1]+t+\\b",
+                "regex:\\bb+[i!1]+t+c+h+\\b",
+                "regex:\\ba+s+s+h+o+l+e+\\b",
+                "regex:\\bc+[u]+n+t+\\b",
+                "regex:\\bd+[i!1]+c+k+\\b",
+                "regex:\\bw+h+[o0]+r+e+\\b",
+                "regex:\\bs+l+[u]+t+\\b",
+                "regex:\\bk+[i!1]+k+e+s?\\b",
+                "regex:\\bs+p+[i!1]+c+s?\\b",
+                "regex:\\bc+h+[i!1]+n+k+s?\\b",
+                "regex:\\bt+r+[a@]+n+n+[yi!1]+e?s?\\b",
+                "regex:\\bd+y+k+e+s?\\b",
+                "regex:\\bk+y+s+\\b",
+                "regex:\\bk+[i!1]+l+l+\\s*(y+o+u+r+)?\\s*s+e+l+f+\\b",
+                "regex:\\bg+[o0]+\\s*k+[i!1]+l+l+\\b",
+                "regex:\\bn+[e3]+g+r+[o0]+s?\\b"
             ));
             save();
             rawPatterns.clear();
@@ -117,16 +115,25 @@ public class OsmiumChatFilter {
 
     /**
      * Checks if a message contains any blocked words/patterns.
-     * Tests against both the original message and a stripped version
-     * (non-alphanumeric characters removed) to catch spacing/symbol bypasses
-     * like "n # i # g" or "f.u.c.k".
-     * Returns the first matching pattern string, or null if clean.
+     * Tests against the original message AND a per-word stripped version
+     * to catch symbol bypasses like "f.u.c.k" without merging separate
+     * words together (which caused false positives like "night" or
+     * cross-word matches in normal sentences).
      */
     public static String check(String message) {
         if (!OsmiumConfig.chatFilterEnabled) return null;
 
-        // Strip non-alphanumeric chars to defeat spacing/symbol bypasses
-        String stripped = message.replaceAll("[^a-zA-Z0-9]", "");
+        // Strip bypass separators WITHIN words but keep spaces between words.
+        // Split on whitespace, strip non-alpha from each word, rejoin.
+        // "n.i.g.g.e.r" → "nigger" (caught)
+        // "night" → "night" (not caught — word boundary protects it)
+        // "give me judes" → "give me judes" (words stay separate)
+        StringBuilder strippedBuilder = new StringBuilder();
+        for (String word : message.split("\\s+")) {
+            if (!strippedBuilder.isEmpty()) strippedBuilder.append(' ');
+            strippedBuilder.append(word.replaceAll("[^a-zA-Z0-9]", ""));
+        }
+        String stripped = strippedBuilder.toString();
 
         for (int i = 0; i < compiledPatterns.size(); i++) {
             Pattern pattern = compiledPatterns.get(i);
