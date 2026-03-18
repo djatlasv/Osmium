@@ -174,9 +174,12 @@ public class OsmiumScoreboard {
         }
         if (economy != null && getBalanceMethod != null) {
             try {
-                double bal = (double) getBalanceMethod.invoke(economy, player);
+                Object result = getBalanceMethod.invoke(economy, player);
+                double bal = ((Number) result).doubleValue();
                 return String.format("%.2f", bal);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                org.bukkit.Bukkit.getLogger().warning("[Osmium] Vault getBalance failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            }
         }
         return "0.00";
     }
