@@ -1,41 +1,39 @@
 package org.osmium;
 
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.numbers.BlankFormat;
+import net.minecraft.network.protocol.game.ClientboundResetScorePacket;
+import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket;
+import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket;
+import net.minecraft.network.protocol.game.ClientboundSetScorePacket;
 import net.minecraft.server.level.ServerPlayer;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Statistic;
-import org.bukkit.entity.Player;
-import org.bukkit.scoreboard.Criteria;
-import org.bukkit.scoreboard.DisplaySlot;
-import org.bukkit.scoreboard.Objective;
-import org.bukkit.scoreboard.Scoreboard;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Custom sidebar scoreboard with configurable lines and placeholders.
+ * Packet-based sidebar scoreboard. Never touches the player's actual
+ * scoreboard assignment, so the tab list and teams stay intact.
  *
  * Placeholders:
- *   {player}  - player name
- *   {ping}    - player ping in ms
- *   {kills}   - player kills statistic
- *   {deaths}  - player deaths statistic
- *   {kd}      - kill/death ratio
- *   {money}   - balance (Vault economy if available)
- *   {online}  - online player count
- *   {max}     - max player count
- *   {tps}     - server TPS
+ *   {player} {ping} {kills} {deaths} {kd} {money} {online} {max} {tps}
  */
 public class OsmiumScoreboard {
 
     private static final String OBJECTIVE_NAME = "osmium_sb";
-    private static final Map<UUID, Scoreboard> playerBoards = new ConcurrentHashMap<>();
-    private static Object economy = null; // net.milkbowl.vault.economy.Economy (loaded via reflection)
+    // Track previous lines per player so we can remove stale entries
+    private static final Map<UUID, List<String>> previousLines = new ConcurrentHashMap<>();
+    private static Object economy = null;
     private static java.lang.reflect.Method getBalanceMethod = null;
     private static boolean vaultChecked = false;
+
+    // Shared dummy scoreboard + objective for packet construction only
+    private static final Scoreboard DUMMY_BOARD = new Scoreboard();
+    private static Objective dummyObjective;
 
     /**
      * Called every N ticks from MinecraftServer.tickChildren().
@@ -44,7 +42,7 @@ public class OsmiumScoreboard {
         if (!OsmiumConfig.scoreboardEnabled) return;
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            update(player.getBukkitEntity());
+            update(player);
         }
     }
 
@@ -53,77 +51,118 @@ public class OsmiumScoreboard {
      */
     public static void onJoin(ServerPlayer player) {
         if (!OsmiumConfig.scoreboardEnabled) return;
-        Player bukkit = player.getBukkitEntity();
-        Scoreboard board = Bukkit.getScoreboardManager().getNewScoreboard();
-        playerBoards.put(bukkit.getUniqueId(), board);
-        bukkit.setScoreboard(board);
-        update(bukkit);
+        sendCreate(player);
+        update(player);
     }
 
-    /**
-     * Cleans up on disconnect.
-     */
     public static void onQuit(UUID uuid) {
-        playerBoards.remove(uuid);
+        previousLines.remove(uuid);
     }
 
-    private static void update(Player player) {
-        Scoreboard board = playerBoards.get(player.getUniqueId());
-        if (board == null) return;
+    private static Objective getDummyObjective(String title) {
+        // Recreate if title changed
+        if (dummyObjective != null) {
+            DUMMY_BOARD.removeObjective(dummyObjective);
+        }
+        dummyObjective = DUMMY_BOARD.addObjective(
+                OBJECTIVE_NAME,
+                ObjectiveCriteria.DUMMY,
+                Component.literal(colorize(title)),
+                ObjectiveCriteria.RenderType.INTEGER,
+                true, // auto update
+                BlankFormat.INSTANCE
+        );
+        return dummyObjective;
+    }
 
-        // Remove old objective and recreate (cleanest way to update all lines)
-        Objective old = board.getObjective(OBJECTIVE_NAME);
-        if (old != null) old.unregister();
+    private static void sendCreate(ServerPlayer player) {
+        Objective obj = getDummyObjective(OsmiumConfig.scoreboardTitle);
 
-        String title = colorize(OsmiumConfig.scoreboardTitle);
-        Objective objective = board.registerNewObjective(OBJECTIVE_NAME, Criteria.DUMMY, title);
-        objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        // Create objective (method 0)
+        player.connection.send(new ClientboundSetObjectivePacket(obj, ClientboundSetObjectivePacket.METHOD_ADD));
 
+        // Display in sidebar
+        player.connection.send(new ClientboundSetDisplayObjectivePacket(DisplaySlot.SIDEBAR, obj));
+    }
+
+    private static void update(ServerPlayer player) {
+        UUID uuid = player.getUUID();
+        List<String> oldLines = previousLines.getOrDefault(uuid, Collections.emptyList());
+
+        // Build new lines
         List<String> lines = OsmiumConfig.scoreboardLines;
+        List<String> newEntries = new ArrayList<>(lines.size());
 
         for (int i = 0; i < lines.size(); i++) {
             String line = replacePlaceholders(lines.get(i), player);
             line = colorize(line);
 
-            // Handle empty lines with unique invisible strings
+            // Empty lines need unique invisible content
             if (line.isEmpty() || line.isBlank()) {
-                line = ChatColor.RESET.toString() + " ".repeat(i);
+                line = "\u00a7r" + " ".repeat(i);
             }
 
-            // Ensure uniqueness — append invisible chars if duplicate
-            objective.getScore(line).setScore(lines.size() - i);
+            newEntries.add(line);
         }
+
+        // Update title
+        Objective obj = getDummyObjective(OsmiumConfig.scoreboardTitle);
+        player.connection.send(new ClientboundSetObjectivePacket(obj, ClientboundSetObjectivePacket.METHOD_CHANGE));
+
+        // Remove old entries that aren't in the new set
+        for (String oldEntry : oldLines) {
+            if (!newEntries.contains(oldEntry)) {
+                player.connection.send(new ClientboundResetScorePacket(oldEntry, OBJECTIVE_NAME));
+            }
+        }
+
+        // Send new scores
+        for (int i = 0; i < newEntries.size(); i++) {
+            String entry = newEntries.get(i);
+            int score = newEntries.size() - i;
+
+            player.connection.send(new ClientboundSetScorePacket(
+                    entry,              // "player" name (visible line text)
+                    OBJECTIVE_NAME,
+                    score,
+                    Optional.of(Component.literal(entry)),
+                    Optional.of(BlankFormat.INSTANCE) // hide the number
+            ));
+        }
+
+        previousLines.put(uuid, newEntries);
     }
 
-    private static String replacePlaceholders(String line, Player player) {
-        line = line.replace("{player}", player.getName());
-        line = line.replace("{ping}", String.valueOf(player.getPing()));
-        line = line.replace("{online}", String.valueOf(Bukkit.getOnlinePlayers().size()));
-        line = line.replace("{max}", String.valueOf(Bukkit.getMaxPlayers()));
+    private static String replacePlaceholders(String line, ServerPlayer player) {
+        org.bukkit.entity.Player bukkit = player.getBukkitEntity();
 
-        int kills = player.getStatistic(Statistic.PLAYER_KILLS);
-        int deaths = player.getStatistic(Statistic.DEATHS);
+        line = line.replace("{player}", player.getPlainTextName());
+        line = line.replace("{ping}", String.valueOf(player.connection.latency()));
+        line = line.replace("{online}", String.valueOf(org.bukkit.Bukkit.getOnlinePlayers().size()));
+        line = line.replace("{max}", String.valueOf(org.bukkit.Bukkit.getMaxPlayers()));
+
+        int kills = bukkit.getStatistic(org.bukkit.Statistic.PLAYER_KILLS);
+        int deaths = bukkit.getStatistic(org.bukkit.Statistic.DEATHS);
         double kd = deaths == 0 ? kills : Math.round((double) kills / deaths * 100.0) / 100.0;
         line = line.replace("{kills}", String.valueOf(kills));
         line = line.replace("{deaths}", String.valueOf(deaths));
         line = line.replace("{kd}", String.format("%.2f", kd));
 
-        double tps = Math.min(20.0, Bukkit.getTPS()[0]);
+        double tps = Math.min(20.0, org.bukkit.Bukkit.getTPS()[0]);
         line = line.replace("{tps}", String.format("%.1f", tps));
 
-        line = line.replace("{money}", getBalance(player));
+        line = line.replace("{money}", getBalance(bukkit));
 
         return line;
     }
 
-    private static String getBalance(Player player) {
+    private static String getBalance(org.bukkit.entity.Player player) {
         if (!vaultChecked) {
             vaultChecked = true;
             try {
                 Class<?> economyClass = Class.forName("net.milkbowl.vault.economy.Economy");
-                @SuppressWarnings("unchecked")
                 org.bukkit.plugin.RegisteredServiceProvider<?> rsp =
-                        Bukkit.getServicesManager().getRegistration(economyClass);
+                        org.bukkit.Bukkit.getServicesManager().getRegistration(economyClass);
                 if (rsp != null) {
                     economy = rsp.getProvider();
                     getBalanceMethod = economyClass.getMethod("getBalance", org.bukkit.OfflinePlayer.class);
@@ -140,6 +179,6 @@ public class OsmiumScoreboard {
     }
 
     private static String colorize(String text) {
-        return ChatColor.translateAlternateColorCodes('&', text);
+        return org.bukkit.ChatColor.translateAlternateColorCodes('&', text);
     }
 }
