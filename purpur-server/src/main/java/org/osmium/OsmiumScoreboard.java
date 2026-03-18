@@ -175,18 +175,15 @@ public class OsmiumScoreboard {
         if (economy != null && getBalanceMethod != null) {
             try {
                 Object result = getBalanceMethod.invoke(economy, (org.bukkit.OfflinePlayer) player);
+                org.bukkit.Bukkit.getLogger().info("[Osmium-Debug] getBalance(" + player.getName() + ") = " + result + " (class: " + (result != null ? result.getClass().getName() : "null") + ", economy: " + economy.getClass().getName() + ")");
                 double bal = ((Number) result).doubleValue();
                 return String.format("%.2f", bal);
             } catch (Exception e) {
-                // Try the deprecated String name method as fallback
-                try {
-                    java.lang.reflect.Method nameMethod = economy.getClass().getMethod("getBalance", String.class);
-                    Object result = nameMethod.invoke(economy, player.getName());
-                    double bal = ((Number) result).doubleValue();
-                    return String.format("%.2f", bal);
-                } catch (Exception ignored) {}
                 org.bukkit.Bukkit.getLogger().warning("[Osmium] Vault getBalance failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                e.printStackTrace();
             }
+        } else {
+            org.bukkit.Bukkit.getLogger().warning("[Osmium-Debug] Economy lookup state: economy=" + (economy != null) + " method=" + (getBalanceMethod != null));
         }
         return "0.00";
     }
