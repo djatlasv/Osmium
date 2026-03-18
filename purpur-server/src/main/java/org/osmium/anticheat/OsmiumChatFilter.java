@@ -28,6 +28,13 @@ public class OsmiumChatFilter {
     private static File dataFile;
     private static final List<String> rawPatterns = new ArrayList<>();
     private static final List<Pattern> compiledPatterns = new ArrayList<>();
+    // Words that should never be filtered even if they match a pattern
+    private static final Set<String> WHITELIST = Set.of(
+            "night", "knight", "nights", "knights", "nighttime",
+            "bigger", "digger", "trigger", "snicker",
+            "scunthorpe", "dickens", "shuttle", "assassin",
+            "classic", "cocktail", "peacock"
+    );
 
     public static void init(File serverDir) {
         dataFile = new File(serverDir, "osmium-words.json");
@@ -135,13 +142,42 @@ public class OsmiumChatFilter {
         }
         String stripped = strippedBuilder.toString();
 
+        // Check if every word in the message is whitelisted — if so, skip filtering
+        String lowerMessage = message.toLowerCase(Locale.ROOT);
+
         for (int i = 0; i < compiledPatterns.size(); i++) {
             Pattern pattern = compiledPatterns.get(i);
-            if (pattern.matcher(message).find() || pattern.matcher(stripped).find()) {
-                return rawPatterns.get(i);
+            java.util.regex.Matcher matcher = pattern.matcher(lowerMessage);
+            if (matcher.find()) {
+                // Check if the matched text is a whitelisted word
+                String matched = matcher.group().trim().toLowerCase(Locale.ROOT);
+                if (!WHITELIST.contains(matched) && !isAllWhitelisted(lowerMessage)) {
+                    return rawPatterns.get(i);
+                }
+            }
+            // Also check stripped version
+            java.util.regex.Matcher strippedMatcher = pattern.matcher(stripped.toLowerCase(Locale.ROOT));
+            if (strippedMatcher.find()) {
+                String matched = strippedMatcher.group().trim().toLowerCase(Locale.ROOT);
+                if (!WHITELIST.contains(matched) && !isAllWhitelisted(stripped.toLowerCase(Locale.ROOT))) {
+                    return rawPatterns.get(i);
+                }
             }
         }
         return null;
+    }
+
+    /**
+     * Checks if every individual word in the text is in the whitelist.
+     */
+    private static boolean isAllWhitelisted(String text) {
+        for (String word : text.split("\\s+")) {
+            String clean = word.replaceAll("[^a-zA-Z]", "").toLowerCase(Locale.ROOT);
+            if (!clean.isEmpty() && WHITELIST.contains(clean)) {
+                return true; // at least one whitelisted word triggered the match
+            }
+        }
+        return false;
     }
 
     /**

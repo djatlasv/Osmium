@@ -52,6 +52,14 @@ public class OsmiumConfig {
             + "  action: what to do on match — block (cancel message), kick, or mute\n"
             + "  message: message shown to the player when their message is filtered\n"
             + "\n"
+            + "--- scoreboard ---\n"
+            + "Custom sidebar scoreboard with live-updating placeholders.\n"
+            + "  enabled: master toggle\n"
+            + "  title: scoreboard title (supports & color codes)\n"
+            + "  lines: list of lines (supports & color codes and placeholders)\n"
+            + "  update-ticks: how often to refresh (20 = 1 second)\n"
+            + "  Placeholders: {player} {ping} {kills} {deaths} {kd} {money} {online} {max} {tps}\n"
+            + "\n"
             + "--- grim ---\n"
             + "Runs GrimAC 2.3.74 as a native server module instead of a plugin.\n"
             + "GrimAC configs live in the ./grim/ directory.\n"
@@ -65,7 +73,7 @@ public class OsmiumConfig {
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
-    public static int version = 4;
+    public static int version = 5;
 
     public static void init(File configFile) {
         CONFIG_FILE = configFile;
@@ -127,6 +135,10 @@ public class OsmiumConfig {
             if (!config.contains("discord-webhook.ping-on-stop")) {
                 config.set("discord-webhook.ping-on-stop", List.of());
             }
+        }
+
+        if (oldVersion < 5) {
+            // v4 -> v5: added scoreboard + require-osmium-handshaker
         }
     }
 
@@ -246,6 +258,49 @@ public class OsmiumConfig {
         config.addDefault("chat-filter.action", chatFilterAction);
         chatFilterMessage = config.getString("chat-filter.message", "Your message was blocked by the chat filter.");
         config.addDefault("chat-filter.message", chatFilterMessage);
+    }
+
+    // -------------------------------------------------------------------------
+    // Scoreboard settings
+    // -------------------------------------------------------------------------
+
+    public static boolean scoreboardEnabled = false;
+    public static String scoreboardTitle = "&6&lMy Server";
+    public static List<String> scoreboardLines = List.of(
+            "&7&m                    ",
+            "&fPlayer: &a{player}",
+            "&fPing: &a{ping}ms",
+            "",
+            "&fKills: &c{kills}",
+            "&fDeaths: &c{deaths}",
+            "&fKD: &e{kd}",
+            "",
+            "&fBalance: &2${money}",
+            "&7&m                    "
+    );
+    public static int scoreboardUpdateTicks = 20;
+
+    private static void scoreboard() {
+        scoreboardEnabled = getBoolean("scoreboard.enabled", false);
+        scoreboardTitle = config.getString("scoreboard.title", "&6&lMy Server");
+        config.addDefault("scoreboard.title", scoreboardTitle);
+        scoreboardLines = config.getStringList("scoreboard.lines");
+        if (scoreboardLines.isEmpty()) {
+            scoreboardLines = List.of(
+                    "&7&m                    ",
+                    "&fPlayer: &a{player}",
+                    "&fPing: &a{ping}ms",
+                    "",
+                    "&fKills: &c{kills}",
+                    "&fDeaths: &c{deaths}",
+                    "&fKD: &e{kd}",
+                    "",
+                    "&fBalance: &2${money}",
+                    "&7&m                    "
+            );
+        }
+        config.addDefault("scoreboard.lines", scoreboardLines);
+        scoreboardUpdateTicks = getInt("scoreboard.update-ticks", 20);
     }
 
     // -------------------------------------------------------------------------
