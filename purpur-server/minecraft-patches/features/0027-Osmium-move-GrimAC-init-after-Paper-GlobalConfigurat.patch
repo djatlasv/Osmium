@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Djatlasv <behen.nick@gmail.com>
+From: Djatlasv <djatlasv@users.noreply.github.com>
 Date: Sat, 14 Mar 2026 23:24:36 -0600
 Subject: [PATCH] Osmium: move GrimAC init after Paper GlobalConfiguration init
 

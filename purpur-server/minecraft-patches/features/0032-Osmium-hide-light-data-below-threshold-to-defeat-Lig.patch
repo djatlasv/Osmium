@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Djatlasv <behen.nick@gmail.com>
+From: Djatlasv <djatlasv@users.noreply.github.com>
 Date: Mon, 23 Mar 2026 09:20:50 -0600
 Subject: [PATCH] Osmium: hide light data below threshold to defeat Light
  Finder hacks

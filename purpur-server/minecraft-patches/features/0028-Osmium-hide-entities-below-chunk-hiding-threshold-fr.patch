@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Djatlasv <behen.nick@gmail.com>
+From: Djatlasv <djatlasv@users.noreply.github.com>
 Date: Sun, 15 Mar 2026 20:17:48 -0600
 Subject: [PATCH] Osmium: hide entities below chunk hiding threshold from
  distant players
