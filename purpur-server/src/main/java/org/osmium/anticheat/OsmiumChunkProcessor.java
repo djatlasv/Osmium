@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,6 +20,10 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.GlobalPalette;
 import net.minecraft.world.level.chunk.Palette;
 import net.minecraft.world.level.material.Fluids;
+
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.List;
 
 public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
@@ -92,6 +97,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             if (!enabled) return;
 
             applyHiding(chunkPacket, osmiumInfo);
+            applyLightHiding(chunkPacket, osmiumInfo);
         } else {
             delegate.modifyBlocks(chunkPacket, chunkPacketInfo);
         }
@@ -237,6 +243,61 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             }
 
             writer.flush();
+        }
+    }
+
+    // --- Light hiding (defeats Light Finder hacks) ---
+
+    private void applyLightHiding(ClientboundLevelChunkWithLightPacket chunkPacket,
+                                   OsmiumChunkPacketInfo info) {
+        if (!org.osmium.OsmiumConfig.chunkHidingHideLight) return;
+
+        ClientboundLightUpdatePacketData lightData = chunkPacket.getLightData();
+        LevelChunk chunk = info.getChunk();
+        int minLightSection = chunk.getMinSectionY() - 1;
+        int hideBelowSection = hideBelow >> 4;
+
+        ServerPlayer player = info.getPlayer();
+        int playerBlockX = player.blockPosition().getX();
+        int playerBlockY = player.blockPosition().getY();
+        int playerBlockZ = player.blockPosition().getZ();
+        int chunkBlockX = chunk.getPos().x << 4;
+        int chunkBlockZ = chunk.getPos().z << 4;
+        int nearestX = Math.max(chunkBlockX, Math.min(playerBlockX, chunkBlockX + 15));
+        int nearestZ = Math.max(chunkBlockZ, Math.min(playerBlockZ, chunkBlockZ + 15));
+        int xzDistSq = (playerBlockX - nearestX) * (playerBlockX - nearestX)
+                      + (playerBlockZ - nearestZ) * (playerBlockZ - nearestZ);
+        int proxSq = proximityRadius * proximityRadius;
+        boolean xzNear = xzDistSq <= proxSq;
+
+        zeroHiddenLightSections(lightData.getSkyYMask(), lightData.getSkyUpdates(),
+                minLightSection, hideBelowSection, xzNear, playerBlockY, xzDistSq, proxSq);
+        zeroHiddenLightSections(lightData.getBlockYMask(), lightData.getBlockUpdates(),
+                minLightSection, hideBelowSection, xzNear, playerBlockY, xzDistSq, proxSq);
+    }
+
+    private void zeroHiddenLightSections(BitSet mask, List<byte[]> updates,
+                                          int minLightSection, int hideBelowSection,
+                                          boolean xzNear, int playerBlockY,
+                                          int xzDistSq, int proxSq) {
+        int listIndex = 0;
+        for (int i = mask.nextSetBit(0); i >= 0; i = mask.nextSetBit(i + 1)) {
+            int sectionY = minLightSection + i;
+            if (sectionY < hideBelowSection) {
+                boolean reveal = false;
+                if (xzNear) {
+                    int sectionMinY = sectionY << 4;
+                    int sectionMaxY = sectionMinY + 15;
+                    int yDist = playerBlockY < sectionMinY ? sectionMinY - playerBlockY
+                              : playerBlockY > sectionMaxY ? playerBlockY - sectionMaxY
+                              : 0;
+                    if (yDist * yDist + xzDistSq <= proxSq) reveal = true;
+                }
+                if (!reveal) {
+                    Arrays.fill(updates.get(listIndex), (byte) 0);
+                }
+            }
+            listIndex++;
         }
     }
 

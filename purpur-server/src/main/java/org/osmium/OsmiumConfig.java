@@ -26,6 +26,7 @@ public class OsmiumConfig {
             + "  y-threshold: blocks below this Y level are hidden (0 = hide everything below sea level)\n"
             + "  block: the block to replace hidden blocks with (e.g. deepslate, stone, netherrack)\n"
             + "  hide-entities: also hide entities (mobs, items, etc.) below the threshold from distant players\n"
+            + "  hide-light: zero out light data below the threshold to defeat Light Finder hacks\n"
             + "  proximity-radius: how many blocks around the player to reveal real blocks\n"
             + "\n"
             + "--- brand-enforcement ---\n"
@@ -73,7 +74,7 @@ public class OsmiumConfig {
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
-    public static int version = 5;
+    public static int version = 6;
 
     public static void init(File configFile) {
         CONFIG_FILE = configFile;
@@ -140,6 +141,10 @@ public class OsmiumConfig {
         if (oldVersion < 5) {
             // v4 -> v5: added scoreboard + require-osmium-handshaker
         }
+
+        if (oldVersion < 6) {
+            // v5 -> v6: added hide-light
+        }
     }
 
     static void readConfig(Class<?> clazz, Object instance) {
@@ -189,6 +194,7 @@ public class OsmiumConfig {
     public static String chunkHidingBlock = "deepslate";
     public static int chunkHidingProximityRadius = 32;
     public static boolean chunkHidingHideEntities = true;
+    public static boolean chunkHidingHideLight = true;
 
     private static void chunkHiding() {
         chunkHidingEnabled = getBoolean("chunk-hiding.enabled", false);
@@ -197,6 +203,7 @@ public class OsmiumConfig {
         config.addDefault("chunk-hiding.block", chunkHidingBlock);
         chunkHidingProximityRadius = getInt("chunk-hiding.proximity-radius", 32);
         chunkHidingHideEntities = getBoolean("chunk-hiding.hide-entities", true);
+        chunkHidingHideLight = getBoolean("chunk-hiding.hide-light", true);
     }
 
     // -------------------------------------------------------------------------
