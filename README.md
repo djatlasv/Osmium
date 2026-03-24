@@ -87,7 +87,7 @@ To produce a server-ready jar:
 
 The compiled jar will be in `purpur-server/build/libs`.
 
-* Note: this is a personal project meant for **small servers** only. This is also for me to learn minecraft specific java.
+> **Note:** this is a personal project meant for **small servers** only. This is also for me to learn minecraft specific java.
 
 ## Credits
 
