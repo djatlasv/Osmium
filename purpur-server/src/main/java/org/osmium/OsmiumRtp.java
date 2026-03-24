@@ -70,13 +70,17 @@ public class OsmiumRtp {
     // ------------------------------------------------------------------
 
     public static void registerCommand(CommandDispatcher<CommandSourceStack> dispatcher) {
-        debug("Registering /rtp command (op-only=" + OsmiumConfig.rtpOpOnly + ")");
-
+        // Always register — config may not be loaded yet at registration time.
+        // Enabled/permission checks happen at execution time.
         dispatcher.register(
                 Commands.literal("rtp")
-                        .requires(OsmiumConfig.rtpOpOnly
-                                ? Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)
-                                : Commands.hasPermission(Commands.LEVEL_ALL))
+                        .requires((CommandSourceStack src) -> {
+                            if (!OsmiumConfig.rtpEnabled) return false;
+                            if (!OsmiumConfig.rtpOpOnly) return true;
+                            // Op-only: check if source is op (or console)
+                            return src.source == net.minecraft.commands.CommandSource.NULL
+                                    || src.getBukkitSender().hasPermission("minecraft.command.rtp");
+                        })
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
                             debug(player.getGameProfile().name() + " executed /rtp command");
@@ -84,9 +88,15 @@ public class OsmiumRtp {
                             return 1;
                         })
         );
+    }
 
-        // Register Bukkit permission so non-ops can use the command
-        // Paper overrides brigadier requirements with Bukkit permission checks
+    /**
+     * Called after OsmiumConfig is loaded to register the Bukkit permission.
+     * This must run after Bukkit is initialized.
+     */
+    public static void initPermission() {
+        if (!OsmiumConfig.rtpEnabled) return;
+        debug("Registering /rtp Bukkit permission (op-only=" + OsmiumConfig.rtpOpOnly + ")");
         try {
             org.bukkit.permissions.Permission perm = new org.bukkit.permissions.Permission(
                     "minecraft.command.rtp",
