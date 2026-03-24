@@ -30,9 +30,9 @@
                  }
              } else {
 -                if (lastBeamSection == null || state.getLightDampening() >= 15 && !state.is(Blocks.BEDROCK)) {
-+                if (level.purpurConfig.beaconAllowEffectsWithTintedGlass && blockState.getBlock().equals(Blocks.TINTED_GLASS)) {isTintedGlass = true;} // Purpur - allow beacon effects when covered by tinted glass
++                if (level.purpurConfig.beaconAllowEffectsWithTintedGlass && state.getBlock().equals(Blocks.TINTED_GLASS)) {isTintedGlass = true;} // Purpur - allow beacon effects when covered by tinted glass
 +                // Purpur start - fix effects being applied when tinted glass is covered
-+                if (lastBeamSection == null || state.getLightDampening() >= 15 && !state.is(Blocks.BEDROCK) && !(blockState.getBlock().equals(Blocks.TINTED_GLASS) && level.purpurConfig.beaconAllowEffectsWithTintedGlass)) {
++                if (lastBeamSection == null || state.getLightDampening() >= 15 && !state.is(Blocks.BEDROCK) && !(state.getBlock().equals(Blocks.TINTED_GLASS) && level.purpurConfig.beaconAllowEffectsWithTintedGlass)) {
                      entity.checkingBeamSections.clear();
                      entity.lastCheckY = lastSetBlock;
 +                    isTintedGlass = false;

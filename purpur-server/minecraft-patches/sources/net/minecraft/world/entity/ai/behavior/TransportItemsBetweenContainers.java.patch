@@ -27,7 +27,7 @@
  
      private boolean isWantedBlock(final PathfinderMob mob, final BlockState block) {
 -        return isPickingUpItems(mob) ? this.sourceBlockType.test(block) : this.destinationBlockType.test(block);
-+        return isPickingUpItems(mob) ? this.sourceBlockType.test(block) : (mob.level().purpurConfig.copperGolemCanOpenBarrel && state.is(net.minecraft.world.level.block.Blocks.BARREL)) || (mob.level().purpurConfig.copperGolemCanOpenShulker && state.is(net.minecraft.tags.BlockTags.SHULKER_BOXES)) || this.destinationBlockType.test(block); // Purpur - copper golem can place items in barrels or shulkers option
++        return isPickingUpItems(mob) ? this.sourceBlockType.test(block) : (mob.level().purpurConfig.copperGolemCanOpenBarrel && block.is(net.minecraft.world.level.block.Blocks.BARREL)) || (mob.level().purpurConfig.copperGolemCanOpenShulker && block.is(net.minecraft.tags.BlockTags.SHULKER_BOXES)) || this.destinationBlockType.test(block); // Purpur - copper golem can place items in barrels or shulkers option
      }
  
      private static double getInteractionRange(final PathfinderMob body) {

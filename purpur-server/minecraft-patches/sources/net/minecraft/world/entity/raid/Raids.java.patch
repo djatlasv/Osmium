@@ -36,7 +36,7 @@
                          player.removeEffect(net.minecraft.world.effect.MobEffects.RAID_OMEN);
                          return null;
 -                    }
-+                    }if (level.purpurConfig.raidCooldownSeconds != 0) playerCooldowns.put(player.getUUID(), serverLevel.purpurConfig.raidCooldownSeconds); // Purpur - Raid cooldown setting
++                    }if (level.purpurConfig.raidCooldownSeconds != 0) playerCooldowns.put(player.getUUID(), level.purpurConfig.raidCooldownSeconds); // Purpur - Raid cooldown setting
  
                      if (!raid.isStarted() && !this.raidMap.containsValue(raid)) {
                          this.raidMap.put(this.getUniqueId(), raid);

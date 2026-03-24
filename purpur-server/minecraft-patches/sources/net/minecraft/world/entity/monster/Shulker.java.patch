@@ -1,15 +1,6 @@
 --- a/net/minecraft/world/entity/monster/Shulker.java
 +++ b/net/minecraft/world/entity/monster/Shulker.java
-@@ -81,7 +_,7 @@
-         Vec3i forwardNormal = Direction.SOUTH.getUnitVec3i();
-         return new Vector3f(forwardNormal.getX(), forwardNormal.getY(), forwardNormal.getZ());
-     });
--    public static final float MAX_SCALE = 3.0F;
-+    private static final float MAX_SCALE = 3.0F;
-     private float currentPeekAmountO;
-     private float currentPeekAmount;
-     private @Nullable BlockPos clientOldAttachPosition;
-@@ -94,6 +_,21 @@
+@@ -94,6 +_,22 @@
          this.lookControl = new Shulker.ShulkerLookControl(this);
      }
  
@@ -17,8 +8,9 @@
 +    @Override
 +    protected net.minecraft.world.InteractionResult mobInteract(Player player, net.minecraft.world.InteractionHand hand) {
 +        net.minecraft.world.item.ItemStack itemstack = player.getItemInHand(hand);
-+        if (player.level().purpurConfig.shulkerChangeColorWithDye && itemstack.getItem() instanceof net.minecraft.world.item.DyeItem dye && dye.getDyeColor() != this.getColor()) {
-+            this.setVariant(Optional.of(dye.getDyeColor()));
++        DyeColor dyeColor = itemstack.get(DataComponents.DYE);
++        if (player.level().purpurConfig.shulkerChangeColorWithDye && dyeColor != null && dyeColor != this.getColor()) {
++            this.setVariant(Optional.of(dyeColor));
 +            if (!player.getAbilities().instabuild) {
 +                itemstack.shrink(1);
 +            }
@@ -62,7 +54,7 @@
  
      public Optional<DyeColor> getVariant() {
 -        return Optional.ofNullable(this.getColor());
-+        return Optional.ofNullable(this.level().purpurConfig.shulkerSpawnFromBulletRandomColor ? DyeColor.random(this.level().random) : this.getColor()); // Purpur - Shulker spawn from bullet options
++        return Optional.ofNullable(this.level().purpurConfig.shulkerSpawnFromBulletRandomColor ? DyeColor.random(this.level().getRandom()) : this.getColor()); // Purpur - Shulker spawn from bullet options
      }
  
      public @Nullable DyeColor getColor() {

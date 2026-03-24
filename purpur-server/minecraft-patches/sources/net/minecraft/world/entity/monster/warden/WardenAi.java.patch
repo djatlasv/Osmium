@@ -1,7 +1,11 @@
 --- a/net/minecraft/world/entity/monster/warden/WardenAi.java
 +++ b/net/minecraft/world/entity/monster/warden/WardenAi.java
-@@ -139,15 +_,16 @@
-         return ActivityData.create(
+@@ -136,18 +_,19 @@
+     }
+ 
+     private static ActivityData<Warden> initFightActivity(final Warden body) {
+-        return ActivityData.create(
++        return ActivityData.<Warden>create( // Purpur - compiler fix - configurable warden sonic boom
              Activity.FIGHT,
              10,
 -            ImmutableList.of(
@@ -13,7 +17,7 @@
                  SetEntityLookTarget.create(entity -> isTarget(body, entity), (float)body.getAttributeValue(Attributes.FOLLOW_RANGE)),
                  SetWalkTargetFromAttackTargetIfTargetOutOfReach.create(1.2F),
 -                new SonicBoom(),
-+                warden.level().purpurConfig.wardenCanUseSonicBoom ? new SonicBoom() : null, // Purpur - configurable warden sonic boom
++                    body.level().purpurConfig.wardenCanUseSonicBoom ? new SonicBoom() : null, // Purpur - configurable warden sonic boom
                  MeleeAttack.create(18)
 +            ).filter(java.util.Objects::nonNull).toList() // Purpur - configurable warden sonic boom
              ),

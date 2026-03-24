@@ -10,7 +10,7 @@
 +        if (level.purpurConfig.persistentTileEntityLore) {
 +            BlockEntity blockEntity1 = level.getBlockEntity(pos);
 +            if (blockEntity1 != null) {
-+                blockEntity1.setPersistentLore(stack.getOrDefault(DataComponents.LORE, net.minecraft.world.item.component.ItemLore.EMPTY));
++                blockEntity1.setPersistentLore(itemStack.getOrDefault(DataComponents.LORE, net.minecraft.world.item.component.ItemLore.EMPTY));
 +            }
 +        }
 +        return handled;

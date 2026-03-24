@@ -6,7 +6,7 @@
          ItemStack fuel = entity.items.get(1);
 +        // Purpur start - Furnace uses lava from underneath
 +        boolean usedLavaFromUnderneath = false;
-+        if (level.purpurConfig.furnaceUseLavaFromUnderneath && !entity.isLit() && fuel.isEmpty() && !entity.items.get(0).isEmpty() && level.getGameTime() % 20 == 0) {
++        if (level.purpurConfig.furnaceUseLavaFromUnderneath && !isLit && fuel.isEmpty() && !entity.items.get(0).isEmpty() && level.getGameTime() % 20 == 0) {
 +            BlockPos below = entity.getBlockPos().below();
 +            BlockState belowState = level.getBlockStateIfLoaded(below);
 +            if (belowState != null && belowState.is(net.minecraft.world.level.block.Blocks.LAVA)) {
@@ -27,7 +27,7 @@
              setChanged(level, pos, state);
          }
 +
-+        if (usedLavaFromUnderneath) furnace.items.set(1, ItemStack.EMPTY); // Purpur - Furnace uses lava from underneath
++        if (usedLavaFromUnderneath) entity.items.set(1, ItemStack.EMPTY); // Purpur - Furnace uses lava from underneath
      }
  
      private static void consumeFuel(final NonNullList<ItemStack> items, final ItemStack fuel) {

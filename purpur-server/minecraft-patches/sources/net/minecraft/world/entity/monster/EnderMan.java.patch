@@ -22,7 +22,7 @@
      public boolean hurtServer(final ServerLevel level, final DamageSource source, final float damage) {
          if (this.isInvulnerableTo(level, source)) {
              return false;
-+        } else if (org.purpurmc.purpur.PurpurConfig.endermanShortHeight && damageSource.is(net.minecraft.world.damagesource.DamageTypes.IN_WALL)) { return false; // Purpur - no suffocation damage if short height - Short enderman height
++        } else if (org.purpurmc.purpur.PurpurConfig.endermanShortHeight && source.is(net.minecraft.world.damagesource.DamageTypes.IN_WALL)) { return false; // Purpur - no suffocation damage if short height - Short enderman height
          } else {
              AbstractThrownPotion thrownPotion = source.getDirectEntity() instanceof AbstractThrownPotion potion ? potion : null;
              if (!source.is(DamageTypeTags.IS_PROJECTILE) && thrownPotion == null) { // Paper - EndermanEscapeEvent - diff on change - below logic relies on this path covering non-projectile damage.
@@ -30,7 +30,7 @@
              } else {
                  boolean hurtWithCleanWater = thrownPotion != null && this.hurtWithCleanWater(level, source, thrownPotion, damage);
  
-+                if (!flag && level.purpurConfig.endermanIgnoreProjectiles) return super.hurtServer(level, damageSource, amount); // Purpur - Config to disable Enderman teleport on projectile hit
++                if (!hurtWithCleanWater && level.purpurConfig.endermanIgnoreProjectiles) return super.hurtServer(level, source, damage); // Purpur - Config to disable Enderman teleport on projectile hit
                  if (this.tryEscape(com.destroystokyo.paper.event.entity.EndermanEscapeEvent.Reason.INDIRECT)) { // Paper - EndermanEscapeEvent
                  for (int i = 0; i < 64; i++) {
                      if (this.teleport()) {

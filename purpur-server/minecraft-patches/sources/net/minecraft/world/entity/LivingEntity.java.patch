@@ -66,7 +66,7 @@
 +            if (entityliving.hasEffect(MobEffects.BLINDNESS)) {
 +                int amplifier = entityliving.getEffect(MobEffects.BLINDNESS).getAmplifier();
 +                for (int i = 0; i < amplifier; i++) {
-+                    d *= this.level().purpurConfig.mobsBlindnessMultiplier;
++                    amplifier *= this.level().purpurConfig.mobsBlindnessMultiplier;
 +                }
 +            }
 +        }
@@ -87,7 +87,7 @@
              }
  
 +            // Purpur start - One Punch Man!
-+            if (damageSource.getEntity() instanceof net.minecraft.world.entity.player.Player player && damageSource.getEntity().level().purpurConfig.creativeOnePunch && !damageSource.is(DamageTypeTags.IS_PROJECTILE)) {
++            if (source.getEntity() instanceof net.minecraft.world.entity.player.Player player && source.getEntity().level().purpurConfig.creativeOnePunch && !source.is(DamageTypeTags.IS_PROJECTILE)) {
 +                if (player.isCreative()) {
 +                    org.apache.commons.lang3.mutable.MutableDouble attackDamage = new org.apache.commons.lang3.mutable.MutableDouble();
 +                    player.getMainHandItem().forEachModifier(EquipmentSlot.MAINHAND, (attributeHolder, attributeModifier) -> {
@@ -98,7 +98,7 @@
 +
 +                    if (attackDamage.doubleValue() == 0.0D) {
 +                        // One punch!
-+                        amount = 9999F;
++                        damage = 9999F;
 +                    }
 +                }
 +            }
@@ -163,15 +163,6 @@
                  this.hurt(this.damageSources().flyIntoWall(), dmg);
              }
          }
-@@ -3860,7 +_,7 @@
-         }
-     }
- 
--    public boolean canGlide() {
-+    protected boolean canGlide() {
-         if (!this.onGround() && !this.isPassenger() && !this.hasEffect(MobEffects.LEVITATION)) {
-             for (EquipmentSlot slot : EquipmentSlot.VALUES) {
-                 if (canGlideUsing(this.getItemBySlot(slot), slot)) {
 @@ -4748,6 +_,12 @@
              ? slot == EquipmentSlot.MAINHAND && this.canUseSlot(EquipmentSlot.MAINHAND)
              : slot == equippable.slot() && this.canUseSlot(equippable.slot()) && equippable.canBeEquippedBy(this.typeHolder());

@@ -14,8 +14,8 @@
              player.setItemInHand(hand, bucketOrMilkBucket);
              return InteractionResult.SUCCESS;
 +        // Purpur start - Cows eat mushrooms - feed mushroom to change to mooshroom
-+        } else if (level().purpurConfig.cowFeedMushrooms > 0 && this.getType() != EntityType.MOOSHROOM && isMushroom(itemInHand)) {
-+            return this.feedMushroom(player, itemInHand);
++        } else if (level().purpurConfig.cowFeedMushrooms > 0 && this.getType() != EntityType.MOOSHROOM && isMushroom(itemStack)) {
++            return this.feedMushroom(player, itemStack);
 +        // Purpur end - Cows eat mushrooms
          } else {
              return super.mobInteract(player, hand);

@@ -91,7 +91,7 @@
                                  price++;
                              }
                          }
-+                        mutable.removeIf(removedEnchantments::contains); // Purpur - Config to allow unsafe enchants
++                        enchantments.removeIf(removedEnchantments::contains); // Purpur - Config to allow unsafe enchants
  
 -                        if (!compatible) {
 +                        if (!compatible || !canEnchant1) { // Purpur - Config to allow unsafe enchants
@@ -177,8 +177,8 @@
              this.broadcastChanges();
 +
 +            // Purpur start - Anvil API
-+            if ((this.canDoUnsafeEnchants || org.purpurmc.purpur.PurpurConfig.allowInapplicableEnchants || org.purpurmc.purpur.PurpurConfig.allowIncompatibleEnchants) && itemStack != ItemStack.EMPTY) { // Purpur - Config to allow unsafe enchants
-+                ((ServerPlayer) this.player).connection.send(new ClientboundContainerSetSlotPacket(this.containerId, this.incrementStateId(), 2, itemStack));
++            if ((this.canDoUnsafeEnchants || org.purpurmc.purpur.PurpurConfig.allowInapplicableEnchants || org.purpurmc.purpur.PurpurConfig.allowIncompatibleEnchants) && result != ItemStack.EMPTY) { // Purpur - Config to allow unsafe enchants
++                ((ServerPlayer) this.player).connection.send(new ClientboundContainerSetSlotPacket(this.containerId, this.incrementStateId(), 2, result));
 +                ((ServerPlayer) this.player).connection.send(new ClientboundContainerSetDataPacket(this.containerId, 0, this.cost.get()));
 +            }
 +            // Purpur end - Anvil API

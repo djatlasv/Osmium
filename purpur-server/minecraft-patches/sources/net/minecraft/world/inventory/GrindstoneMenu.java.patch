@@ -4,7 +4,7 @@
              @Override
              public void onTake(final Player player, final ItemStack carried) {
                  access.execute((level, pos) -> {
-+                    ItemStack itemstack = activeQuickItem == null ? stack : activeQuickItem; // Purpur - Grindstone API
++                    ItemStack itemstack = activeQuickItem == null ? carried : activeQuickItem; // Purpur - Grindstone API
                      if (level instanceof ServerLevel) {
                          // Paper start - Fire BlockExpEvent on grindstone use
                          org.bukkit.event.block.BlockExpEvent event = new org.bukkit.event.block.BlockExpEvent(org.bukkit.craftbukkit.block.CraftBlock.at(level, pos), this.getExperienceAmount(level));
@@ -20,7 +20,7 @@
                      Holder<Enchantment> enchant = entry.getKey();
                      int lvl = entry.getIntValue();
 -                    if (!enchant.is(EnchantmentTags.CURSE)) {
-+                    if (!org.purpurmc.purpur.PurpurConfig.grindstoneIgnoredEnchants.contains(holder.value())) { // Purpur - Config for grindstones
++                    if (!org.purpurmc.purpur.PurpurConfig.grindstoneIgnoredEnchants.contains(enchant.value())) { // Purpur - Config for grindstones
                          amount += enchant.value().getMinCost(lvl);
                      }
                  }
@@ -130,7 +130,7 @@
                  return ItemStack.EMPTY;
              }
  
-+            this.activeQuickItem = itemStack; // Purpur - Grindstone API
++            this.activeQuickItem = clicked; // Purpur - Grindstone API
              slot.onTake(player, item);
 +            this.activeQuickItem = null; // Purpur - Grindstone API
          }

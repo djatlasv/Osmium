@@ -22,17 +22,18 @@
          if (!this.canTick) {
              if (this.noTickEquipmentDirty) {
                  this.noTickEquipmentDirty = false;
-@@ -809,4 +_,18 @@
+@@ -809,4 +_,19 @@
          }
      }
      // Paper end
 +
 +    // Purpur start - Movement options for armor stands
 +    @Override
-+    public void updateInWaterStateAndDoWaterCurrentPushing() {
++    protected boolean updateFluidInteraction() {
 +        if (this.level().purpurConfig.armorstandWaterMovement &&
 +            (this.level().purpurConfig.armorstandWaterFence || !(level().getBlockState(blockPosition().below()).getBlock() instanceof net.minecraft.world.level.block.FenceBlock)))
-+            super.updateInWaterStateAndDoWaterCurrentPushing();
++                return super.updateFluidInteraction();
++        return false;
 +    }
 +
 +    @Override

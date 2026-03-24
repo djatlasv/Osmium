@@ -30,7 +30,7 @@
 +        }
 +        if (this.level().getGameTime() % interval == 0) {
 +            // offset Y for short blocks like dirt_path/farmland
-+            this.isLobotomized = !(shouldCheckForTradeLocked && this.getVillagerXp() == 0) && !canTravelFrom(BlockPos.containing(this.position().x, this.getBoundingBox().minY + 0.0625D, this.position().z));
++            this.isLobotomized = !(shouldCheckForTradeLocked && this.getVillagerXp() == 0) && !canTravelFrom(net.minecraft.core.BlockPos.containing(this.position().x, this.getBoundingBox().minY + 0.0625D, this.position().z));
 +
 +            if (this.isLobotomized) {
 +                this.notLobotomizedCount = 0;
@@ -41,11 +41,11 @@
 +        return this.isLobotomized;
 +    }
 +
-+    private boolean canTravelFrom(BlockPos pos) {
++    private boolean canTravelFrom(net.minecraft.core.BlockPos pos) {
 +        return canTravelTo(pos.east()) || canTravelTo(pos.west()) || canTravelTo(pos.north()) || canTravelTo(pos.south());
 +    }
 +
-+    private boolean canTravelTo(BlockPos pos) {
++    private boolean canTravelTo(net.minecraft.core.BlockPos pos) {
 +        net.minecraft.world.level.block.state.BlockState state = this.level().getBlockStateIfLoaded(pos);
 +        if (state == null) {
 +            // chunk not loaded

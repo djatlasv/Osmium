@@ -18,7 +18,7 @@
 +            Consumer<UseOnContext> action = (ctx) -> {
 +                level.setBlock(pos, tillable.into().defaultBlockState(), 11);
 +                tillable.drops().forEach((drop, chance) -> {
-+                    if (level.random.nextDouble() < chance) {
++                    if (level.getRandom().nextDouble() < chance) {
 +                        Block.popResourceFromFace(level, pos, ctx.getClickedFace(), new ItemStack(drop));
 +                    }
 +                });

@@ -161,7 +161,7 @@
                                          if (event.getLogWarning())
                                       // Paper end
 -                                    LOGGER.warn("{} moved wrongly!", this.player.getPlainTextName());
-+                                    LOGGER.warn("{} moved wrongly!, ({})", this.player.getPlainTextName(), verticalDelta); // Purpur - AFK API
++                                    LOGGER.warn("{} moved wrongly!, ({})", this.player.getPlainTextName(), oyDist); // Purpur - AFK API
                                      } // Paper
                                  }
  

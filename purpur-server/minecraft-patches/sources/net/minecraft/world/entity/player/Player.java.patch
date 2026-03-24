@@ -27,7 +27,7 @@
      public void tick() {
 +        // Purpur start - Burp delay
 +        if (this.burpDelay > 0 && --this.burpDelay == 0) {
-+            this.level().playSound(null, getX(), getY(), getZ(), SoundEvents.PLAYER_BURP, SoundSource.PLAYERS, 1.0F, this.level().random.nextFloat() * 0.1F + 0.9F);
++            this.level().playSound(null, getX(), getY(), getZ(), SoundEvents.PLAYER_BURP, SoundSource.PLAYERS, 1.0F, this.level().getRandom().nextFloat() * 0.1F + 0.9F);
 +        }
 +        // Purpur end - Burp delay
 +
@@ -70,15 +70,6 @@
                      }
  
                      float totalDamage = baseDamage + magicBoost;
-@@ -1518,7 +_,7 @@
-     }
- 
-     @Override
--    public boolean canGlide() {
-+    protected boolean canGlide() {
-         return !this.abilities.flying && super.canGlide();
-     }
- 
 @@ -1746,7 +_,23 @@
  
      @Override

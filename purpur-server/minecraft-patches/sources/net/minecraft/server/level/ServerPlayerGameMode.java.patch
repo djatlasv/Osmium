@@ -4,7 +4,7 @@
                  }
                  return false;
              }
-+            if (this.player.level().purpurConfig.slabHalfBreak && this.player.isShiftKeyDown() && blockState.getBlock() instanceof net.minecraft.world.level.block.SlabBlock && ((net.minecraft.world.level.block.SlabBlock) blockState.getBlock()).halfBreak(blockState, pos, this.player)) return true; // Purpur - Break individual slabs when sneaking
++            if (this.player.level().purpurConfig.slabHalfBreak && this.player.isShiftKeyDown() && state.getBlock() instanceof net.minecraft.world.level.block.SlabBlock && ((net.minecraft.world.level.block.SlabBlock) state.getBlock()).halfBreak(state, pos, this.player)) return true; // Purpur - Break individual slabs when sneaking
          }
          // CraftBukkit end
  

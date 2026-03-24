@@ -6,8 +6,8 @@
                      if (!this.moveItemStackTo(stack, 0, 1, false)) {
 -                        return ItemStack.EMPTY;
 +                        // Purpur start - Added the ability to add combustible items
-+                        if (this.isFuel(item)) {
-+                            if (!this.moveItemStackTo(item, 1, 2, false)) {
++                        if (this.isFuel(stack)) {
++                            if (!this.moveItemStackTo(stack, 1, 2, false)) {
 +                                return ItemStack.EMPTY;
 +                            }
 +                        }

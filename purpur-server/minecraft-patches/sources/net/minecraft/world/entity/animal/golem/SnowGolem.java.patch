@@ -49,10 +49,10 @@
  
              return InteractionResult.SUCCESS;
 +        // Purpur start - Snowman drop and put back pumpkin
-+        } else if (level().purpurConfig.snowGolemPutPumpkinBack && !hasPumpkin() && itemInHand.getItem() == Blocks.CARVED_PUMPKIN.asItem()) {
++        } else if (level().purpurConfig.snowGolemPutPumpkinBack && !hasPumpkin() && itemStack.getItem() == Blocks.CARVED_PUMPKIN.asItem()) {
 +            setPumpkin(true);
 +            if (!player.getAbilities().instabuild) {
-+                itemInHand.shrink(1);
++                itemStack.shrink(1);
 +            }
 +            return InteractionResult.SUCCESS;
 +        // Purpur end - Snowman drop and put back pumpkin

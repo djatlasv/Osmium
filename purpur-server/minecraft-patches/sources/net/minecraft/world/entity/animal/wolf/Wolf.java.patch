@@ -142,7 +142,7 @@
              this.tryToTame(player);
              return InteractionResult.SUCCESS_SERVER;
 +        // Purpur start - Configurable chance for wolves to spawn rabid
-+        } else if (this.level().purpurConfig.wolfMilkCuresRabies && itemInHand.getItem() == Items.MILK_BUCKET && this.isRabid()) {
++        } else if (this.level().purpurConfig.wolfMilkCuresRabies && itemStack.getItem() == Items.MILK_BUCKET && this.isRabid()) {
 +            if (!player.isCreative()) {
 +                player.setItemInHand(hand, new ItemStack(Items.BUCKET));
 +            }
