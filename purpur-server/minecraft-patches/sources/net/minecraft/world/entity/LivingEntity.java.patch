@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -440,6 +_,12 @@
+@@ -441,6 +_,12 @@
                  if (dist < 0.0) {
                      double damagePerBlock = level.getWorldBorder().getDamagePerBlock();
                      if (damagePerBlock > 0.0) {
@@ -13,7 +13,7 @@
                          this.hurtServer(level, this.damageSources().outOfBorder(), Math.max(1, Mth.floor(-dist * damagePerBlock)));
                      }
                  }
-@@ -455,7 +_,7 @@
+@@ -456,7 +_,7 @@
                      if (this.shouldTakeDrowningDamage()) {
                          this.setAirSupply(0);
                          level.broadcastEntityEvent(this, EntityEvent.DROWN_PARTICLES);
@@ -22,7 +22,7 @@
                      }
                  } else if (this.getAirSupply() < this.getMaxAirSupply() && MobEffectUtil.shouldEffectsRefillAirsupply(this)) {
                      this.setAirSupply(this.increaseAirSupply(this.getAirSupply()));
-@@ -515,7 +_,7 @@
+@@ -516,7 +_,7 @@
      }
  
      protected boolean shouldTakeDrowningDamage() {
@@ -31,7 +31,7 @@
      }
  
      @Override
-@@ -1045,15 +_,33 @@
+@@ -1046,15 +_,33 @@
          }
  
          if (targetingEntity != null) {
@@ -74,7 +74,7 @@
  
          return visibilityPercent;
      }
-@@ -1100,6 +_,7 @@
+@@ -1101,6 +_,7 @@
              Iterator<MobEffectInstance> iterator = this.activeEffects.values().iterator();
              while (iterator.hasNext()) {
                  MobEffectInstance effect = iterator.next();
@@ -82,7 +82,7 @@
                  EntityPotionEffectEvent event = CraftEventFactory.callEntityPotionEffectChangeEvent(this, effect, null, cause, EntityPotionEffectEvent.Action.CLEARED);
                  if (event.isCancelled()) {
                      continue;
-@@ -1431,6 +_,24 @@
+@@ -1432,6 +_,24 @@
                  this.stopSleeping();
              }
  
@@ -107,7 +107,7 @@
              this.noActionTime = 0;
              if (damage < 0.0F) {
                  damage = 0.0F;
-@@ -1692,10 +_,10 @@
+@@ -1693,10 +_,10 @@
      protected @Nullable Player resolvePlayerResponsibleForDamage(final DamageSource source) {
          Entity sourceEntity = source.getEntity();
          if (sourceEntity instanceof Player playerSource) {
@@ -120,7 +120,7 @@
              } else {
                  this.lastHurtByPlayer = null;
                  this.lastHurtByPlayerMemoryTime = 0;
-@@ -1746,6 +_,30 @@
+@@ -1747,6 +_,18 @@
                  }
              }
  
@@ -128,30 +128,18 @@
 +            if (level().purpurConfig.totemOfUndyingWorksInInventory && this instanceof ServerPlayer player && (itemStack == null || itemStack.getItem() != Items.TOTEM_OF_UNDYING) && player.getBukkitEntity().hasPermission("purpur.inventory_totem")) {
 +                for (ItemStack item : player.getInventory().getNonEquipmentItems()) {
 +                    if (item.getItem() == Items.TOTEM_OF_UNDYING) {
-+                        itemInHand = item;
-+                        itemStack = item.copy();
++                        itemStack = item;
++                        protectionItem = item.copy();
 +                        break;
 +                    }
 +                }
 +            }
 +            // Purpur end - Totems work in inventory
 +
-+            // Purpur start - Totems work in inventory
-+            if (level().purpurConfig.totemOfUndyingWorksInInventory && this instanceof ServerPlayer player && (itemStack == null || itemStack.getItem() != Items.TOTEM_OF_UNDYING) && player.getBukkitEntity().hasPermission("purpur.inventory_totem")) {
-+                for (ItemStack item : player.getInventory().getNonEquipmentItems()) {
-+                    if (item.getItem() == Items.TOTEM_OF_UNDYING) {
-+                        itemInHand = item;
-+                        itemStack = item.copy();
-+                        break;
-+                    }
-+                }
-+            }
-+            // Purpur end - Totems work in inventory
-+
-             final org.bukkit.inventory.EquipmentSlot handSlot = (hand != null) ? org.bukkit.craftbukkit.CraftEquipmentSlot.getHand(hand) : null;
+             final org.bukkit.inventory.EquipmentSlot handSlot = (usedHand != null) ? org.bukkit.craftbukkit.CraftEquipmentSlot.getHand(usedHand) : null;
              final EntityResurrectEvent event = new EntityResurrectEvent((org.bukkit.entity.LivingEntity) this.getBukkitEntity(), handSlot);
              event.setCancelled(protectionItem == null);
-@@ -1920,6 +_,7 @@
+@@ -1921,6 +_,7 @@
          boolean playerKilled = this.lastHurtByPlayerMemoryTime > 0;
          this.dropEquipment(level); // CraftBukkit - from below
          if (this.shouldDropLoot(level)) {
@@ -159,7 +147,7 @@
              this.dropFromLootTable(level, source, playerKilled);
              // Paper start
              final boolean prev = this.clearEquipmentSlots;
-@@ -1928,6 +_,7 @@
+@@ -1929,6 +_,7 @@
              // Paper end
              this.dropCustomDeathLoot(level, source, playerKilled);
              this.clearEquipmentSlots = prev; // Paper
@@ -175,7 +163,7 @@
                  this.hurt(this.damageSources().flyIntoWall(), dmg);
              }
          }
-@@ -3852,7 +_,7 @@
+@@ -3860,7 +_,7 @@
          }
      }
  
@@ -184,7 +172,7 @@
          if (!this.onGround() && !this.isPassenger() && !this.hasEffect(MobEffects.LEVITATION)) {
              for (EquipmentSlot slot : EquipmentSlot.VALUES) {
                  if (canGlideUsing(this.getItemBySlot(slot), slot)) {
-@@ -4740,6 +_,12 @@
+@@ -4748,6 +_,12 @@
              ? slot == EquipmentSlot.MAINHAND && this.canUseSlot(EquipmentSlot.MAINHAND)
              : slot == equippable.slot() && this.canUseSlot(equippable.slot()) && equippable.canBeEquippedBy(this.typeHolder());
      }

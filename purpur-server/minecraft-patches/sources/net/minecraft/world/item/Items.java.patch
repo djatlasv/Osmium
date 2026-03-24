@@ -9,7 +9,7 @@
      public static final Item CREAKING_HEART = registerBlock(Blocks.CREAKING_HEART);
      public static final Item CHEST = registerBlock(Blocks.CHEST, p -> p.component(DataComponents.CONTAINER, ItemContainerContents.EMPTY));
      public static final Item CRAFTING_TABLE = registerBlock(Blocks.CRAFTING_TABLE);
-@@ -2077,7 +_,7 @@
+@@ -2105,7 +_,7 @@
          "sweet_berries", createBlockItemWithCustomItemName(Blocks.SWEET_BERRY_BUSH), new Item.Properties().food(Foods.SWEET_BERRIES)
      );
      public static final Item GLOW_BERRIES = registerItem(

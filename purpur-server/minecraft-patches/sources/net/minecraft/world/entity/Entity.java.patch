@@ -41,10 +41,10 @@
      public int totalEntityAge; // Paper - age-like counter for all entities
      public final io.papermc.paper.entity.activation.ActivationType activationType = io.papermc.paper.entity.activation.ActivationType.activationTypeFor(this); // Paper - EAR 2/tracking ranges
 +    public @Nullable Boolean immuneToFire = null; // Purpur - Fire immune API
-     // CraftBukkit end
- 
-     // Paper start
-@@ -434,10 +_,22 @@
+     // Paper start - EAR 2
+     public final boolean defaultActivationState;
+     public long activatedTick = Integer.MIN_VALUE;
+@@ -443,10 +_,22 @@
      }
      // Paper end
  
@@ -67,7 +67,7 @@
          this.position = Vec3.ZERO;
          this.blockPosition = BlockPos.ZERO;
          this.chunkPosition = ChunkPos.ZERO;
-@@ -828,6 +_,7 @@
+@@ -844,6 +_,7 @@
              && this.level.paperConfig().environment.netherCeilingVoidDamageHeight.test(v -> this.getY() >= v)
              && (!(this instanceof Player player) || !player.getAbilities().invulnerable))) {
              // Paper end - Configurable nether ceiling damage
@@ -75,7 +75,7 @@
              this.onBelowWorld();
          }
      }
-@@ -1826,7 +_,7 @@
+@@ -1857,7 +_,7 @@
      }
  
      public boolean fireImmune() {
@@ -84,7 +84,7 @@
      }
  
      public boolean causeFallDamage(final double fallDistance, final float damageModifier, final DamageSource damageSource) {
-@@ -2412,7 +_,7 @@
+@@ -2443,7 +_,7 @@
                  output.putBoolean("Bukkit.invisible", this.persistentInvisibility);
              }
              // SPIGOT-6907: re-implement LivingEntity#setMaximumAir()
@@ -93,7 +93,7 @@
                  output.putInt("Bukkit.MaxAirSupply", this.getMaxAirSupply());
              }
              output.putInt("Spigot.ticksLived", this.totalEntityAge); // Paper
-@@ -2499,6 +_,11 @@
+@@ -2530,6 +_,11 @@
                  output.putBoolean("Paper.FreezeLock", true);
              }
              // Paper end
@@ -105,7 +105,7 @@
          } catch (Throwable var7) {
              CrashReport report = CrashReport.forThrowable(var7, "Saving entity NBT");
              CrashReportCategory category = report.addCategory("Entity being saved");
-@@ -2621,6 +_,9 @@
+@@ -2652,6 +_,9 @@
              }
              freezeLocked = input.getBooleanOr("Paper.FreezeLock", false);
              // Paper end
@@ -115,7 +115,7 @@
          } catch (Throwable var7) {
              CrashReport report = CrashReport.forThrowable(var7, "Loading entity NBT");
              CrashReportCategory category = report.addCategory("Entity being loaded");
-@@ -2800,6 +_,7 @@
+@@ -2831,6 +_,7 @@
              if (this.isAlive() && this instanceof Leashable leashablex) {
                  if (leashablex.getLeashHolder() == player) {
                      if (!this.level().isClientSide()) {
@@ -123,7 +123,7 @@
                          // Paper start - EntityUnleashEvent
                          if (!org.bukkit.craftbukkit.event.CraftEventFactory.handlePlayerUnleashEntityEvent(
                              leashablex, player, hand, !player.hasInfiniteMaterials(), true
-@@ -3230,15 +_,18 @@
+@@ -3261,15 +_,18 @@
          return Vec3.directionFromRotation(this.getRotationVector());
      }
  
@@ -143,7 +143,7 @@
              }
          }
      }
-@@ -3967,7 +_,7 @@
+@@ -3998,7 +_,7 @@
      }
  
      public boolean canUsePortal(final boolean ignorePassenger) {
@@ -152,7 +152,7 @@
      }
  
      public boolean canTeleport(final Level from, final Level to) {
-@@ -4515,6 +_,12 @@
+@@ -4546,6 +_,12 @@
          return Mth.lerp(partial, this.yRotO, this.yRot);
      }
  
@@ -165,7 +165,7 @@
      public boolean touchingUnloadedChunk() {
          AABB box = this.getBoundingBox().inflate(1.0);
          int x0 = Mth.floor(box.minX);
-@@ -4809,7 +_,7 @@
+@@ -4840,7 +_,7 @@
      }
  
      public float maxUpStep() {

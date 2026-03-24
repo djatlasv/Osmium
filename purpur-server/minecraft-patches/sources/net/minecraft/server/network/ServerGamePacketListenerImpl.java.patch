@@ -206,7 +206,7 @@
      private boolean shouldCheckPlayerMovement(final boolean isFallFlying) {
          if (this.isSingleplayerOwner()) {
              return false;
-@@ -2155,6 +_,7 @@
+@@ -2150,6 +_,7 @@
  
                  boolean cancelled;
                  if (hitResult == null || hitResult.getType() != HitResult.Type.BLOCK) {
@@ -214,15 +214,15 @@
                      org.bukkit.event.player.PlayerInteractEvent event = CraftEventFactory.callPlayerInteractEvent(this.player, Action.RIGHT_CLICK_AIR, itemStack, hand);
                      cancelled = event.useItemInHand() == Event.Result.DENY;
                  } else {
-@@ -2800,6 +_,7 @@
-             if (target != null && level.getWorldBorder().isWithinBounds(target.blockPosition())) {
-                 AABB targetBounds = target.getBoundingBox();
-                 if (this.player.isWithinAttackRange(this.player.getMainHandItem(), targetBounds, io.papermc.paper.configuration.GlobalConfiguration.get().misc.clientInteractionLeniencyDistance.or(3.0))) { // Paper - configurable lenience value for interact range
-+                    if (target instanceof net.minecraft.world.entity.Mob mob) mob.ticksSinceLastInteraction = 0; // Purpur - Entity lifespan
-                     if (!(target instanceof ItemEntity)
-                         && !(target instanceof ExperienceOrb)
-                         && (target != this.player || this.player.isSpectator()) // CraftBukkit
-@@ -3590,7 +_,7 @@
+@@ -2791,6 +_,7 @@
+                 ItemStack mainHandItem = this.player.getMainHandItem();
+                 if (this.player.isWithinAttackRange(mainHandItem, targetBounds, io.papermc.paper.configuration.GlobalConfiguration.get().misc.clientInteractionLeniencyDistance.or(3.0))) { // Paper - configurable lenience
+                     if (!mainHandItem.has(DataComponents.PIERCING_WEAPON)) {
++                        if (target instanceof net.minecraft.world.entity.Mob mob) mob.ticksSinceLastInteraction = 0; // Purpur - Entity lifespan
+                         if (target instanceof ItemEntity
+                             || target instanceof ExperienceOrb
+                             || target == this.player
+@@ -3572,7 +_,7 @@
      @Override
      public void handleChangeGameMode(final ServerboundChangeGameModePacket packet) {
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());

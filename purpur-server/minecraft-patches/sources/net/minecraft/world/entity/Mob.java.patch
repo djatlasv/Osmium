@@ -8,7 +8,7 @@
  
      protected Mob(final EntityType<? extends Mob> type, final Level level) {
          super(type, level);
-@@ -285,6 +_,7 @@
+@@ -298,6 +_,7 @@
                  target = null;
              }
          }
@@ -16,7 +16,7 @@
          this.target = this.asValidTarget(target);
          return true;
          // CraftBukkit end
-@@ -328,7 +_,27 @@
+@@ -341,7 +_,27 @@
          }
  
          profiler.pop();
@@ -45,7 +45,7 @@
  
      @Override
      protected void playHurtSound(final DamageSource source) {
-@@ -432,6 +_,7 @@
+@@ -445,6 +_,7 @@
              output.putString("Paper.DespawnInPeacefulOverride", this.despawnInPeacefulOverride.name());
          }
          // Paper end - allow changing despawnInPeaceful
@@ -53,7 +53,7 @@
      }
  
      @Override
-@@ -459,6 +_,7 @@
+@@ -472,6 +_,7 @@
          this.lootTableSeed = input.getLongOr("DeathLootTableSeed", 0L);
          this.setNoAi(input.getBooleanOr("NoAI", false));
          this.aware = input.getBooleanOr("Bukkit.Aware", true); // CraftBukkit
@@ -61,7 +61,7 @@
          // Paper start - allow changing despawnInPeaceful
          this.despawnInPeacefulOverride = readDespawnInPeacefulOverride(input);
      }
-@@ -1237,7 +_,7 @@
+@@ -1250,7 +_,7 @@
              );
          }
  
@@ -70,7 +70,7 @@
          return groupData;
      }
  
-@@ -1598,6 +_,7 @@
+@@ -1607,6 +_,7 @@
          }
  
          this.postPiercingAttack();

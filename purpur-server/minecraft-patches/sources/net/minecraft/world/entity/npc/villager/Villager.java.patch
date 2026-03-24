@@ -67,11 +67,16 @@
      @Override
      public Brain<Villager> getBrain() {
          return (Brain<Villager>) super.getBrain();
-@@ -248,7 +_,18 @@
-     protected void customServerAiStep(final ServerLevel level) {
+@@ -268,11 +_,22 @@
+         // Paper start - EAR 2
+         this.customServerAiStep(level, false);
+     }
+-    protected void customServerAiStep(ServerLevel level, final boolean inactive) {
++    protected void customServerAiStep(ServerLevel level, boolean inactive) { // Purpur - Lobotomize stuck villagers
+         // Paper end - EAR 2
          ProfilerFiller profiler = Profiler.get();
          profiler.push("villagerBrain");
--        this.getBrain().tick(level, this);
+-        if (!inactive) this.getBrain().tick(level, this); // Paper - EAR 2
 +        // Purpur start - Lobotomize stuck villagers
 +        if (this.level().purpurConfig.villagerLobotomizeEnabled) {
 +            // treat as inactive if lobotomized
@@ -87,7 +92,7 @@
          profiler.pop();
          if (this.assignProfessionWhenSpawned) {
              this.assignProfessionWhenSpawned = false;
-@@ -319,6 +_,7 @@
+@@ -344,6 +_,7 @@
                      return InteractionResult.CONSUME;
                  }
  
@@ -95,7 +100,7 @@
                  this.startTrading(player);
              }
  
-@@ -460,7 +_,7 @@
+@@ -485,7 +_,7 @@
  
      public void updateDemand() {
          for (MerchantOffer offer : this.getOffers()) {
@@ -104,7 +109,7 @@
          }
      }
  
-@@ -660,7 +_,7 @@
+@@ -685,7 +_,7 @@
  
      @Override
      public boolean canBreed() {
@@ -113,7 +118,7 @@
      }
  
      private boolean hungry() {
-@@ -867,6 +_,7 @@
+@@ -892,6 +_,7 @@
      }
  
      public void spawnGolemIfNeeded(final ServerLevel level, final long timestamp, final int villagersNeededToAgree) {
