@@ -22,6 +22,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.Logger;
 
 /**
  * Random Teleport GUI — /rtp opens a 3-row chest inventory with dimension
@@ -29,6 +30,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * charges economy cost via Vault, and applies a configurable countdown.
  */
 public class OsmiumRtp {
+
+    private static final Logger LOGGER = Logger.getLogger("Osmium-RTP");
 
     // Slot layout for a 3-row (27-slot) inventory
     private static final int SLOT_OVERWORLD = 11; // center-left
@@ -56,20 +59,48 @@ public class OsmiumRtp {
 
     private record PendingRtp(UUID playerUuid, ResourceKey<Level> dimension, int teleportAtTick, BlockPos target) {}
 
+    private static void debug(String msg) {
+        if (OsmiumConfig.rtpDebug) {
+            LOGGER.info("[DEBUG] " + msg);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Command registration
     // ------------------------------------------------------------------
 
     public static void registerCommand(CommandDispatcher<CommandSourceStack> dispatcher) {
+        debug("Registering /rtp command (op-only=" + OsmiumConfig.rtpOpOnly + ")");
+
         dispatcher.register(
                 Commands.literal("rtp")
-                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))
+                        .requires(OsmiumConfig.rtpOpOnly
+                                ? Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)
+                                : Commands.hasPermission(Commands.LEVEL_ALL))
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            debug(player.getGameProfile().name() + " executed /rtp command");
                             openGui(player);
                             return 1;
                         })
         );
+
+        // Register Bukkit permission so non-ops can use the command
+        // Paper overrides brigadier requirements with Bukkit permission checks
+        try {
+            org.bukkit.permissions.Permission perm = new org.bukkit.permissions.Permission(
+                    "minecraft.command.rtp",
+                    "Allows use of the /rtp command",
+                    OsmiumConfig.rtpOpOnly
+                            ? org.bukkit.permissions.PermissionDefault.OP
+                            : org.bukkit.permissions.PermissionDefault.TRUE
+            );
+            org.bukkit.Bukkit.getPluginManager().addPermission(perm);
+            debug("Registered Bukkit permission minecraft.command.rtp (default=" +
+                    (OsmiumConfig.rtpOpOnly ? "OP" : "TRUE") + ")");
+        } catch (Exception e) {
+            debug("Could not register Bukkit permission: " + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -80,6 +111,7 @@ public class OsmiumRtp {
      * Opens the RTP GUI for a player.
      */
     public static void openGui(ServerPlayer player) {
+        debug(player.getGameProfile().name() + " opening RTP dimension picker GUI");
         GUI_OPEN.add(player.getUUID());
 
         SimpleContainer container = new SimpleContainer(27);
@@ -121,6 +153,7 @@ public class OsmiumRtp {
                 Component.literal("\u00a78\u00a7lRandom Teleport")));
         player.containerMenu = menu;
         player.initMenu(menu);
+        debug(player.getGameProfile().name() + " GUI opened successfully (containerId=" + containerId + ")");
     }
 
     /**
@@ -129,18 +162,20 @@ public class OsmiumRtp {
      */
     public static boolean handleClick(ServerPlayer player, int slotNum) {
         UUID uuid = player.getUUID();
+        String name = player.getGameProfile().name();
 
         // --- Confirmation GUI ---
         if (CONFIRM_OPEN.containsKey(uuid)) {
             ResourceKey<Level> dimension = CONFIRM_OPEN.get(uuid);
+            debug(name + " clicked slot " + slotNum + " in confirm GUI (dimension=" + getDimensionName(dimension) + ")");
 
             if (slotNum == SLOT_CONFIRM) {
-                // Confirmed — close GUI and proceed with RTP
+                debug(name + " confirmed RTP to " + getDimensionName(dimension));
                 CONFIRM_OPEN.remove(uuid);
                 player.closeContainer();
                 executeRtp(player, dimension);
             } else if (slotNum == SLOT_CANCEL) {
-                // Cancelled — go back to dimension picker
+                debug(name + " cancelled RTP, returning to dimension picker");
                 CONFIRM_OPEN.remove(uuid);
                 player.closeContainer();
                 openGui(player);
@@ -152,17 +187,20 @@ public class OsmiumRtp {
         // --- Dimension picker GUI ---
         if (!GUI_OPEN.contains(uuid)) return false;
 
+        debug(name + " clicked slot " + slotNum + " in dimension picker GUI");
+
         ResourceKey<Level> dimension;
         switch (slotNum) {
             case SLOT_OVERWORLD -> dimension = Level.OVERWORLD;
             case SLOT_NETHER    -> dimension = Level.NETHER;
             case SLOT_END       -> dimension = Level.END;
             default -> {
+                debug(name + " clicked non-dimension slot " + slotNum + ", ignoring");
                 return true; // still in the GUI, consume the click but do nothing
             }
         }
 
-        // Open confirmation GUI for this dimension
+        debug(name + " selected " + getDimensionName(dimension) + ", opening confirm GUI");
         GUI_OPEN.remove(uuid);
         player.closeContainer();
         openConfirmGui(player, dimension);
@@ -173,6 +211,7 @@ public class OsmiumRtp {
      * Opens a confirmation GUI showing cost and the selected dimension.
      */
     private static void openConfirmGui(ServerPlayer player, ResourceKey<Level> dimension) {
+        debug(player.getGameProfile().name() + " opening confirm GUI for " + getDimensionName(dimension));
         CONFIRM_OPEN.put(player.getUUID(), dimension);
 
         SimpleContainer container = new SimpleContainer(27);
@@ -224,25 +263,33 @@ public class OsmiumRtp {
                 Component.literal("\u00a78\u00a7lConfirm RTP")));
         player.containerMenu = menu;
         player.initMenu(menu);
+        debug(player.getGameProfile().name() + " confirm GUI opened (containerId=" + containerId + ", cost=" + cost + ")");
     }
 
     /**
      * Executes the actual RTP after confirmation — economy check, location finding, countdown.
      */
     private static void executeRtp(ServerPlayer player, ResourceKey<Level> dimension) {
+        String name = player.getGameProfile().name();
+        debug(name + " executeRtp called (dimension=" + getDimensionName(dimension) + ")");
+
         if (PENDING.containsKey(player.getUUID())) {
+            debug(name + " already has a pending teleport, aborting");
             player.sendSystemMessage(Component.literal("\u00a7cYou already have a teleport pending!"));
             return;
         }
 
         double cost = OsmiumConfig.rtpCost;
         if (cost > 0) {
+            debug(name + " economy check: cost=" + cost);
             initEconomy();
             if (economy == null) {
+                debug(name + " economy NOT available (Vault not found or no economy provider)");
                 player.sendSystemMessage(Component.literal("\u00a7cEconomy is not available. RTP cost cannot be charged."));
                 return;
             }
             double balance = getBalance(player);
+            debug(name + " balance=" + balance + " cost=" + cost);
             if (balance < cost) {
                 player.sendSystemMessage(Component.literal(
                         "\u00a7cYou need \u00a7e$" + String.format("%.2f", cost)
@@ -250,9 +297,11 @@ public class OsmiumRtp {
                 return;
             }
             if (!withdraw(player, cost)) {
+                debug(name + " withdraw FAILED");
                 player.sendSystemMessage(Component.literal("\u00a7cFailed to charge your account. Try again."));
                 return;
             }
+            debug(name + " withdraw OK");
             player.sendSystemMessage(Component.literal(
                     "\u00a7aCharged \u00a7e$" + String.format("%.2f", cost) + "\u00a7a for RTP."));
         }
@@ -260,21 +309,29 @@ public class OsmiumRtp {
         MinecraftServer server = player.level().getServer();
         ServerLevel targetLevel = server.getLevel(dimension);
         if (targetLevel == null) {
+            debug(name + " target dimension " + getDimensionName(dimension) + " is NOT loaded");
             player.sendSystemMessage(Component.literal("\u00a7cThat dimension is not loaded."));
             return;
         }
+        debug(name + " target dimension " + getDimensionName(dimension) + " is loaded");
 
+        debug(name + " finding safe location (minDist=" + OsmiumConfig.rtpMinDistance
+                + " maxDist=" + OsmiumConfig.rtpMaxDistance + ")");
         BlockPos target = findSafeLocation(targetLevel);
         if (target == null) {
+            debug(name + " could NOT find safe location after 50 attempts");
             player.sendSystemMessage(Component.literal("\u00a7cCould not find a safe location. Try again."));
             if (cost > 0) deposit(player, cost);
             return;
         }
+        debug(name + " found safe location at " + target.getX() + ", " + target.getY() + ", " + target.getZ());
 
         int delayTicks = OsmiumConfig.rtpDelaySeconds * 20;
         int teleportAt = server.getTickCount() + delayTicks;
 
         PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target));
+        debug(name + " pending teleport created (teleportAt tick=" + teleportAt
+                + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
 
         if (OsmiumConfig.rtpDelaySeconds > 0) {
             player.sendSystemMessage(Component.literal(
@@ -287,8 +344,11 @@ public class OsmiumRtp {
      * Called when a player closes any container.
      */
     public static void handleClose(ServerPlayer player) {
-        GUI_OPEN.remove(player.getUUID());
-        CONFIRM_OPEN.remove(player.getUUID());
+        boolean wasGui = GUI_OPEN.remove(player.getUUID());
+        boolean wasConfirm = CONFIRM_OPEN.remove(player.getUUID()) != null;
+        if (wasGui || wasConfirm) {
+            debug(player.getGameProfile().name() + " closed RTP GUI (wasPickerOpen=" + wasGui + " wasConfirmOpen=" + wasConfirm + ")");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -311,6 +371,7 @@ public class OsmiumRtp {
 
             // Player disconnected
             if (player == null) {
+                debug("Player " + pending.playerUuid + " disconnected, removing pending RTP");
                 it.remove();
                 continue;
             }
@@ -330,14 +391,19 @@ public class OsmiumRtp {
 
             // Time to teleport
             it.remove();
+            String name = player.getGameProfile().name();
 
             ServerLevel targetLevel = server.getLevel(pending.dimension);
             if (targetLevel == null) {
+                debug(name + " teleport FAILED — dimension no longer available");
                 player.sendSystemMessage(Component.literal("\u00a7cDimension no longer available."));
                 continue;
             }
 
             BlockPos target = pending.target;
+            debug(name + " teleporting NOW to " + getDimensionName(pending.dimension)
+                    + " at " + target.getX() + ", " + target.getY() + ", " + target.getZ());
+
             player.teleportTo(targetLevel,
                     target.getX() + 0.5, target.getY(), target.getZ() + 0.5,
                     Set.of(), player.getYRot(), player.getXRot(), true,
@@ -347,6 +413,7 @@ public class OsmiumRtp {
             player.sendSystemMessage(Component.literal(
                     "\u00a7aTeleported to \u00a7f" + dimName + "\u00a7a at \u00a7f"
                             + target.getX() + ", " + target.getY() + ", " + target.getZ()));
+            debug(name + " teleport complete");
         }
     }
 
@@ -354,9 +421,13 @@ public class OsmiumRtp {
      * Cancel a pending RTP (e.g. on disconnect).
      */
     public static void cancel(UUID playerUuid) {
-        PENDING.remove(playerUuid);
-        GUI_OPEN.remove(playerUuid);
-        CONFIRM_OPEN.remove(playerUuid);
+        boolean hadPending = PENDING.remove(playerUuid) != null;
+        boolean hadGui = GUI_OPEN.remove(playerUuid);
+        boolean hadConfirm = CONFIRM_OPEN.remove(playerUuid) != null;
+        if (hadPending || hadGui || hadConfirm) {
+            debug("Cancelled RTP state for " + playerUuid + " (pending=" + hadPending
+                    + " gui=" + hadGui + " confirm=" + hadConfirm + ")");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -375,11 +446,16 @@ public class OsmiumRtp {
         // Clamp max distance to world border
         if (maxDist > borderRadius - 1) {
             maxDist = (int) (borderRadius - 1);
+            debug("Clamped maxDist to " + maxDist + " (border radius=" + borderRadius + ")");
         }
         if (minDist > maxDist) {
             minDist = maxDist / 2;
+            debug("Adjusted minDist to " + minDist + " (was > maxDist)");
         }
-        if (maxDist <= 0) return null;
+        if (maxDist <= 0) {
+            debug("maxDist <= 0 after clamping, no valid area to teleport");
+            return null;
+        }
 
         ThreadLocalRandom random = ThreadLocalRandom.current();
 
@@ -393,7 +469,10 @@ public class OsmiumRtp {
             int z = (int) (centerZ + distance * Math.sin(angle));
 
             // Verify within world border
-            if (!border.isWithinBounds(new BlockPos(x, 64, z))) continue;
+            if (!border.isWithinBounds(new BlockPos(x, 64, z))) {
+                debug("Attempt " + attempt + ": (" + x + ", " + z + ") outside world border");
+                continue;
+            }
 
             // Get the highest block
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
@@ -401,7 +480,10 @@ public class OsmiumRtp {
             // Nether: scan downward from y=120 for air pocket
             if (level.dimension() == Level.NETHER) {
                 y = findNetherSafe(level, x, z);
-                if (y < 0) continue;
+                if (y < 0) {
+                    debug("Attempt " + attempt + ": (" + x + ", " + z + ") no safe nether pocket");
+                    continue;
+                }
             }
 
             // Basic safety: block below must be solid, block at feet and head must be passable
@@ -409,14 +491,30 @@ public class OsmiumRtp {
             BlockPos below = feet.below();
             BlockPos head = feet.above();
 
-            if (!level.getBlockState(below).isSolid()) continue;
-            if (level.getBlockState(feet).isSolid()) continue;
-            if (level.getBlockState(head).isSolid()) continue;
+            if (!level.getBlockState(below).isSolid()) {
+                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") block below not solid");
+                continue;
+            }
+            if (level.getBlockState(feet).isSolid()) {
+                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") feet block is solid");
+                continue;
+            }
+            if (level.getBlockState(head).isSolid()) {
+                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") head block is solid");
+                continue;
+            }
 
             // Don't spawn in lava or water
-            if (level.getBlockState(feet).liquid()) continue;
-            if (level.getBlockState(below).liquid()) continue;
+            if (level.getBlockState(feet).liquid()) {
+                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") feet in liquid");
+                continue;
+            }
+            if (level.getBlockState(below).liquid()) {
+                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") standing on liquid");
+                continue;
+            }
 
+            debug("Attempt " + attempt + ": found safe location at (" + x + ", " + y + ", " + z + ")");
             return feet;
         }
 
@@ -447,12 +545,15 @@ public class OsmiumRtp {
 
     private static void initEconomy() {
         if (economy != null || economyChecked) return;
+        debug("Initializing Vault economy...");
         try {
             org.bukkit.plugin.Plugin vaultPlugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Vault");
             if (vaultPlugin == null) {
+                debug("Vault plugin NOT found");
                 economyChecked = true;
                 return;
             }
+            debug("Vault plugin found, looking for economy provider...");
             Class<?> economyClass = Class.forName("net.milkbowl.vault.economy.Economy",
                     true, vaultPlugin.getClass().getClassLoader());
             org.bukkit.plugin.RegisteredServiceProvider<?> rsp =
@@ -461,12 +562,17 @@ public class OsmiumRtp {
                 economy = rsp.getProvider();
                 balanceMethod = economy.getClass().getMethod("getBalance", org.bukkit.OfflinePlayer.class);
                 withdrawMethod = economy.getClass().getMethod("withdrawPlayer", org.bukkit.OfflinePlayer.class, double.class);
+                debug("Economy provider found: " + economy.getClass().getName());
             } else {
+                debug("No economy provider registered with Vault");
                 economyChecked = true;
             }
         } catch (ClassNotFoundException e) {
+            debug("Vault economy class not found: " + e.getMessage());
             economyChecked = true;
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            debug("Economy init error: " + e.getMessage());
+        }
     }
 
     private static double getBalance(ServerPlayer player) {
@@ -474,7 +580,9 @@ public class OsmiumRtp {
         try {
             Object result = balanceMethod.invoke(economy, (org.bukkit.OfflinePlayer) player.getBukkitEntity());
             return ((Number) result).doubleValue();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            debug("getBalance error: " + e.getMessage());
+        }
         return 0.0;
     }
 
@@ -485,7 +593,9 @@ public class OsmiumRtp {
             // EconomyResponse has a transactionSuccess() method
             java.lang.reflect.Method successMethod = result.getClass().getMethod("transactionSuccess");
             return (boolean) successMethod.invoke(result);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            debug("withdraw error: " + e.getMessage());
+        }
         return false;
     }
 
@@ -495,7 +605,10 @@ public class OsmiumRtp {
             java.lang.reflect.Method depositMethod = economy.getClass().getMethod("depositPlayer",
                     org.bukkit.OfflinePlayer.class, double.class);
             depositMethod.invoke(economy, (org.bukkit.OfflinePlayer) player.getBukkitEntity(), amount);
-        } catch (Exception ignored) {}
+            debug(player.getGameProfile().name() + " refunded $" + amount);
+        } catch (Exception e) {
+            debug("deposit error: " + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------

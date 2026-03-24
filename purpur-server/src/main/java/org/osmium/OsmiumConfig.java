@@ -337,6 +337,8 @@ public class OsmiumConfig {
     public static double rtpCost = 0.0;
     public static int rtpMaxDistance = 10000;
     public static int rtpMinDistance = 500;
+    public static boolean rtpOpOnly = false;
+    public static boolean rtpDebug = false;
 
     private static void rtp() {
         rtpEnabled = getBoolean("rtp.enabled", false);
@@ -345,6 +347,8 @@ public class OsmiumConfig {
         config.addDefault("rtp.cost", rtpCost);
         rtpMaxDistance = getInt("rtp.max-distance", 10000);
         rtpMinDistance = getInt("rtp.min-distance", 500);
+        rtpOpOnly = getBoolean("rtp.op-only", false);
+        rtpDebug = getBoolean("rtp.debug", false);
     }
 
     // -------------------------------------------------------------------------
