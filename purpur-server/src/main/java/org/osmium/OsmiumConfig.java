@@ -66,6 +66,14 @@ public class OsmiumConfig {
             + "GrimAC configs live in the ./grim/ directory.\n"
             + "  enabled: master toggle\n"
             + "\n"
+            + "--- rtp ---\n"
+            + "Random Teleport GUI — /rtp opens a dimension picker.\n"
+            + "  enabled: master toggle\n"
+            + "  delay-seconds: countdown before teleporting\n"
+            + "  cost: economy charge per teleport (0 = free, requires Vault + economy plugin)\n"
+            + "  max-distance: maximum distance from world center\n"
+            + "  min-distance: minimum distance from world center\n"
+            + "\n"
             + "--- discord-webhook ---\n"
             + "Sends Discord embed notifications for server events (start/stop, bans, alts, etc.).\n"
             + "  enabled: master toggle\n"
@@ -318,6 +326,25 @@ public class OsmiumConfig {
 
     private static void grim() {
         grimEnabled = getBoolean("grim.enabled", false);
+    }
+
+    // -------------------------------------------------------------------------
+    // RTP (Random Teleport) GUI settings
+    // -------------------------------------------------------------------------
+
+    public static boolean rtpEnabled = false;
+    public static int rtpDelaySeconds = 5;
+    public static double rtpCost = 0.0;
+    public static int rtpMaxDistance = 10000;
+    public static int rtpMinDistance = 500;
+
+    private static void rtp() {
+        rtpEnabled = getBoolean("rtp.enabled", false);
+        rtpDelaySeconds = getInt("rtp.delay-seconds", 5);
+        rtpCost = config.getDouble("rtp.cost", 0.0);
+        config.addDefault("rtp.cost", rtpCost);
+        rtpMaxDistance = getInt("rtp.max-distance", 10000);
+        rtpMinDistance = getInt("rtp.min-distance", 500);
     }
 
     // -------------------------------------------------------------------------
