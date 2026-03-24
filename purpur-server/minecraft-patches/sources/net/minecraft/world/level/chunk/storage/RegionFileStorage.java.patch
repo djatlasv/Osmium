@@ -1,14 +1,6 @@
-From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
-From: File <noreply+automated@papermc.io>
-Date: Sun, 20 Apr 1997 05:37:42 -0800
-Subject: [PATCH] purpur File Patches
-
-
-diff --git a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
-index 1e9e061ec694ad64fc2724b83a66dfec7e069a43..e7e71018a4d328832fe44eef595e78265ee720ae 100644
 --- a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
 +++ b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
-@@ -309,7 +309,7 @@ public class RegionFileStorage implements AutoCloseable, ca.spottedleaf.moonrise
+@@ -50,7 +_,7 @@
  
      // Paper start
      private static void printOversizedLog(String msg, Path file, int x, int z) {

@@ -1,14 +1,6 @@
-From 56a0a83ddb1b7472dbc9762e2aca396605c62085 Mon Sep 17 00:00:00 2001
-From: File <noreply+automated@papermc.io>
-Date: Sun, 20 Apr 1997 05:37:42 -0800
-Subject: [PATCH] purpur File Patches
-
-
-diff --git a/io/papermc/paper/entity/activation/ActivationRange.java b/io/papermc/paper/entity/activation/ActivationRange.java
-index c18823746ab2edcab536cb1589b7720e3af07e0f..bc62da127a01b33ce8fc0f958bc232d6287d57ec 100644
 --- a/io/papermc/paper/entity/activation/ActivationRange.java
 +++ b/io/papermc/paper/entity/activation/ActivationRange.java
-@@ -147,6 +147,8 @@ public final class ActivationRange {
+@@ -147,6 +_,8 @@
                  continue;
              }
  
@@ -17,7 +9,7 @@ index c18823746ab2edcab536cb1589b7720e3af07e0f..bc62da127a01b33ce8fc0f958bc232d6
              final int worldHeight = world.getHeight();
              ActivationRange.maxBB = player.getBoundingBox().inflate(maxRange, worldHeight, maxRange);
              ActivationType.MISC.boundingBox = player.getBoundingBox().inflate(miscActivationRange, worldHeight, miscActivationRange);
-@@ -288,6 +290,7 @@ public final class ActivationRange {
+@@ -288,6 +_,7 @@
       * @return
       */
      public static boolean checkIfActive(final Entity entity) {
