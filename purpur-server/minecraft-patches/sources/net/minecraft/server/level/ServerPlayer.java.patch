@@ -8,9 +8,9 @@
 +    private boolean compassBar = false; // Purpur - Add compass command
 +    private boolean ramBar = false; // Purpur - Implement rambar commands
  
-     public ServerPlayer(final MinecraftServer server, final ServerLevel level, final GameProfile gameProfile, final ClientInformation clientInformation) {
-         super(level, gameProfile);
-@@ -491,6 +_,9 @@
+     // Paper start - rewrite chunk system
+     private ca.spottedleaf.moonrise.patches.chunk_system.player.RegionizedPlayerChunkLoader.PlayerChunkLoaderData chunkLoader;
+@@ -521,6 +_,9 @@
          this.respawnConfig = input.read("respawn", ServerPlayer.RespawnConfig.CODEC).orElse(null);
          this.spawnExtraParticlesOnFall = input.getBooleanOr("spawn_extra_particles_on_fall", false);
          this.raidOmenPosition = input.read("raid_omen_position", BlockPos.CODEC).orElse(null);
@@ -20,7 +20,7 @@
          // Paper start - Expand PlayerGameModeChangeEvent
          this.loadGameTypes(input);
      }
-@@ -532,6 +_,9 @@
+@@ -562,6 +_,9 @@
              output.store("ShoulderEntityRight", CompoundTag.CODEC, this.getShoulderEntityRight());
          }
          this.getBukkitEntity().setExtraData(output); // CraftBukkit
@@ -30,7 +30,7 @@
      }
  
      private void saveParentVehicle(final ValueOutput playerOutput) {
-@@ -1167,6 +_,7 @@
+@@ -1197,6 +_,7 @@
              // Paper - moved up to sendClientboundPlayerCombatKillPacket()
              sendClientboundPlayerCombatKillPacket(event.getShowDeathMessages(), deathScreenMessage); // Paper - Expand PlayerDeathEvent
              Team team = this.getTeam();
@@ -38,7 +38,7 @@
              if (team == null || team.getDeathMessageVisibility() == Team.Visibility.ALWAYS) {
                  this.server.getPlayerList().broadcastSystemMessage(deathMessage, false);
              } else if (team.getDeathMessageVisibility() == Team.Visibility.HIDE_FOR_OTHER_TEAMS) {
-@@ -1275,6 +_,13 @@
+@@ -1305,6 +_,13 @@
          if (this.isInvulnerableTo(level, source)) {
              return false;
          } else {
@@ -52,7 +52,7 @@
              Entity entity = source.getEntity();
              if (!( // Paper - split the if statement. If below statement is false, hurtServer would not have been evaluated. Return false.
                  !(entity instanceof Player playerx && !this.canHarmPlayer(playerx))
-@@ -1534,6 +_,7 @@
+@@ -1564,6 +_,7 @@
  
                  profiler.pop();
                  profiler.push("placing");
@@ -60,7 +60,7 @@
                  this.setServerLevel(newLevel);
                  this.connection.internalTeleport(PositionMoveRotation.of(transition), transition.relatives()); // CraftBukkit - use internal teleport without event
                  this.connection.resetPosition();
-@@ -1650,7 +_,7 @@
+@@ -1680,7 +_,7 @@
                                  ),
                                  monster -> monster.isPreventingPlayerRest(this.level(), this)
                              );
@@ -69,7 +69,7 @@
                              return Either.left(Player.BedSleepingProblem.NOT_SAFE);
                          }
                      }
-@@ -1690,8 +_,19 @@
+@@ -1720,8 +_,19 @@
                          CriteriaTriggers.SLEPT_IN_BED.trigger(this);
                      });
                      if (!this.level().canSleepThroughNights()) {
@@ -90,7 +90,7 @@
  
                      this.level().updateSleepingPlayerList();
                      return result;
-@@ -1785,6 +_,7 @@
+@@ -1815,6 +_,7 @@
  
      @Override
      public void openTextEdit(final SignBlockEntity sign, final boolean isFrontText) {
@@ -98,7 +98,7 @@
          this.connection.send(new ClientboundBlockUpdatePacket(this.level(), sign.getBlockPos()));
          this.connection.send(new ClientboundOpenSignEditorPacket(sign.getBlockPos(), isFrontText));
      }
-@@ -2128,6 +_,26 @@
+@@ -2158,6 +_,26 @@
          this.lastSentExp = -1; // CraftBukkit - Added to reset
      }
  
@@ -125,7 +125,7 @@
      @Override
      public void completeUsingItem() {
          if (!this.useItem.isEmpty() && this.isUsingItem()) {
-@@ -2367,6 +_,20 @@
+@@ -2397,6 +_,20 @@
          );
      }
  
@@ -146,7 +146,7 @@
      @Override
      public void sendSystemMessage(final Component message) {
          this.sendSystemMessage(message, false);
-@@ -2518,7 +_,67 @@
+@@ -2548,7 +_,67 @@
  
      public void resetLastActionTime() {
          this.lastActionTime = Util.getMillis();
@@ -215,7 +215,7 @@
  
      public ServerStatsCounter getStats() {
          return this.stats;
-@@ -3143,4 +_,65 @@
+@@ -3173,4 +_,65 @@
          return (org.bukkit.craftbukkit.entity.CraftPlayer) super.getBukkitEntity();
      }
      // CraftBukkit end

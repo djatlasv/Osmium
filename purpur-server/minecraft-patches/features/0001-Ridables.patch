@@ -18,10 +18,10 @@ index 64a82b414afd093c010878c150592c681665b735..1db70e2397137158c3df9603ea90743e
              public boolean isClientAuthoritative() {
                  return false;
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index e9b3c2a767dc6ecc5044e45c51e3231c68768316..50ac39c620aae79d9111089eb55d979d0ae3b5db 100644
+index ebe24732d0d5e1d8e3fd7fa610202e5929ca82fd..62236ea8eaf52b5cc47e60d0064a3539bb6b8376 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -1716,6 +1716,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1841,6 +1841,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          for (ServerLevel level : this.getAllLevels()) {
              level.hasPhysicsEvent = org.bukkit.event.block.BlockPhysicsEvent.getHandlerList().getRegisteredListeners().length > 0; // Paper - BlockPhysicsEvent
              level.hasEntityMoveEvent = io.papermc.paper.event.entity.EntityMoveEvent.getHandlerList().getRegisteredListeners().length > 0; // Paper - Add EntityMoveEvent
@@ -30,7 +30,7 @@ index e9b3c2a767dc6ecc5044e45c51e3231c68768316..50ac39c620aae79d9111089eb55d979d
              profiler.push(() -> level + " " + level.dimension().identifier());
              profiler.push("tick");
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
-index 53617e830a1d16cb54b7385b0993b9121062a741..af825adf9d92ed36b430e48505944a2533f2692c 100644
+index f3bd861bf442de944b403bb4f46ec916f21f0768..27112abea11a784d97c92633e8dc2b3d1040fce0 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
 @@ -235,6 +235,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
@@ -42,10 +42,10 @@ index 53617e830a1d16cb54b7385b0993b9121062a741..af825adf9d92ed36b430e48505944a25
      @Override
      public @Nullable LevelChunk getChunkIfLoaded(int x, int z) {
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index f171cafaa24367c16057f33c2fedff659de47187..6b86ec9a15357ab48a36f6d42c09ee2715c95430 100644
+index 722d4f8bad8aceaf07cf5070bab0e2813f8e719d..3a3d8f96406dfcc91b62345c427725be2ffe7912 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -759,6 +759,15 @@ public class ServerPlayer extends Player {
+@@ -789,6 +789,15 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
          this.trackEnteredOrExitedLavaOnVehicle();
          this.updatePlayerAttributes();
          this.advancements.flushDirty(this, true);
@@ -75,10 +75,10 @@ index a81b553a209834883a99ae971fed18d3a6d2ff32..2162dc6a29d89193030d263c9f810420
                          if (itemType == Items.WATER_BUCKET && target instanceof net.minecraft.world.entity.animal.Bucketable && target instanceof LivingEntity && resendData) {
                              target.resendPossiblyDesyncedEntityData(ServerGamePacketListenerImpl.this.player); // Paper - The entire mob gets deleted, so resend it
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index 8b15ca2c245acc3241ba1847f8a79629f8fcd9ef..036512b44ffe707eb9a0ac013672aaacf810a7c1 100644
+index 785c20acd7feca4d0b52f2cf5dc83393d883a5ab..a812442edc8ef3f53b8e9a071a7e3e864314ae6d 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
-@@ -3159,6 +3159,13 @@ public abstract class Entity
+@@ -3396,6 +3396,13 @@ public abstract class Entity
  
                  this.passengers = ImmutableList.copyOf(newPassengers);
              }
@@ -92,7 +92,7 @@ index 8b15ca2c245acc3241ba1847f8a79629f8fcd9ef..036512b44ffe707eb9a0ac013672aaac
          }
      }
  
-@@ -3200,6 +3207,14 @@ public abstract class Entity
+@@ -3437,6 +3444,14 @@ public abstract class Entity
                  return false;
              }
              // CraftBukkit end
@@ -107,7 +107,7 @@ index 8b15ca2c245acc3241ba1847f8a79629f8fcd9ef..036512b44ffe707eb9a0ac013672aaac
              if (this.passengers.size() == 1 && this.passengers.get(0) == passenger) {
                  this.passengers = ImmutableList.of();
              } else {
-@@ -5159,4 +5174,44 @@ public abstract class Entity
+@@ -5413,4 +5428,44 @@ public abstract class Entity
          return ((ServerLevel) this.level()).isPositionEntityTicking(this.blockPosition());
      }
      // Paper end - Expose entity id counter
@@ -3856,7 +3856,7 @@ index ffcf170d94c1747669b50747ac6f4432381b5553..6de264683da8b502a8b73208a53ff79c
                  this.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0.0);
              } else {
 diff --git a/net/minecraft/world/entity/monster/Shulker.java b/net/minecraft/world/entity/monster/Shulker.java
-index 7d4abd0c806d41a631c9ff1b99df9e50fd55d933..eed74304cff4f121e8376236f53bf786e3be5759 100644
+index e7d9e7c7c41ba6a6bf7bcd50a911a1fc0cbd6066..57f658dd219e88a190c9a98d3ae2a75bf9b561c9 100644
 --- a/net/minecraft/world/entity/monster/Shulker.java
 +++ b/net/minecraft/world/entity/monster/Shulker.java
 @@ -110,12 +110,31 @@ public class Shulker extends AbstractGolem implements Enemy {
@@ -4807,7 +4807,7 @@ index fe82f97689305de64caa52ef648308431f4aebb1..59265f8286a32a1fe7de1986df78b441
      public boolean doHurtTarget(final ServerLevel level, final Entity target) {
          if (super.doHurtTarget(level, target)) {
 diff --git a/net/minecraft/world/entity/monster/spider/Spider.java b/net/minecraft/world/entity/monster/spider/Spider.java
-index c1280f4a7d49f46068c2bb514a662991114709ea..ce03474ce732b46826eb3adb628addaddb1b2851 100644
+index f80bceac44eaee98cf1a0fd3fd93810d803866cd..8d70cb4a79bb64df53e6ca9f7adb79ecfe33fe2f 100644
 --- a/net/minecraft/world/entity/monster/spider/Spider.java
 +++ b/net/minecraft/world/entity/monster/spider/Spider.java
 @@ -52,15 +52,34 @@ public class Spider extends Monster {
@@ -5082,7 +5082,7 @@ index 2d294595b2d9e4daaf221482514329126d59f077..eb3ec4314603f61a041740d5b5e52165
      protected void addBehaviourGoals() {
          this.goalSelector.addGoal(1, new SpearUseGoal<>(this, 1.0, 1.0, 10.0F, 2.0F));
 diff --git a/net/minecraft/world/entity/npc/villager/Villager.java b/net/minecraft/world/entity/npc/villager/Villager.java
-index 0f313abe1f7b2e9862d8231d71ce531c9f89a4cc..82813c07433f27b1186800e70df380a6b90644ec 100644
+index 2dfcda843aae7dbefce7fc232889f2713a2dac05..af194ac19c110b9a69967631ca189494a166b55b 100644
 --- a/net/minecraft/world/entity/npc/villager/Villager.java
 +++ b/net/minecraft/world/entity/npc/villager/Villager.java
 @@ -252,6 +252,28 @@ public class Villager extends AbstractVillager implements VillagerDataHolder, Re
