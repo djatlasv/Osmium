@@ -6,7 +6,7 @@
  
 +    // Purpur start - Add local difficulty api
 +    public float getLocalDifficultyAt(Location location) {
-+        return getHandle().getCurrentDifficultyAt(org.bukkit.craftbukkit.util.CraftLocation.toBlockPosition(location)).getEffectiveDifficulty();
++        return getHandle().getCurrentDifficultyAt(org.bukkit.craftbukkit.util.CraftLocation.toBlockPos(location)).getEffectiveDifficulty();
 +    }
 +    // Purpur end - Add local difficulty api
 +

@@ -5,10 +5,10 @@ Subject: [PATCH] Setting to reintroduce end void rings
 
 
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 62236ea8eaf52b5cc47e60d0064a3539bb6b8376..4bdb44ec660ae183735ccb43cf5fe4093d50b696 100644
+index b8572c04a4f979defe8677d64a899b0d2eb252f2..f336ac13c6a0a2ccfbe5a7bcc6db7f8b33eccbf9 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -1342,6 +1342,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1350,6 +1350,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
                  }
              }
              // Purpur end - config for startup commands
