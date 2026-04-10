@@ -1,0 +1,321 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Fri, 10 Apr 2026 09:10:07 -0600
+Subject: [PATCH] Osmium: all NMS injection points for 26.1.1
+
+Config init, alt tracker, chat filter, discord webhooks,
+GrimAC lifecycle, chunk processor, entity hiding, light hiding,
+y-level tracker, scoreboard hooks, RTP command hooks, update checker.
+
+diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+index f8aed3ac049098af46f64d376bb525a604b998f1..04320da52af3cba70bcbbbd1a5531e1d233d845f 100644
+--- a/net/minecraft/commands/Commands.java
++++ b/net/minecraft/commands/Commands.java
+@@ -264,6 +264,7 @@ public class Commands {
+         WaypointCommand.register(this.dispatcher, context);
+         WeatherCommand.register(this.dispatcher);
+         WorldBorderCommand.register(this.dispatcher);
++        org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command (always register; enabled check is at execution time)
+         if (JvmProfiler.INSTANCE.isAvailable()) {
+             JfrCommand.register(this.dispatcher);
+         }
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index f336ac13c6a0a2ccfbe5a7bcc6db7f8b33eccbf9..a12d81544c03d522335eda94c026748717168858 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -682,6 +682,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         }
+         // Paper end - Configurable player collision; Handle collideRule team for player collision toggle
+         this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.POSTWORLD);
++        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.start(); } // Osmium - GrimAC
+         this.server.spark.registerCommandBeforePlugins(this.server); // Paper - spark
+         this.server.spark.enableAfterPlugins(this.server); // Paper - spark
+         io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.setValid(); // Paper - reset invalid state for event fire below
+@@ -1323,6 +1324,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             // tasks are default scheduled at -1 + delay, and first tick will tick at 1
+             final long actualDoneTimeMs = System.currentTimeMillis() - org.bukkit.craftbukkit.Main.BOOT_TIME.toEpochMilli(); // Paper - Improve startup message
+             LOGGER.info("Done ({})! For help, type \"help\"", String.format(java.util.Locale.ROOT, "%.3fs", actualDoneTimeMs / 1000.00D)); // Paper - Improve startup message
++            org.osmium.OsmiumUpdateChecker.checkAsync(); // Osmium - update check
+             org.spigotmc.WatchdogThread.tick();
+             // Paper end
+             org.spigotmc.WatchdogThread.hasStarted = true; // Paper
+@@ -1916,6 +1918,10 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+         profiler.pop();
+         this.serverActivityMonitor.tick();
++        // Osmium start - tick processing
++        org.osmium.OsmiumRtp.tick(this);
++        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); }
++        // Osmium end
+     }
+ 
+     // Paper start - per world respawn data
+diff --git a/net/minecraft/server/commands/BanPlayerCommands.java b/net/minecraft/server/commands/BanPlayerCommands.java
+index c87bc86c57fde9d92e3927bdead5cdaf2e935744..3970f74d9bd66cd63b92908a39657b2e8b783473 100644
+--- a/net/minecraft/server/commands/BanPlayerCommands.java
++++ b/net/minecraft/server/commands/BanPlayerCommands.java
+@@ -45,6 +45,13 @@ public class BanPlayerCommands {
+                 list.add(entry);
+                 count++;
+                 source.sendSuccess(() -> Component.translatable("commands.ban.success", Component.literal(player.name()), entry.getReasonMessage()), true);
++                // Osmium start - discord webhook for bans
++                org.osmium.anticheat.OsmiumDiscordWebhook.sendBan(
++                    player.name(), player.id(),
++                    reason == null ? null : reason.getString(),
++                    source.getTextName()
++                );
++                // Osmium end - discord webhook for bans
+                 ServerPlayer online = source.getServer().getPlayerList().getPlayer(player.id());
+                 if (online != null) {
+                     online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
+diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
+index d4c88cc35140cec61c2e9fd66e5126e80b083f3b..516667e132c008eeb95437609ec2dcc32d7a6bee 100644
+--- a/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -288,10 +288,17 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         }
+         org.purpurmc.purpur.PurpurConfig.registerCommands();
+         // Purpur end - Migrate Setting to reintroduce end void rings
++        // Osmium start
++        org.osmium.OsmiumConfig.init((java.io.File) options.valueOf("osmium-settings"));
++        org.osmium.OsmiumRtp.initPermission();
++        org.osmium.anticheat.OsmiumAltTracker.init(new java.io.File("."));
++        org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File("."));
++        // Osmium end
+         // Paper start - initialize global and world-defaults configuration
+         this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
+         this.paperConfigurations.initializeWorldDefaultsConfiguration(this.registryAccess());
+         // Paper end - initialize global and world-defaults configuration
++        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.init(); } // Osmium - GrimAC (after Paper config init)
+         this.server.spark.enableEarlyIfRequested(); // Paper - spark
+         // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
+         if (this.convertOldUsers()) {
+@@ -459,6 +466,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+             this.saveEverything(false, true, true);
+             this.notificationManager().serverStarted();
++            org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStart(); // Osmium - discord webhook
+             return true;
+         }
+     }
+@@ -983,6 +991,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+     @Override
+     protected void stopServer() {
++        org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStop(); // Osmium - discord webhook (sync, before shutdown)
++        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.stop(); } // Osmium - GrimAC
+         this.notificationManager().serverShuttingDown();
+         super.stopServer();
+         //Util.shutdownExecutors(); // Paper - Improved watchdog support; moved into super
+diff --git a/net/minecraft/server/level/ChunkHolder.java b/net/minecraft/server/level/ChunkHolder.java
+index 3fa0f090edf4c5b4d96a3a9810d8a5ca3b295234..7b3dcccc2ece21ea65138503205424ee615cce76 100644
+--- a/net/minecraft/server/level/ChunkHolder.java
++++ b/net/minecraft/server/level/ChunkHolder.java
+@@ -278,10 +278,28 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
+             if (!this.skyChangedLightSectionFilter.isEmpty() || !this.blockChangedLightSectionFilter.isEmpty()) {
+                 List<ServerPlayer> borderPlayers = this.moonrise$getPlayers(true); // Paper - rewrite chunk system
+                 if (!borderPlayers.isEmpty()) {
+-                    ClientboundLightUpdatePacket lightPacket = new ClientboundLightUpdatePacket(
+-                        chunk.getPos(), this.lightEngine, this.skyChangedLightSectionFilter, this.blockChangedLightSectionFilter
+-                    );
+-                    this.broadcast(borderPlayers, lightPacket);
++                    // Osmium start - filter light updates for hidden sections (defeats Light Finder)
++                    BitSet skyFilter = this.skyChangedLightSectionFilter;
++                    BitSet blockFilter = this.blockChangedLightSectionFilter;
++                    if (org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideLight) {
++                        skyFilter = (BitSet) skyFilter.clone();
++                        blockFilter = (BitSet) blockFilter.clone();
++                        int minLightSection = this.levelHeightAccessor.getMinSectionY() - 1;
++                        int hideBelowSection = org.osmium.OsmiumConfig.chunkHidingYThreshold >> 4;
++                        for (int i = skyFilter.nextSetBit(0); i >= 0; i = skyFilter.nextSetBit(i + 1)) {
++                            if (minLightSection + i < hideBelowSection) skyFilter.clear(i);
++                        }
++                        for (int i = blockFilter.nextSetBit(0); i >= 0; i = blockFilter.nextSetBit(i + 1)) {
++                            if (minLightSection + i < hideBelowSection) blockFilter.clear(i);
++                        }
++                    }
++                    if (!skyFilter.isEmpty() || !blockFilter.isEmpty()) {
++                        ClientboundLightUpdatePacket lightPacket = new ClientboundLightUpdatePacket(
++                            chunk.getPos(), this.lightEngine, skyFilter, blockFilter
++                        );
++                        this.broadcast(borderPlayers, lightPacket);
++                    }
++                    // Osmium end
+                 }
+ 
+                 this.skyChangedLightSectionFilter.clear();
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 01cbebd70223389c6d952be23e5d739579b96ead..c963a5230e5d6c48a19f9b75d2f61af25267118e 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -1384,6 +1384,19 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                     visibleToPlayer = false;
+                 }
+                 // CraftBukkit end
++                // Osmium start - hide entities below chunk hiding threshold
++                if (visibleToPlayer && org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideEntities
++                        && !(this.entity instanceof ServerPlayer) // never hide other players
++                        && this.entity.getY() < org.osmium.OsmiumConfig.chunkHidingYThreshold) {
++                    double proxSq = (double) org.osmium.OsmiumConfig.chunkHidingProximityRadius * org.osmium.OsmiumConfig.chunkHidingProximityRadius;
++                    double dx = player.getX() - this.entity.getX();
++                    double dy = player.getY() - this.entity.getY();
++                    double dz = player.getZ() - this.entity.getZ();
++                    if (dx * dx + dy * dy + dz * dz > proxSq) {
++                        visibleToPlayer = false;
++                    }
++                }
++                // Osmium end
+                 if (visibleToPlayer) {
+                     if (this.seenBy.add(player.connection)) {
+                         // Paper start - entity tracking events
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index a41e8e61df1f3d7a861cd1b4060bc3ec424d45bd..47b850351407d651af739a315b2605e3ace129b7 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -752,6 +752,7 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+         }
+         // CraftBukkit end
+         this.connection.tickClientLoadTimeout();
++        org.osmium.anticheat.OsmiumYLevelTracker.onPlayerTick(this); // Osmium - y-level hiding chunk resend
+         this.gameMode.tick();
+         this.wardenSpawnTracker.tick();
+         if (this.invulnerableTime > 0) {
+diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+index c050f208f485f67061fe5bf617915cd83860e5f3..120e28554617f1340d5eeff5f6efab7c476e0ef7 100644
+--- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
++++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+@@ -130,9 +130,26 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+                             return;
+                         }
+ 
++                        // Osmium start - filter light updates for hidden sections
++                        java.util.BitSet skyFilter = null;
++                        java.util.BitSet blockFilter = null;
++                        if (org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideLight) {
++                            final int minLightSection = ThreadedLevelLightEngine.this.getMinLightSection();
++                            final int lightSectionCount = ThreadedLevelLightEngine.this.getLightSectionCount();
++                            final int hideBelowSection = org.osmium.OsmiumConfig.chunkHidingYThreshold >> 4;
++                            skyFilter = new java.util.BitSet(lightSectionCount);
++                            blockFilter = new java.util.BitSet(lightSectionCount);
++                            for (int li = 0; li < lightSectionCount; li++) {
++                                if (minLightSection + li >= hideBelowSection) {
++                                    skyFilter.set(li);
++                                    blockFilter.set(li);
++                                }
++                            }
++                        }
++                        // Osmium end
+                         final net.minecraft.network.protocol.Packet<?> relightPacket = new net.minecraft.network.protocol.game.ClientboundLightUpdatePacket(
+                             pos, (ThreadedLevelLightEngine)(Object)ThreadedLevelLightEngine.this,
+-                            null, null
++                            skyFilter, blockFilter
+                         );
+ 
+                         for (final ServerPlayer player : players) {
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index cad78698428d40166fd5a4d177de2410e033b9b9..2e163849bd6449a91ad2ce5e5f8953f35bfef610 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2377,6 +2377,11 @@ public class ServerGamePacketListenerImpl
+             this.processedDisconnect = true;
+         }
+         // CraftBukkit end
++        // Osmium start - cleanup on disconnect
++        org.osmium.anticheat.OsmiumYLevelTracker.onPlayerDisconnect(this.player.getUUID());
++        org.osmium.OsmiumScoreboard.onQuit(this.player.getUUID());
++        org.osmium.OsmiumRtp.cancel(this.player.getUUID());
++        // Osmium end
+         LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
+         // Paper start - Fix kick event leave message not being sent
+         final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
+@@ -2719,6 +2724,19 @@ public class ServerGamePacketListenerImpl
+     private void broadcastChatMessage(final PlayerChatMessage message) {
+         // CraftBukkit start
+         String rawMessage = message.signedContent();
++        // Osmium start - chat filter
++        String filterMatch = org.osmium.anticheat.OsmiumChatFilter.check(rawMessage);
++        if (filterMatch != null) {
++            String action = org.osmium.anticheat.OsmiumChatFilter.getAction();
++            if ("kick".equals(action)) {
++                this.disconnect(Component.literal(org.osmium.OsmiumConfig.chatFilterMessage), org.bukkit.event.player.PlayerKickEvent.Cause.ILLEGAL_CHARACTERS);
++            } else {
++                this.player.sendSystemMessage(Component.literal(org.osmium.OsmiumConfig.chatFilterMessage).withStyle(ChatFormatting.RED));
++            }
++            org.osmium.anticheat.OsmiumDiscordWebhook.sendChatFiltered(this.player.getPlainTextName(), rawMessage, filterMatch, action);
++            return;
++        }
++        // Osmium end - chat filter
+         if (rawMessage.isEmpty()) {
+             LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
+         } else if (this.getCraftPlayer().isConversing()) {
+@@ -3146,6 +3164,7 @@ public class ServerGamePacketListenerImpl
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+ 
+         if (this.player.isImmobile()) return; // CraftBukkit
++        org.osmium.OsmiumRtp.handleClose(this.player); // Osmium - RTP GUI cleanup
+         CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
+         this.player.doCloseContainer();
+     }
+@@ -3155,6 +3174,12 @@ public class ServerGamePacketListenerImpl
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         if (this.player.isImmobile()) return; // CraftBukkit
+         this.player.resetLastActionTime();
++        // Osmium start - RTP GUI click interception
++        if (org.osmium.OsmiumRtp.handleClick(this.player, packet.slotNum())) {
++            this.player.containerMenu.sendAllDataToRemote();
++            return;
++        }
++        // Osmium end
+         if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
+             boolean cancelled = this.player.isSpectator(); // CraftBukkit - see below if
+             if (false/*this.player.isSpectator()*/) { // CraftBukkit
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index 1d7a67ce5c33119c4ae794f61a5639a92a9e9dd1..d628ddae44fa113969b0616b9fab1638da7b1fff 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -314,6 +314,29 @@ public abstract class PlayerList {
+         }
+         // Paper end - Configurable player collision
+         org.purpurmc.purpur.task.BossBarTask.addToAll(player); // Purpur - Implement TPSBar
++        // Osmium start - alt tracker: record join and check for banned alts
++        if (connection.getRemoteAddress() instanceof java.net.InetSocketAddress inetAddr) {
++            String ip = inetAddr.getAddress().getHostAddress();
++            org.osmium.anticheat.OsmiumAltTracker.recordJoin(ip, player.getUUID());
++            if (org.osmium.OsmiumConfig.altBanEnabled) {
++                java.util.Set<java.util.UUID> linkedUuids = org.osmium.anticheat.OsmiumAltTracker.getUuidsForIp(ip);
++                for (java.util.UUID linkedUuid : linkedUuids) {
++                    if (!linkedUuid.equals(player.getUUID()) && this.bans.isBanned(new NameAndId(linkedUuid, ""))) {
++                        String bannedName = null;
++                        org.bukkit.OfflinePlayer offlineBanned = org.bukkit.Bukkit.getOfflinePlayer(linkedUuid);
++                        if (offlineBanned.getName() != null) bannedName = offlineBanned.getName();
++                        org.osmium.anticheat.OsmiumDiscordWebhook.sendAltKicked(player.getPlainTextName(), player.getUUID(), bannedName);
++                        player.connection.disconnect(Component.literal(org.osmium.OsmiumConfig.altBanKickMessage));
++                        return;
++                    }
++                }
++                if (linkedUuids.size() > 1) {
++                    org.osmium.anticheat.OsmiumDiscordWebhook.sendAltDetected(player.getPlainTextName(), player.getUUID(), ip, linkedUuids);
++                }
++            }
++        }
++        // Osmium end - alt tracker
++        org.osmium.OsmiumScoreboard.onJoin(player); // Osmium - scoreboard
+         // CraftBukkit start - moved down
+         LOGGER.info(
+             "{}[{}] logged in with entity id {} at ([{}]{}, {}, {})", // Paper - add world identifier
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index 396bf77f2a885a8e0f017d3cc4c06f1a7add8eaa..707896baf4a5e79c798da335e2bb20a77ac1e986 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -917,7 +917,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
+         this.palettedContainerFactory = PalettedContainerFactory.create(registryAccess);
+         this.damageSources = new DamageSources(registryAccess);
+         this.entityLookup = new ca.spottedleaf.moonrise.patches.chunk_system.level.entity.dfl.DefaultEntityLookup(this); // Paper - rewrite chunk system
+-        this.chunkPacketBlockController = this.paperConfig().anticheat.antiXray.enabled ? new io.papermc.paper.antixray.ChunkPacketBlockControllerAntiXray(this, executor) : io.papermc.paper.antixray.ChunkPacketBlockController.NO_OPERATION_INSTANCE; // Paper - Anti-Xray
++        // Paper - Anti-Xray // Osmium start - wrap with OsmiumChunkProcessor
++        io.papermc.paper.antixray.ChunkPacketBlockController paperController = this.paperConfig().anticheat.antiXray.enabled ? new io.papermc.paper.antixray.ChunkPacketBlockControllerAntiXray(this, executor) : io.papermc.paper.antixray.ChunkPacketBlockController.NO_OPERATION_INSTANCE;
++        this.chunkPacketBlockController = new org.osmium.anticheat.OsmiumChunkProcessor(paperController, this);
++        // Osmium end
+     }
+ 
+     // Paper start - Cancel hit for vanished players
