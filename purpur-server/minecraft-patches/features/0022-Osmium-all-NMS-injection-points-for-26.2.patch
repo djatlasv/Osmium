@@ -7,7 +7,7 @@ Config init, alt tracker, chat filter, discord webhooks,
 GrimAC lifecycle, chunk processor, entity hiding, light hiding,
 y-level tracker, scoreboard hooks, RTP command hooks, update checker,
 brand enforcement hooks, team system hooks (command, GUI clicks,
-friendly fire damage cancel).
+friendly fire damage cancel), raytrace block hiding + entity occlusion.
 
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
 index 38bd5b1..4b0fdd4 100644
@@ -152,10 +152,10 @@ index cd5a325..5be7b9c 100644
  
                  this.skyChangedLightSectionFilter.clear();
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index 7e93614..2a4e074 100644
+index 7e93614..7ab0e30 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
-@@ -1406,6 +1406,19 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+@@ -1406,6 +1406,24 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                      visibleToPlayer = false;
                  }
                  // CraftBukkit end
@@ -172,6 +172,11 @@ index 7e93614..2a4e074 100644
 +                    }
 +                }
 +                // Osmium end
++                // Osmium start - raycasted entity occlusion
++                if (visibleToPlayer && org.osmium.anticheat.OsmiumOcclusion.isEntityOccluded(player, this.entity)) {
++                    visibleToPlayer = false;
++                }
++                // Osmium end - raycasted entity occlusion
                  if (visibleToPlayer) {
                      if (this.seenBy.add(player.connection)) {
                          // Paper start - entity tracking events

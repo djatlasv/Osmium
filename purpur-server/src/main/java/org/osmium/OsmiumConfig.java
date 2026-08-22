@@ -214,6 +214,25 @@ public class OsmiumConfig {
         chunkHidingHideLight = getBoolean("chunk-hiding.hide-light", true);
     }
 
+    private static void raytraceHiding() {
+        raytraceHidingEnabled = getBoolean("raytrace-hiding.enabled", false);
+        raytraceTargetBlocks = config.getStringList("raytrace-hiding.blocks");
+        config.addDefault("raytrace-hiding.blocks", List.of(
+                "diamond_ore", "deepslate_diamond_ore", "emerald_ore", "deepslate_emerald_ore",
+                "gold_ore", "deepslate_gold_ore", "iron_ore", "deepslate_iron_ore",
+                "ancient_debris"));
+        raytraceMaxRayDistance = getInt("raytrace-hiding.max-ray-distance", 48);
+        raytraceChecksPerTick = getInt("raytrace-hiding.checks-per-tick", 4);
+        raytraceSamplesPerBlock = getInt("raytrace-hiding.samples-per-block", 2);
+        raytraceRefreshSeconds = getInt("raytrace-hiding.refresh-seconds", 120);
+    }
+
+    private static void entityOcclusion() {
+        entityOcclusionEnabled = getBoolean("entity-occlusion.enabled", false);
+        entityOcclusionMaxDistance = getInt("entity-occlusion.max-distance", 48);
+        entityOcclusionCheckIntervalTicks = getInt("entity-occlusion.check-interval-ticks", 10);
+    }
+
     // -------------------------------------------------------------------------
     // Brand enforcement settings
     // -------------------------------------------------------------------------
@@ -340,6 +359,19 @@ public class OsmiumConfig {
     public static boolean rtpOpOnly = false;
     public static boolean rtpDebug = false;
     public static int rtpCooldownSeconds = 0;
+
+    // Raytrace block hiding (occlusion antixray)
+    public static boolean raytraceHidingEnabled = false;
+    public static List<String> raytraceTargetBlocks = List.of();
+    public static int raytraceMaxRayDistance = 48;
+    public static int raytraceChecksPerTick = 4;
+    public static int raytraceSamplesPerBlock = 2;
+    public static int raytraceRefreshSeconds = 120;
+
+    // Entity occlusion
+    public static boolean entityOcclusionEnabled = false;
+    public static int entityOcclusionMaxDistance = 48;
+    public static int entityOcclusionCheckIntervalTicks = 10;
 
     private static void rtp() {
         rtpEnabled = getBoolean("rtp.enabled", false);

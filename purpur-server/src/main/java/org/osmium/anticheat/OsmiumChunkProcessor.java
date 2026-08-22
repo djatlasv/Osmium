@@ -9,6 +9,7 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerPlayerGameMode;
 import net.minecraft.world.level.ChunkPos;
@@ -24,6 +25,7 @@ import net.minecraft.world.level.material.Fluids;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
+import java.util.Set;
 
 public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
@@ -98,6 +100,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             if (!enabled) return;
 
             applyHiding(chunkPacket, osmiumInfo);
+            applyRaytraceHiding(chunkPacket, osmiumInfo);
             applyLightHiding(chunkPacket, osmiumInfo);
         } else {
             delegate.modifyBlocks(chunkPacket, chunkPacketInfo);
@@ -243,6 +246,82 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         }
     }
 
+    /**
+     * Raytrace-based selective ore hiding. Unlike applyHiding (which rewrites
+     * every entry below the threshold), this replaces ONLY target blocks that
+     * the occlusion engine has determined have no line of sight to any player.
+     * Cache lookups are O(1); heavy raycasting happens asynchronously.
+     */
+    private void applyRaytraceHiding(ClientboundLevelChunkWithLightPacket chunkPacket,
+                                     OsmiumChunkPacketInfo info) {
+        if (!org.osmium.OsmiumConfig.raytraceHidingEnabled) return;
+
+        LevelChunk chunk = info.getChunk();
+        long chunkKey = ((long) chunk.getPos().x() & 0xFFFFFFFFL)
+                | (((long) chunk.getPos().z() & 0xFFFFFFFFL) << 32);
+        byte[] buffer = info.getBuffer();
+        if (buffer == null) return;
+
+        Set<Block> targets = org.osmium.anticheat.OsmiumOcclusion.targetBlocks();
+
+        io.papermc.paper.antixray.BitStorageReader reader = new io.papermc.paper.antixray.BitStorageReader();
+        io.papermc.paper.antixray.BitStorageWriter writer = new io.papermc.paper.antixray.BitStorageWriter();
+        reader.setBuffer(buffer);
+        writer.setBuffer(buffer);
+
+        int minSectionY = chunk.getMinSectionY();
+        int sectionsCount = chunk.getSectionsCount();
+
+        for (int sectionIndex = 0; sectionIndex < sectionsCount; sectionIndex++) {
+            int bits = info.getBits(sectionIndex);
+            if (bits <= 0) continue;
+            if (!info.isWritten(sectionIndex)) continue;
+
+            Palette<BlockState> palette = info.getPalette(sectionIndex);
+            if (palette == null || palette.getSize() < 2) continue;
+
+            // Precompute which palette ids are target blocks — skips per-entry
+            // state lookups inside the hot loop below.
+            int size = palette.getSize();
+            boolean[] targetById = new boolean[size];
+            boolean anyTarget = false;
+            for (int id = 0; id < size; id++) {
+                try {
+                    BlockState st = palette.valueFor(id);
+                    if (st != null && targets.contains(st.getBlock())) {
+                        targetById[id] = true;
+                        anyTarget = true;
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (!anyTarget) continue;
+
+            int replacementPaletteId = findInPalette(palette);
+            if (replacementPaletteId < 0) continue;
+
+            int sy = minSectionY + sectionIndex;
+            int index = info.getIndex(sectionIndex);
+            reader.setBits(bits);
+            reader.setIndex(index);
+            writer.setBits(bits);
+            writer.setIndex(index);
+
+            // Palette data is packed y<<8 | z<<4 | x — loop index == packed index
+            for (int i = 0; i < 4096; i++) {
+                int original = reader.read();
+                int out = original;
+                if (original < size && targetById[original]
+                        && org.osmium.anticheat.OsmiumOcclusion.shouldHideBlock(
+                                (ServerLevel) chunk.getLevel(), chunkKey, sy, i)) {
+                    out = replacementPaletteId;
+                }
+                writer.write(out);
+            }
+
+            writer.flush();
+        }
+    }
+
     // --- Light hiding (defeats Light Finder hacks) ---
 
     private void applyLightHiding(ClientboundLevelChunkWithLightPacket chunkPacket,
@@ -322,6 +401,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                               BlockState newBlockState, BlockState oldBlockState,
                               @Block.UpdateFlags int flags, int maxUpdateDepth) {
         delegate.onBlockChange(level, blockPos, newBlockState, oldBlockState, flags, maxUpdateDepth);
+        org.osmium.anticheat.OsmiumOcclusion.onBlockChanged(level, blockPos); // Osmium - invalidate visibility cache
     }
 
     @Override
