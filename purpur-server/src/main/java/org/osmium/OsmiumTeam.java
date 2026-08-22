@@ -385,7 +385,7 @@ public class OsmiumTeam {
 
         SimpleContainer container = new SimpleContainer(27);
 
-        ItemStack confirm = new ItemStack(Items.LIME_WOOL);
+        ItemStack confirm = new ItemStack(Items.WOOL.lime());
         confirm.set(DataComponents.CUSTOM_NAME,
                 Component.literal("\u00a7a\u00a7lInvite " + targetName));
         container.setItem(11, confirm);
@@ -394,7 +394,7 @@ public class OsmiumTeam {
         head.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7l" + targetName));
         container.setItem(13, head);
 
-        ItemStack cancel = new ItemStack(Items.RED_WOOL);
+        ItemStack cancel = new ItemStack(Items.WOOL.red());
         cancel.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7c\u00a7lCancel"));
         container.setItem(15, cancel);
 
@@ -457,12 +457,12 @@ public class OsmiumTeam {
 
         SimpleContainer container = new SimpleContainer(27);
 
-        ItemStack accept = new ItemStack(Items.LIME_WOOL);
+        ItemStack accept = new ItemStack(Items.WOOL.lime());
         accept.set(DataComponents.CUSTOM_NAME,
                 Component.literal("\u00a7a\u00a7lAccept Invite from \u00a7f" + inviterName));
         container.setItem(11, accept);
 
-        ItemStack decline = new ItemStack(Items.RED_WOOL);
+        ItemStack decline = new ItemStack(Items.WOOL.red());
         decline.set(DataComponents.CUSTOM_NAME,
                 Component.literal("\u00a7c\u00a7lDecline"));
         container.setItem(15, decline);
@@ -893,7 +893,7 @@ public class OsmiumTeam {
     }
 
     private static void fillEmpty(SimpleContainer container, int size) {
-        ItemStack filler = new ItemStack(Items.GRAY_STAINED_GLASS_PANE);
+        ItemStack filler = new ItemStack(Items.STAINED_GLASS_PANE.gray());
         filler.set(DataComponents.CUSTOM_NAME, Component.literal(" "));
         for (int i = 0; i < size; i++) {
             if (container.getItem(i).isEmpty()) {

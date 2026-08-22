@@ -145,7 +145,7 @@ public class OsmiumRtp {
         container.setItem(SLOT_END, end);
 
         // Fill empty slots with gray stained glass panes
-        ItemStack filler = new ItemStack(Items.GRAY_STAINED_GLASS_PANE);
+        ItemStack filler = new ItemStack(Items.STAINED_GLASS_PANE.gray());
         filler.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                 Component.literal(" "));
         for (int i = 0; i < 27; i++) {
@@ -230,7 +230,7 @@ public class OsmiumRtp {
         String dimName = getDimensionName(dimension);
 
         // Confirm — green wool
-        ItemStack confirm = new ItemStack(Items.LIME_WOOL);
+        ItemStack confirm = new ItemStack(Items.WOOL.lime());
         String confirmName = "\u00a7a\u00a7lConfirm";
         if (cost > 0) {
             confirmName = "\u00a7a\u00a7lConfirm \u00a77(\u00a7e$" + String.format("%.2f", cost) + "\u00a77)";
@@ -249,13 +249,13 @@ public class OsmiumRtp {
         container.setItem(13, info);
 
         // Cancel — red wool
-        ItemStack cancel = new ItemStack(Items.RED_WOOL);
+        ItemStack cancel = new ItemStack(Items.WOOL.red());
         cancel.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                 Component.literal("\u00a7c\u00a7lCancel"));
         container.setItem(SLOT_CANCEL, cancel);
 
         // Fill empty slots
-        ItemStack filler = new ItemStack(Items.GRAY_STAINED_GLASS_PANE);
+        ItemStack filler = new ItemStack(Items.STAINED_GLASS_PANE.gray());
         filler.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                 Component.literal(" "));
         for (int i = 0; i < 27; i++) {

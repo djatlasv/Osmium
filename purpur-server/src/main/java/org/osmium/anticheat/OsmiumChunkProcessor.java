@@ -328,12 +328,12 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     }
 
     @Override
-    public void onPlayerLeftClickBlock(ServerPlayerGameMode serverPlayerGameMode,
+    public void onPlayerLeftClickBlock(Level level,
                                        BlockPos blockPos,
                                        ServerboundPlayerActionPacket.Action action,
                                        Direction direction,
                                        int worldHeight, int sequence) {
-        delegate.onPlayerLeftClickBlock(serverPlayerGameMode, blockPos, action, direction, worldHeight, sequence);
+        delegate.onPlayerLeftClickBlock(level, blockPos, action, direction, worldHeight, sequence);
     }
 
     @Override

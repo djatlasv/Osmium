@@ -29,7 +29,7 @@ if (!file(".git").exists()) {
 }
 
 rootProject.name = "osmium"
-for (name in listOf("purpur-api", "purpur-server")) {
+for (name in listOf("purpur-api", "purpur-server", "purpur-checkstyle")) {
     val projName = name.lowercase(Locale.ENGLISH)
     include(projName)
     findProject(":$projName")!!.projectDir = file(name)

@@ -1,9 +1,9 @@
 --- a/src/main/java/org/bukkit/entity/Player.java
 +++ b/src/main/java/org/bukkit/entity/Player.java
-@@ -4012,4 +_,123 @@
+@@ -4050,4 +_,123 @@
+      * clearing any fixed pose in the process.
       */
-     @ApiStatus.Experimental
-     PlayerGameConnection getConnection();
+     void unsetFixedPose();
 +
 +    // Purpur start
 +    /**

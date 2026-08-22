@@ -141,7 +141,7 @@ public class OsmiumBrandEnforcement {
                     continue;
                 }
 
-                String brand = player.connection.playerBrand;
+                String brand = player.connection.clientBrand;
                 boolean hs = handshakeCompleted.contains(uuid);
                 Bukkit.getLogger().info("[Osmium] Brand check for " + player.getPlainTextName()
                         + ": brand=" + brand + ", handshake=" + hs

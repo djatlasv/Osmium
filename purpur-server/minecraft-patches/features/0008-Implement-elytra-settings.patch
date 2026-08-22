@@ -5,10 +5,10 @@ Subject: [PATCH] Implement elytra settings
 
 
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 8af06875ea2fcb8e9bc08d370ff225c702e51031..9b7b285251aff741d8f2c19b3b558f81e77c0aaa 100644
+index 9d1e75ed918897a937aa7c16dac9ce7820129d5b..18eba9cd12f61ed2d0530576da01b64901a36d5c 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -3945,7 +3945,16 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+@@ -3949,7 +3949,16 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
                  if (freeFallInterval % 2 == 0) {
                      List<EquipmentSlot> slotsWithGliders = EquipmentSlot.VALUES.stream().filter(slot -> canGlideUsing(this.getItemBySlot(slot), slot)).toList();
                      EquipmentSlot slotToDamage = Util.getRandom(slotsWithGliders, this.random);
@@ -27,11 +27,11 @@ index 8af06875ea2fcb8e9bc08d370ff225c702e51031..9b7b285251aff741d8f2c19b3b558f81
  
                  this.gameEvent(GameEvent.ELYTRA_GLIDE);
 diff --git a/net/minecraft/world/item/FireworkRocketItem.java b/net/minecraft/world/item/FireworkRocketItem.java
-index c17607cb1fd5403f17a64b4218571e669b840a2e..6545145e1f83b333fd1d05ab714c9869c5d2d7fe 100644
+index b3443ff2d06af328493046e723efc11d299a2824..3c001b3810097d5cb60ad64e0727d8d9907f6a38 100644
 --- a/net/minecraft/world/item/FireworkRocketItem.java
 +++ b/net/minecraft/world/item/FireworkRocketItem.java
 @@ -73,6 +73,17 @@ public class FireworkRocketItem extends Item implements ProjectileItem {
-                     if (player.dropAllLeashConnections(null)) {
+                     if (player.dropAllLeashConnections(player, hand)) { // Paper - PlayerUnleashEntityEvent
                          level.playSound(null, player, SoundEvents.LEAD_BREAK, SoundSource.NEUTRAL, 1.0F, 1.0F);
                      }
 +                    // Purpur start - Implement elytra settings
@@ -49,10 +49,10 @@ index c17607cb1fd5403f17a64b4218571e669b840a2e..6545145e1f83b333fd1d05ab714c9869
                          itemStack.shrink(1); // Moved up from below
                      } else {
 diff --git a/net/minecraft/world/item/ItemStack.java b/net/minecraft/world/item/ItemStack.java
-index 87cdc33a42d94316990b934b2153e53117c88522..8c3d8ec4423d07ea3db3e0cbd5c79e1a468541ef 100644
+index 56ace1be8e29ff1c06a550b15769c3cfcad41466..c0fce943b33ebe63798a35ea17ec3ceb9cf6209a 100644
 --- a/net/minecraft/world/item/ItemStack.java
 +++ b/net/minecraft/world/item/ItemStack.java
-@@ -694,6 +694,14 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
+@@ -666,6 +666,14 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
                  org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerItemBreakEvent(serverPlayer, this); // Paper - Add EntityDamageItemEvent
              }
              // CraftBukkit end
@@ -68,13 +68,13 @@ index 87cdc33a42d94316990b934b2153e53117c88522..8c3d8ec4423d07ea3db3e0cbd5c79e1a
              onBreak.accept(item);
          }
 diff --git a/net/minecraft/world/item/TridentItem.java b/net/minecraft/world/item/TridentItem.java
-index 710b8711184ea6e1cf0dfd338b897923ed2b79fb..82995f60dbb62325b46bc8a87cd2087461715c4f 100644
+index 9f833f16d02e778b0361744ba409a3096248836c..7ebf88560e431a07cf4c1417dfd5a71fdd73e557 100644
 --- a/net/minecraft/world/item/TridentItem.java
 +++ b/net/minecraft/world/item/TridentItem.java
-@@ -125,6 +125,16 @@ public class TridentItem extends Item implements ProjectileItem {
-                             yd *= riptideStrength / dist;
-                             zd *= riptideStrength / dist;
-                             if (!org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerRiptideEvent(player, itemStack, xd, yd, zd)) return false; // Paper - Add player riptide event
+@@ -127,6 +127,16 @@ public class TridentItem extends Item implements ProjectileItem {
+                     yd *= riptideStrength / dist;
+                     zd *= riptideStrength / dist;
+                     if (!org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerRiptideEvent(player, itemStack, xd, yd, zd)) return false; // Paper - Add player riptide event
 +                            // Purpur start - Implement elytra settings
 +                            List<net.minecraft.world.entity.EquipmentSlot> list = net.minecraft.world.entity.EquipmentSlot.VALUES.stream().filter((enumitemslot) -> LivingEntity.canGlideUsing(entity.getItemBySlot(enumitemslot), enumitemslot)).toList();
 +                            if (!list.isEmpty()) {
@@ -85,6 +85,6 @@ index 710b8711184ea6e1cf0dfd338b897923ed2b79fb..82995f60dbb62325b46bc8a87cd20874
 +                                }
 +                            }
 +                            // Purpur end - Implement elytra settings
-                             player.push(xd, yd, zd);
-                             player.startAutoSpinAttack(20, 8.0F, itemStack);
-                             if (player.onGround()) {
+                     player.push(xd, yd, zd);
+                     player.startAutoSpinAttack(20, 8.0F, itemStack);
+                     if (player.onGround()) {
