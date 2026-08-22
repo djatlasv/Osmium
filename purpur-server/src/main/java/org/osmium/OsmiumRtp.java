@@ -325,29 +325,48 @@ public class OsmiumRtp {
         }
         debug(name + " target dimension " + getDimensionName(dimension) + " is loaded");
 
-        debug(name + " finding safe location (minDist=" + OsmiumConfig.rtpMinDistance
+        player.sendSystemMessage(Component.literal("\u00a7eFinding a safe location..."));
+        debug(name + " searching for safe location async (minDist=" + OsmiumConfig.rtpMinDistance
                 + " maxDist=" + OsmiumConfig.rtpMaxDistance + ")");
-        BlockPos target = findSafeLocation(targetLevel);
-        if (target == null) {
-            debug(name + " could NOT find safe location after 50 attempts");
-            player.sendSystemMessage(Component.literal("\u00a7cCould not find a safe location. Try again."));
-            if (cost > 0) deposit(player, cost);
-            return;
-        }
-        debug(name + " found safe location at " + target.getX() + ", " + target.getY() + ", " + target.getZ());
 
-        int delayTicks = OsmiumConfig.rtpDelaySeconds * 20;
-        int teleportAt = server.getTickCount() + delayTicks;
+        final ServerLevel finalTargetLevel = targetLevel;
+        final double finalCost = cost;
+        Thread.ofVirtual().name("Osmium-RTP-Search").start(() -> {
+            BlockPos target = findSafeLocation(finalTargetLevel);
+            server.execute(() -> {
+                // Player may have disconnected while we were searching
+                if (server.getPlayerList().getPlayer(player.getUUID()) == null) {
+                    debug(name + " disconnected during location search, refunding");
+                    return;
+                }
+                if (target == null) {
+                    debug(name + " could NOT find safe location after 50 attempts");
+                    player.sendSystemMessage(Component.literal("\u00a7cCould not find a safe location. Try again."));
+                    if (finalCost > 0) deposit(player, finalCost);
+                    return;
+                }
+                debug(name + " found safe location at " + target.getX() + ", " + target.getY() + ", " + target.getZ());
 
-        PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target));
-        debug(name + " pending teleport created (teleportAt tick=" + teleportAt
-                + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
+                if (PENDING.containsKey(player.getUUID())) {
+                    debug(name + " already has a pending teleport (queued during search), aborting");
+                    if (finalCost > 0) deposit(player, finalCost);
+                    return;
+                }
 
-        if (OsmiumConfig.rtpDelaySeconds > 0) {
-            player.sendSystemMessage(Component.literal(
-                    "\u00a7eTeleporting in \u00a7f" + OsmiumConfig.rtpDelaySeconds
-                            + "\u00a7e seconds... Don't move!"));
-        }
+                int delayTicks = OsmiumConfig.rtpDelaySeconds * 20;
+                int teleportAt = server.getTickCount() + delayTicks;
+
+                PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target));
+                debug(name + " pending teleport created (teleportAt tick=" + teleportAt
+                        + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
+
+                if (OsmiumConfig.rtpDelaySeconds > 0) {
+                    player.sendSystemMessage(Component.literal(
+                            "\u00a7eTeleporting in \u00a7f" + OsmiumConfig.rtpDelaySeconds
+                                    + "\u00a7e seconds... Don't move!"));
+                }
+            });
+        });
     }
 
     /**
