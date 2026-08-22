@@ -1,0 +1,185 @@
+# GrimAC punishments — optimized for Osmium semi-vanilla SMP
+#
+# %check_name% - name of the check
+# %vl% - violations
+# %verbose% - extra information
+# %player% - player name
+# [alert] - alert to staff
+# [webhook] - alert to discord webhook
+# [proxy] - alert to other proxy servers
+#
+# Format: "threshold:interval command"
+#   threshold = VL needed to trigger
+#   interval = seconds between repeats (0 = once)
+#
+# False-flag-prone checks have raised thresholds.
+# High-confidence checks ban faster.
+
+Punishments:
+
+  # --- FALSE FLAG PRONE (raised thresholds) ---
+
+  Simulation:
+    remove-violations-after: 300
+    checks:
+      - "Simulation"
+    commands:
+      - "100:20 [alert]"
+      - "200:60 [webhook]"
+      - "150:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  Timer:
+    remove-violations-after: 300
+    checks:
+      - "Timer"
+    commands:
+      - "20:5 [alert]"
+      - "60:30 [webhook]"
+      - "150:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  NoSlow:
+    remove-violations-after: 300
+    checks:
+      - "NoSlow"
+    commands:
+      - "30:10 [alert]"
+      - "80:40 [webhook]"
+      - "200:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  # --- HIGH CONFIDENCE (strict) ---
+
+  Reach:
+    remove-violations-after: 300
+    checks:
+      - "Reach"
+    commands:
+      - "1:1 [alert]"
+      - "5:0 [webhook]"
+      - "20:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
+
+  Killaura:
+    remove-violations-after: 300
+    checks:
+      - "Killaura"
+    commands:
+      - "10:10 [alert]"
+      - "30:0 [webhook]"
+      - "30:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
+
+  Knockback:
+    remove-violations-after: 300
+    checks:
+      - "Knockback"
+    commands:
+      - "5:1 [alert]"
+      - "10:0 [webhook]"
+      - "10:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
+
+  GroundSpoof:
+    remove-violations-after: 300
+    checks:
+      - "GroundSpoof"
+    commands:
+      - "10:10 [alert]"
+      - "10:10 [webhook]"
+      - "15:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  Scaffold:
+    remove-violations-after: 300
+    checks:
+      - "Place"
+    commands:
+      - "10:1 [alert]"
+      - "20:0 [webhook]"
+      - "40:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  FastBreak:
+    remove-violations-after: 300
+    checks:
+      - "FastBreak"
+    commands:
+      - "5:1 [alert]"
+      - "15:0 [webhook]"
+      - "15:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  NoFall:
+    remove-violations-after: 300
+    checks:
+      - "NoFall"
+    commands:
+      - "10:5 [alert]"
+      - "30:30 [webhook]"
+      - "30:0 tempban %player% 1d Unfair advantage detected. Appeal on Discord if this was a mistake."
+
+  Aim:
+    remove-violations-after: 300
+    checks:
+      - "Aim"
+    commands:
+      - "20:5 [alert]"
+      - "50:30 [webhook]"
+      - "50:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
+
+  Post:
+    remove-violations-after: 300
+    checks:
+      - "Post"
+    commands:
+      - "20:20 [alert]"
+      - "40:40 [webhook]"
+      - "40:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
+
+  # --- PACKET ABUSE (kick, not ban) ---
+
+  BadPackets:
+    remove-violations-after: 300
+    checks:
+      - "BadPackets"
+    commands:
+      - "10:5 [alert]"
+      - "20:0 [webhook]"
+      - "20:0 kick %player% Invalid packets detected. Rejoin if this was a mistake."
+
+  Crash:
+    remove-violations-after: 300
+    checks:
+      - "Crash"
+    commands:
+      - "10:5 [alert]"
+      - "20:0 [webhook]"
+      - "20:0 kick %player% Invalid packets detected. Rejoin if this was a mistake."
+
+  TransactionOrder:
+    remove-violations-after: 300
+    checks:
+      - "TransactionOrder"
+    commands:
+      - "10:10 [alert]"
+      - "20:0 [webhook]"
+      - "20:0 kick %player% Invalid packets detected. Rejoin if this was a mistake."
+
+  # --- INFORMATIONAL (alert only) ---
+
+  Explosion:
+    remove-violations-after: 300
+    checks:
+      - "Explosion"
+    commands:
+      - "10:10 [alert]"
+      - "20:20 [webhook]"
+
+  EntityControl:
+    remove-violations-after: 300
+    checks:
+      - "EntityControl"
+    commands:
+      - "10:10 [alert]"
+      - "20:20 [webhook]"
+
+  Baritone:
+    remove-violations-after: 300
+    checks:
+      - "Baritone"
+    commands:
+      - "10:10 [alert]"
+      - "20:20 [webhook]"

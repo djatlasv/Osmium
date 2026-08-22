@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Tue, 24 Mar 2026 08:53:43 -0600
+Subject: [PATCH] =?UTF-8?q?Osmium:=20wire=20up=20/rtp=20command=20?=
+ =?UTF-8?q?=E2=80=94=20register,=20tick,=20click,=20close,=20disconnect=20?=
+ =?UTF-8?q?hooks?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+index 83148f756ecc77ae45abffbd1d7cbfacf6c99e7f..778bb8b8dfab630ff9858e9773b802f55a7ddba7 100644
+--- a/net/minecraft/commands/Commands.java
++++ b/net/minecraft/commands/Commands.java
+@@ -261,6 +261,7 @@ public class Commands {
+         WaypointCommand.register(this.dispatcher, context);
+         WeatherCommand.register(this.dispatcher);
+         WorldBorderCommand.register(this.dispatcher);
++        if (org.osmium.OsmiumConfig.rtpEnabled) org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command
+         if (JvmProfiler.INSTANCE.isAvailable()) {
+             JfrCommand.register(this.dispatcher);
+         }
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index d33cb262020e8ded2050e51bb2c0ddeba58ad5bb..ffaa7cf5374f2bd358b2afd451d65f27ad0773bb 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -1805,6 +1805,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.ADVENTURE_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.DIALOG_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+         org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
++        org.osmium.OsmiumRtp.tick(this); // Osmium - RTP countdown processing
+         if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); } // Osmium - scoreboard
+         profilerFiller.push("commandFunctions");
+         this.getFunctions().tick();
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index ffa3d991d2e5b85a643c12981c0a7fac9d2f3562..bfcc8fca9c680093fea1f0c03344d1fb9f3b00dc 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2320,6 +2320,7 @@ public class ServerGamePacketListenerImpl
+         // CraftBukkit end
+         LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
+         org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
++        org.osmium.OsmiumRtp.cancel(this.player.getUUID()); // Osmium - cleanup RTP state
+         org.osmium.anticheat.OsmiumYLevelTracker.onPlayerDisconnect(this.player.getUUID()); // Osmium - cleanup y-level tracker
+         org.osmium.OsmiumScoreboard.onQuit(this.player.getUUID()); // Osmium - cleanup scoreboard
+         // Paper start - Fix kick event leave message not being sent
+@@ -3094,6 +3095,7 @@ public class ServerGamePacketListenerImpl
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+ 
+         if (this.player.isImmobile()) return; // CraftBukkit
++        org.osmium.OsmiumRtp.handleClose(this.player); // Osmium - RTP GUI cleanup
+         CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
+         this.player.doCloseContainer();
+     }
+@@ -3111,6 +3113,12 @@ public class ServerGamePacketListenerImpl
+                 LOGGER.debug("Player {} interacted with invalid menu {}", this.player, this.player.containerMenu);
+             } else {
+                 int slotNum = packet.slotNum();
++                // Osmium start - RTP GUI click interception
++                if (org.osmium.OsmiumRtp.handleClick(this.player, slotNum)) {
++                    this.player.containerMenu.sendAllDataToRemote();
++                    return;
++                }
++                // Osmium end
+                 if (!this.player.containerMenu.isValidSlotIndex(slotNum)) {
+                     LOGGER.debug(
+                         "Player {} clicked invalid slot index: {}, available slots: {}",

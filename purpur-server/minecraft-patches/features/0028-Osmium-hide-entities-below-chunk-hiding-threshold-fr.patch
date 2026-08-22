@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Sun, 15 Mar 2026 20:17:48 -0600
+Subject: [PATCH] Osmium: hide entities below chunk hiding threshold from
+ distant players
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index ab8893163ac85971a470e4a4d6fa76bd174e2bae..c749e58bd391886c1afb10900c0e03f97a6d9fe2 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -1382,6 +1382,18 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                     flag = false;
+                 }
+                 // CraftBukkit end
++                // Osmium start - hide entities below chunk hiding threshold
++                if (flag && org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideEntities
++                        && this.entity.getY() < org.osmium.OsmiumConfig.chunkHidingYThreshold) {
++                    double dx = player.getX() - this.entity.getX();
++                    double dy = player.getY() - this.entity.getY();
++                    double dz = player.getZ() - this.entity.getZ();
++                    double proxSq = (double) org.osmium.OsmiumConfig.chunkHidingProximityRadius * org.osmium.OsmiumConfig.chunkHidingProximityRadius;
++                    if (dx * dx + dy * dy + dz * dz > proxSq) {
++                        flag = false;
++                    }
++                }
++                // Osmium end
+                 if (flag) {
+                     if (this.seenBy.add(player.connection)) {
+                         // Paper start - entity tracking events

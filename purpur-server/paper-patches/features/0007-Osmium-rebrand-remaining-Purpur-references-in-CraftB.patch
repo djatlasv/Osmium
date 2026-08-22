@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Fri, 13 Mar 2026 17:49:02 -0600
+Subject: [PATCH] Osmium: rebrand remaining Purpur references in CraftBukkit
+
+- ServerBuildInfoImpl: rename BRAND_PURPUR_NAME/ID to BRAND_OSMIUM
+- Metrics: report as "Osmium" instead of "Purpur"
+- Main.java: add --osmium-settings CLI option for osmium.yml
+
+diff --git a/src/main/java/com/destroystokyo/paper/Metrics.java b/src/main/java/com/destroystokyo/paper/Metrics.java
+index 6194d6d8952864c71cc4017a639b818e4ecccea9..2086559cf8aaef36890c43d5403a72c02991ee38 100644
+--- a/src/main/java/com/destroystokyo/paper/Metrics.java
++++ b/src/main/java/com/destroystokyo/paper/Metrics.java
+@@ -593,7 +593,7 @@ public class Metrics {
+             boolean logFailedRequests = config.getBoolean("logFailedRequests", false);
+             // Only start Metrics, if it's enabled in the config
+             if (config.getBoolean("enabled", true)) {
+-                Metrics metrics = new Metrics("Purpur", serverUUID, logFailedRequests, Bukkit.getLogger()); // Purpur - Purpur config files
++                Metrics metrics = new Metrics("Osmium", serverUUID, logFailedRequests, Bukkit.getLogger()); // Osmium
+ 
+                 metrics.addCustomChart(new Metrics.SimplePie("minecraft_version", () -> {
+                     String minecraftVersion = Bukkit.getVersion();
+diff --git a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+index cfc376e81200d9d5157e41832a2a502a056fac54..d7e6254ddaa69166832beebd6e9f8329dbd38942 100644
+--- a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
++++ b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+@@ -31,7 +31,7 @@ public record ServerBuildInfoImpl(
+     private static final String ATTRIBUTE_GIT_COMMIT = "Git-Commit";
+ 
+     private static final String BRAND_PAPER_NAME = "Paper";
+-    private static final String BRAND_PURPUR_NAME = "Osmium"; // Purpur - Rebrand // Osmium - Rebrand
++    private static final String BRAND_OSMIUM_NAME = "Osmium"; // Osmium - Rebrand
+ 
+     private static final String BUILD_DEV = "DEV";
+ 
+@@ -43,9 +43,9 @@ public record ServerBuildInfoImpl(
+         this(
+             getManifestAttribute(manifest, ATTRIBUTE_BRAND_ID)
+                 .map(Key::key)
+-                .orElse(BRAND_PURPUR_ID), // Purpur - Rebrand
++                .orElse(BRAND_OSMIUM_ID), // Osmium - Rebrand
+             getManifestAttribute(manifest, ATTRIBUTE_BRAND_NAME)
+-                .orElse(BRAND_PURPUR_NAME), // Purpur - Rebrand
++                .orElse(BRAND_OSMIUM_NAME), // Osmium - Rebrand
+             SharedConstants.getCurrentVersion().id(),
+             SharedConstants.getCurrentVersion().name(),
+             getManifestAttribute(manifest, ATTRIBUTE_BUILD_NUMBER)
+@@ -62,7 +62,7 @@ public record ServerBuildInfoImpl(
+ 
+     @Override
+     public boolean isBrandCompatible(final @NotNull Key brandId) {
+-        return brandId.equals(this.brandId) || brandId.equals(BRAND_PAPER_ID); // Purpur - Fix pufferfish issues // Purpur - Rebrand
++        return brandId.equals(this.brandId) || brandId.equals(BRAND_PAPER_ID); // Osmium - Rebrand
+     }
+ 
+     @Override
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index e6ea34b18c6db63efa77bb67d3484e4d66315ed6..cd91b8f9b5eb74aa44e48b0016f12385fb331a64 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -147,6 +147,14 @@ public class Main {
+                     .describedAs("Yml file");
+                 // Purpur end - Purpur config files
+ 
++                // Osmium start
++                this.acceptsAll(asList("osmium", "osmium-settings"), "File for osmium settings")
++                    .withRequiredArg()
++                    .ofType(File.class)
++                    .defaultsTo(new File("osmium.yml"))
++                    .describedAs("Yml file");
++                // Osmium end
++
+                 this.accepts("server-name", "Name of the server")
+                         .withRequiredArg()
+                         .ofType(String.class)

@@ -1,0 +1,22 @@
+[
+  "regex:\\bn+[i!1|l]+[gq9]{2,}[e3]*[ra@]*s?\\b",
+  "regex:\\bf+[ua@]+[gq9]{2,}[o0]*[t+]*s?\\b",
+  "regex:\\br+[e3]+[t+]+[a@]+r+[d]+s?\\b",
+  "regex:\\bf+[u]+c+k+\\b",
+  "regex:\\bs+h+[i!1]+t+\\b",
+  "regex:\\bb+[i!1]+t+c+h+\\b",
+  "regex:\\ba+s+s+h+o+l+e+\\b",
+  "regex:\\bc+[u]+n+t+\\b",
+  "regex:\\bd+[i!1]+c+k+\\b",
+  "regex:\\bw+h+[o0]+r+e+\\b",
+  "regex:\\bs+l+[u]+t+\\b",
+  "regex:\\bk+[i!1]+k+e+s?\\b",
+  "regex:\\bs+p+[i!1]+c+s?\\b",
+  "regex:\\bc+h+[i!1]+n+k+s?\\b",
+  "regex:\\bt+r+[a@]+n+n+[yi!1]+e?s?\\b",
+  "regex:\\bd+y+k+e+s?\\b",
+  "regex:\\bk+y+s+\\b",
+  "regex:\\bk+[i!1]+l+l+\\s*(y+o+u+r+)?\\s*s+e+l+f+\\b",
+  "regex:\\bg+[o0]+\\s*k+[i!1]+l+l+\\b",
+  "regex:\\bn+[e3]+g+r+[o0]+s?\\b"
+]

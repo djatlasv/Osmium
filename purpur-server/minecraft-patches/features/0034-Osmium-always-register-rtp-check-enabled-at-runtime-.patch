@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Tue, 24 Mar 2026 13:07:54 -0600
+Subject: [PATCH] Osmium: always register /rtp, check enabled at runtime + init
+ permission after config
+
+Commands are registered before OsmiumConfig loads, so the rtpEnabled
+guard prevented /rtp from ever being registered. Move the enabled
+check into the requires() predicate so it evaluates at execution time.
+Add initPermission() call in DedicatedServer after config init.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+index 778bb8b8dfab630ff9858e9773b802f55a7ddba7..ed816f9cfc02075f01cf109a9a89f54ba0de6918 100644
+--- a/net/minecraft/commands/Commands.java
++++ b/net/minecraft/commands/Commands.java
+@@ -261,7 +261,7 @@ public class Commands {
+         WaypointCommand.register(this.dispatcher, context);
+         WeatherCommand.register(this.dispatcher);
+         WorldBorderCommand.register(this.dispatcher);
+-        if (org.osmium.OsmiumConfig.rtpEnabled) org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command
++        org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command (always register; enabled check is at execution time)
+         if (JvmProfiler.INSTANCE.isAvailable()) {
+             JfrCommand.register(this.dispatcher);
+         }
+diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
+index 09b4cf0b43d8b553379f451e45fb8b8c6e6b3eb6..0d9a6991bde0a505a354a5954b733603fe6a1fe0 100644
+--- a/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -267,6 +267,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         }
+         org.purpurmc.purpur.PurpurConfig.registerCommands();
+         org.osmium.OsmiumConfig.init((java.io.File) options.valueOf("osmium-settings")); // Osmium
++        org.osmium.OsmiumRtp.initPermission(); // Osmium - register /rtp Bukkit permission after config loads
+         org.osmium.anticheat.OsmiumAltTracker.init(new java.io.File(".")); // Osmium - alt ban IP tracking
+         org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File(".")); // Osmium - chat filter
+         // Purpur end - Migrate Setting to reintroduce end void rings

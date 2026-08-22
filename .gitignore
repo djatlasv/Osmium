@@ -63,3 +63,4 @@ test-plugin.settings.gradle.kts
 /.checkstyle
 /paper-checkstyle
 purpur-server/build.gradle.kts
+CLAUDE.md

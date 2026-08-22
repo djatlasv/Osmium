@@ -1,0 +1,45 @@
+# GrimAC messages — Osmium branding
+
+prefix: "&8[&6Osmium&8] &r"
+
+alerts-enabled: "%prefix% &fAlerts enabled"
+alerts-disabled: "%prefix% &fAlerts disabled"
+client-brand-format: "%prefix% &f%player% joined using %brand%"
+console-specify-target: "%prefix% &cYou must specify a target as the console!"
+player-not-found: "%prefix% &cPlayer is exempt or offline!"
+player-not-this-server: "%prefix% &cPlayer is not on this server!"
+spectate-return: "\n%prefix% &fClick here to return to previous location\n"
+cannot-spectate-return: "%prefix% &cYou can only do this after spectating a player"
+cannot-run-on-self: "%prefix% &cYou cannot use this command on yourself!"
+upload-log: "%prefix% &fUploaded debug to: %url%"
+upload-log-start: "%prefix% &fUploading log... please wait"
+upload-log-not-found: "%prefix% &cUnable to find that log"
+upload-log-upload-failure: "%prefix% &cSomething went wrong while uploading this log, see console for more info"
+
+alerts-format: "%prefix%&f%player% &8> &c%check_name%%experimental% &8[&cx%vl%&8] &7%verbose%"
+alerts-format-proxy: "%prefix%&f%player% &8> &c%check_name%%experimental% &8[&cx%vl%&8] &7%verbose%"
+experimental-symbol: "*"
+
+profile:
+  - "&8======================"
+  - "%prefix% &bProfile for &f%player%"
+  - "&8| &bPing: &f%ping%"
+  - "&8| &bVersion: &f%version%"
+  - "&8| &bClient Brand: &f%brand%"
+  - "&8| &bH-Sensitivity: &f%h_sensitivity%%"
+  - "&8| &bV-Sensitivity: &f%v_sensitivity%%"
+  - "&8| &bFastMath: &f%fast_math%"
+  - "&8======================"
+
+help:
+  - "&8======================"
+  - "/grim alerts &f- &7Toggle alerts"
+  - "/grim profile <player> &f- &7View player info"
+  - "/grim help &f- &7View this help message"
+  - "/grim debug <player> &f- &7Developer prediction output"
+  - "/grim perf &f- &7Developer ms/prediction"
+  - "/grim reload &f- &7Reloads the config"
+  - "/grim spectate <player> &f- &7Spectate a player"
+  - "/grim verbose &f- &7Shows every flag without buffers"
+  - "/grim log [0-255] &f- &7Uploads a debug log"
+  - "&8======================"

@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Wed, 18 Mar 2026 16:16:56 -0600
+Subject: [PATCH] Osmium: add scoreboard tick + join/quit hooks
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 6df8ef591b664eceabd3d37778cd5c0378047223..d33cb262020e8ded2050e51bb2c0ddeba58ad5bb 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -1805,6 +1805,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.ADVENTURE_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.DIALOG_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+         org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
++        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); } // Osmium - scoreboard
+         profilerFiller.push("commandFunctions");
+         this.getFunctions().tick();
+         profilerFiller.popPush("levels");
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index d20c259fb00ef06ede2d0fdaa99c29f418f85cb7..ffa3d991d2e5b85a643c12981c0a7fac9d2f3562 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2321,6 +2321,7 @@ public class ServerGamePacketListenerImpl
+         LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
+         org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
+         org.osmium.anticheat.OsmiumYLevelTracker.onPlayerDisconnect(this.player.getUUID()); // Osmium - cleanup y-level tracker
++        org.osmium.OsmiumScoreboard.onQuit(this.player.getUUID()); // Osmium - cleanup scoreboard
+         // Paper start - Fix kick event leave message not being sent
+         final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
+         this.removePlayerFromWorld(quitMessage);
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index 1a7515219b135005e706b14fa835ad7ec7905446..f0774d11fb3a8a8bfda3d8b0643b32e7658fe151 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -263,6 +263,7 @@ public abstract class PlayerList {
+             }
+         }
+         // Osmium end - alt tracker
++        org.osmium.OsmiumScoreboard.onJoin(player); // Osmium - scoreboard
+ 
+         if (!player.connection.isAcceptingMessages()) {
+             return;

@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Sun, 15 Mar 2026 22:55:03 -0600
+Subject: [PATCH] Osmium: skip players in entity hiding, cleaner check
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index c749e58bd391886c1afb10900c0e03f97a6d9fe2..854d73e1e62384f0c4d6962a4d0ff8ef258daa4f 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -1384,11 +1384,12 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 // CraftBukkit end
+                 // Osmium start - hide entities below chunk hiding threshold
+                 if (flag && org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideEntities
++                        && !(this.entity instanceof ServerPlayer) // never hide other players
+                         && this.entity.getY() < org.osmium.OsmiumConfig.chunkHidingYThreshold) {
++                    double proxSq = (double) org.osmium.OsmiumConfig.chunkHidingProximityRadius * org.osmium.OsmiumConfig.chunkHidingProximityRadius;
+                     double dx = player.getX() - this.entity.getX();
+                     double dy = player.getY() - this.entity.getY();
+                     double dz = player.getZ() - this.entity.getZ();
+-                    double proxSq = (double) org.osmium.OsmiumConfig.chunkHidingProximityRadius * org.osmium.OsmiumConfig.chunkHidingProximityRadius;
+                     if (dx * dx + dy * dy + dz * dz > proxSq) {
+                         flag = false;
+                     }

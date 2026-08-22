@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Mon, 23 Mar 2026 09:20:50 -0600
+Subject: [PATCH] Osmium: hide light data below threshold to defeat Light
+ Finder hacks
+
+Zero out sky/block light for hidden sections in chunk packets and filter
+standalone light update broadcasts. Respects proximity radius for reveal.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+diff --git a/net/minecraft/server/level/ChunkHolder.java b/net/minecraft/server/level/ChunkHolder.java
+index 22123d8b0fd8741c6df4efaec56f3c694e0529a3..a06040b8262378d015a07a1e37b4eb134afbe8f8 100644
+--- a/net/minecraft/server/level/ChunkHolder.java
++++ b/net/minecraft/server/level/ChunkHolder.java
+@@ -278,10 +278,28 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
+             if (!this.skyChangedLightSectionFilter.isEmpty() || !this.blockChangedLightSectionFilter.isEmpty()) {
+                 List<ServerPlayer> players = this.moonrise$getPlayers(true); // Paper - rewrite chunk system
+                 if (!players.isEmpty()) {
+-                    ClientboundLightUpdatePacket clientboundLightUpdatePacket = new ClientboundLightUpdatePacket(
+-                        chunk.getPos(), this.lightEngine, this.skyChangedLightSectionFilter, this.blockChangedLightSectionFilter
+-                    );
+-                    this.broadcast(players, clientboundLightUpdatePacket);
++                    // Osmium start - filter light updates for hidden sections (defeats Light Finder)
++                    BitSet skyFilter = this.skyChangedLightSectionFilter;
++                    BitSet blockFilter = this.blockChangedLightSectionFilter;
++                    if (org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideLight) {
++                        skyFilter = (BitSet) skyFilter.clone();
++                        blockFilter = (BitSet) blockFilter.clone();
++                        int minLightSection = this.levelHeightAccessor.getMinSectionY() - 1;
++                        int hideBelowSection = org.osmium.OsmiumConfig.chunkHidingYThreshold >> 4;
++                        for (int i = skyFilter.nextSetBit(0); i >= 0; i = skyFilter.nextSetBit(i + 1)) {
++                            if (minLightSection + i < hideBelowSection) skyFilter.clear(i);
++                        }
++                        for (int i = blockFilter.nextSetBit(0); i >= 0; i = blockFilter.nextSetBit(i + 1)) {
++                            if (minLightSection + i < hideBelowSection) blockFilter.clear(i);
++                        }
++                    }
++                    if (!skyFilter.isEmpty() || !blockFilter.isEmpty()) {
++                        ClientboundLightUpdatePacket clientboundLightUpdatePacket = new ClientboundLightUpdatePacket(
++                            chunk.getPos(), this.lightEngine, skyFilter, blockFilter
++                        );
++                        this.broadcast(players, clientboundLightUpdatePacket);
++                    }
++                    // Osmium end
+                 }
+ 
+                 this.skyChangedLightSectionFilter.clear();
+diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+index c33edee3c8a32507f01fc025135d57af0b41b10d..455085287a04d3799608ac9d7fae20a88ec03f69 100644
+--- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
++++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+@@ -130,9 +130,26 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+                             return;
+                         }
+ 
++                        // Osmium start - filter light updates for hidden sections
++                        java.util.BitSet skyFilter = null;
++                        java.util.BitSet blockFilter = null;
++                        if (org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideLight) {
++                            final int minLightSection = ThreadedLevelLightEngine.this.getMinLightSection();
++                            final int lightSectionCount = ThreadedLevelLightEngine.this.getLightSectionCount();
++                            final int hideBelowSection = org.osmium.OsmiumConfig.chunkHidingYThreshold >> 4;
++                            skyFilter = new java.util.BitSet(lightSectionCount);
++                            blockFilter = new java.util.BitSet(lightSectionCount);
++                            for (int li = 0; li < lightSectionCount; li++) {
++                                if (minLightSection + li >= hideBelowSection) {
++                                    skyFilter.set(li);
++                                    blockFilter.set(li);
++                                }
++                            }
++                        }
++                        // Osmium end
+                         final net.minecraft.network.protocol.Packet<?> relightPacket = new net.minecraft.network.protocol.game.ClientboundLightUpdatePacket(
+                             pos, (ThreadedLevelLightEngine)(Object)ThreadedLevelLightEngine.this,
+-                            null, null
++                            skyFilter, blockFilter
+                         );
+ 
+                         for (final ServerPlayer player : players) {
