@@ -7,7 +7,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,6 +18,7 @@ import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.item.component.ResolvableProfile;
 
 import java.io.*;
@@ -35,6 +38,8 @@ public class OsmiumTeam {
         UUID teamId;
         UUID leaderUuid;
         String leaderName;
+        // When true, teammates can damage each other. Default: protected.
+        boolean friendlyFire = false;
         final Set<UUID> memberUuids = new LinkedHashSet<>();
         final Map<UUID, String> memberNames = new ConcurrentHashMap<>();
 
@@ -54,6 +59,7 @@ public class OsmiumTeam {
     private static class TeamJson {
         String id;
         String leader;
+        boolean friendlyFire = false;
         Map<String, String> members; // uuid -> name
     }
 
@@ -70,7 +76,6 @@ public class OsmiumTeam {
     private static final Map<UUID, List<UUID>> GUI_INVITE_SLOTS = new ConcurrentHashMap<>();  // player -> ordered UUIDs in slots
     private static final Map<UUID, UUID> GUI_CONFIRM_INVITE = new ConcurrentHashMap<>();      // player -> target
     private static final Map<UUID, UUID> GUI_MANAGE = new ConcurrentHashMap<>();              // player -> target member
-    private static final Set<UUID> GUI_ACCEPT = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, List<UUID>> GUI_MEMBERS_SLOTS = new ConcurrentHashMap<>(); // player -> ordered member UUIDs
 
     // Persistence
@@ -80,6 +85,24 @@ public class OsmiumTeam {
     private static void debug(String msg) {
         if (OsmiumConfig.teamDebug) {
             LOGGER.info("[DEBUG] " + msg);
+        }
+    }
+
+    private static MinecraftServer server() {
+        MinecraftServer srv = MinecraftServer.getServer();
+        if (srv == null) throw new IllegalStateException("Server not available");
+        return srv;
+    }
+
+    /**
+     * Sends a message to every online member of the team.
+     */
+    private static void notifyTeam(MinecraftServer server, TeamData team, Component message) {
+        for (UUID memberUuid : team.memberUuids) {
+            ServerPlayer member = server.getPlayerList().getPlayer(memberUuid);
+            if (member != null) {
+                member.sendSystemMessage(message);
+            }
         }
     }
 
@@ -121,6 +144,7 @@ public class OsmiumTeam {
                 UUID leaderId = UUID.fromString(tj.leader);
                 String leaderName = tj.members != null ? tj.members.getOrDefault(tj.leader, "Unknown") : "Unknown";
                 TeamData team = new TeamData(teamId, leaderId, leaderName);
+                team.friendlyFire = tj.friendlyFire;
                 if (tj.members != null) {
                     for (Map.Entry<String, String> entry : tj.members.entrySet()) {
                         UUID memberUuid = UUID.fromString(entry.getKey());
@@ -143,6 +167,7 @@ public class OsmiumTeam {
             TeamJson tj = new TeamJson();
             tj.id = team.teamId.toString();
             tj.leader = team.leaderUuid.toString();
+            tj.friendlyFire = team.friendlyFire;
             tj.members = new LinkedHashMap<>();
             for (UUID memberUuid : team.memberUuids) {
                 tj.members.put(memberUuid.toString(), team.memberNames.getOrDefault(memberUuid, "Unknown"));
@@ -161,19 +186,62 @@ public class OsmiumTeam {
     // ------------------------------------------------------------------
 
     public static void registerCommand(CommandDispatcher<CommandSourceStack> dispatcher) {
+        // Always register — config may not be loaded yet at registration time.
+        // Enabled check happens at execution time (same pattern as /rtp).
         dispatcher.register(
-                Commands.literal("party")
-                        .requires(src -> {
-                            if (!OsmiumConfig.teamEnabled) return false;
-                            return true;
-                        })
+                Commands.literal("team")
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            if (!OsmiumConfig.teamEnabled) {
+                                player.sendSystemMessage(Component.literal("\u00a7cTeams are disabled."));
+                                return 0;
+                            }
                             debug(player.getGameProfile().name() + " executed /team");
                             openMainGui(player);
                             return 1;
                         })
+                        .then(Commands.literal("accept")
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    if (!OsmiumConfig.teamEnabled) return 0;
+                                    acceptInvite(player);
+                                    return 1;
+                                }))
+                        .then(Commands.literal("deny")
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    if (!OsmiumConfig.teamEnabled) return 0;
+                                    declineInvite(player);
+                                    return 1;
+                                }))
         );
+    }
+
+    /**
+     * Builds a clickable chat button that runs a command when clicked.
+     */
+    private static Component chatButton(String text, String command, ChatFormatting color) {
+        return Component.literal(text)
+                .withStyle(style -> style
+                        .withColor(color)
+                        .withBold(true)
+                        .withClickEvent(new ClickEvent.RunCommand(command)));
+    }
+
+    // ------------------------------------------------------------------
+    // PvP enforcement
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns true when the attack must be cancelled: victim and attacker are
+     * on the same team AND the team leader has friendly fire disabled.
+     */
+    public static boolean isFriendlyFireBlocked(ServerPlayer victim, ServerPlayer attacker) {
+        if (!OsmiumConfig.teamEnabled) return false;
+        UUID teamId = playerToTeam.get(victim.getUUID());
+        if (teamId == null || !teamId.equals(playerToTeam.get(attacker.getUUID()))) return false;
+        TeamData team = teams.get(teamId);
+        return team != null && !team.friendlyFire;
     }
 
     // ------------------------------------------------------------------
@@ -213,6 +281,8 @@ public class OsmiumTeam {
                 String inviterName = inviter != null ? inviter.getGameProfile().name() : "Unknown";
                 inviteItem.set(DataComponents.CUSTOM_NAME,
                         Component.literal("\u00a7e\u00a7lInvite from \u00a7f" + inviterName));
+                inviteItem.set(DataComponents.LORE, new ItemLore(List.of(
+                        Component.literal("\u00a77Accept or decline in chat"))));
                 container.setItem(15, inviteItem);
             } else {
                 ItemStack noInvite = new ItemStack(Items.WRITABLE_BOOK);
@@ -231,6 +301,17 @@ public class OsmiumTeam {
             container.setItem(11, members);
 
             if (team.leaderUuid.equals(uuid)) {
+                // Friendly fire toggle
+                ItemStack ff = new ItemStack(team.friendlyFire ? Items.WOOL.red() : Items.WOOL.lime());
+                ff.set(DataComponents.CUSTOM_NAME,
+                        Component.literal(team.friendlyFire
+                                ? "\u00a7c\u00a7lFriendly Fire: ON"
+                                : "\u00a7a\u00a7lFriendly Fire: OFF"));
+                ff.set(DataComponents.LORE, new ItemLore(List.of(
+                        Component.literal("\u00a77Click to " + (team.friendlyFire ? "disable" : "enable")
+                                + " teammate damage"))));
+                container.setItem(12, ff);
+
                 ItemStack invite = new ItemStack(Items.EMERALD);
                 invite.set(DataComponents.CUSTOM_NAME,
                         Component.literal("\u00a7a\u00a7lInvite Player"));
@@ -436,57 +517,11 @@ public class OsmiumTeam {
     }
 
     // ------------------------------------------------------------------
-    // GUI: Accept/Decline Invite
-    // ------------------------------------------------------------------
-
-    private static void openAcceptInviteGui(ServerPlayer player) {
-        UUID uuid = player.getUUID();
-        clearGuiState(uuid);
-        GUI_ACCEPT.add(uuid);
-
-        PendingInvite invite = pendingInvites.get(uuid);
-        if (invite == null) {
-            player.sendSystemMessage(Component.literal("\u00a7cInvite has expired."));
-            return;
-        }
-
-        MinecraftServer server = player.level().getServer();
-        ServerPlayer inviter = server.getPlayerList().getPlayer(invite.inviterUuid());
-        String inviterName = inviter != null ? inviter.getGameProfile().name() : "Unknown";
-        debug(player.getGameProfile().name() + " opening accept invite GUI from " + inviterName);
-
-        SimpleContainer container = new SimpleContainer(27);
-
-        ItemStack accept = new ItemStack(Items.WOOL.lime());
-        accept.set(DataComponents.CUSTOM_NAME,
-                Component.literal("\u00a7a\u00a7lAccept Invite from \u00a7f" + inviterName));
-        container.setItem(11, accept);
-
-        ItemStack decline = new ItemStack(Items.WOOL.red());
-        decline.set(DataComponents.CUSTOM_NAME,
-                Component.literal("\u00a7c\u00a7lDecline"));
-        container.setItem(15, decline);
-
-        fillEmpty(container, 27);
-        openScreen(player, container, "\u00a78\u00a7lTeam Invite");
-    }
-
-    // ------------------------------------------------------------------
     // Click handling
     // ------------------------------------------------------------------
 
     public static boolean handleClick(ServerPlayer player, int slot) {
         UUID uuid = player.getUUID();
-
-        // Accept/Decline invite GUI
-        if (GUI_ACCEPT.contains(uuid)) {
-            if (slot == 11) {
-                acceptInvite(player);
-            } else if (slot == 15) {
-                declineInvite(player);
-            }
-            return true;
-        }
 
         // Confirm invite GUI
         if (GUI_CONFIRM_INVITE.containsKey(uuid)) {
@@ -578,16 +613,26 @@ public class OsmiumTeam {
                     player.closeContainer();
                     openMainGui(player);
                 } else if (slot == 15) {
-                    PendingInvite invite = pendingInvites.get(uuid);
-                    if (invite != null) {
-                        player.closeContainer();
-                        openAcceptInviteGui(player);
+                    if (pendingInvites.get(uuid) != null) {
+                        player.sendSystemMessage(Component.literal(
+                                "\u00a7eAccept or decline the invite in chat using the buttons above."));
                     }
                 }
             } else {
                 // Has team
                 TeamData team = teams.get(teamId);
-                if (slot == 11) {
+                if (slot == 12 && team != null && team.leaderUuid.equals(uuid)) {
+                    // Friendly fire toggle (leader only)
+                    team.friendlyFire = !team.friendlyFire;
+                    save();
+                    debug(player.getGameProfile().name() + " toggled friendly fire to " + team.friendlyFire);
+                    player.closeContainer();
+                    notifyTeam(server(), team, Component.literal(
+                            team.friendlyFire
+                                    ? "\u00a7cFriendly fire has been ENABLED."
+                                    : "\u00a7aFriendly fire has been DISABLED."));
+                    openMainGui(player);
+                } else if (slot == 11) {
                     // Members
                     player.closeContainer();
                     openMembersGui(player);
@@ -620,7 +665,7 @@ public class OsmiumTeam {
         UUID uuid = player.getUUID();
         boolean had = GUI_MAIN.remove(uuid) | GUI_MEMBERS.remove(uuid)
                 | GUI_INVITE_LIST.remove(uuid) != null | GUI_CONFIRM_INVITE.remove(uuid) != null
-                | GUI_MANAGE.remove(uuid) != null | GUI_ACCEPT.remove(uuid);
+                | GUI_MANAGE.remove(uuid) != null;
         GUI_INVITE_SLOTS.remove(uuid);
         GUI_MEMBERS_SLOTS.remove(uuid);
         if (had) {
@@ -712,7 +757,11 @@ public class OsmiumTeam {
         leader.sendSystemMessage(Component.literal(
                 "\u00a7aInvite sent to \u00a7f" + targetName + "\u00a7a!"));
         target.sendSystemMessage(Component.literal(
-                "\u00a7e" + leaderName + " invited you to their team! Type \u00a7f/party\u00a7e to respond."));
+                "\u00a7e" + leaderName + " invited you to their team!"));
+        target.sendSystemMessage(Component.empty()
+                .append(chatButton("[ACCEPT]", "/team accept", ChatFormatting.GREEN))
+                .append(Component.literal("  "))
+                .append(chatButton("[DENY]", "/team deny", ChatFormatting.RED)));
     }
 
     private static void acceptInvite(ServerPlayer player) {
@@ -760,8 +809,6 @@ public class OsmiumTeam {
                         "\u00a7a" + name + " joined the team!"));
             }
         }
-
-        player.closeContainer();
     }
 
     private static void declineInvite(ServerPlayer player) {
@@ -780,7 +827,6 @@ public class OsmiumTeam {
         }
 
         player.sendSystemMessage(Component.literal("\u00a7cInvite declined."));
-        player.closeContainer();
     }
 
     private static void kickMember(ServerPlayer leader, UUID memberUuid) {
@@ -888,7 +934,6 @@ public class OsmiumTeam {
         GUI_INVITE_SLOTS.remove(uuid);
         GUI_CONFIRM_INVITE.remove(uuid);
         GUI_MANAGE.remove(uuid);
-        GUI_ACCEPT.remove(uuid);
         GUI_MEMBERS_SLOTS.remove(uuid);
     }
 

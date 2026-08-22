@@ -6,22 +6,24 @@ Subject: [PATCH] Osmium: all NMS injection points for 26.2
 Config init, alt tracker, chat filter, discord webhooks,
 GrimAC lifecycle, chunk processor, entity hiding, light hiding,
 y-level tracker, scoreboard hooks, RTP command hooks, update checker,
-brand enforcement hooks.
+brand enforcement hooks, team system hooks (command, GUI clicks,
+friendly fire damage cancel).
 
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index 38bd5b1..f929f8c 100644
+index 38bd5b1..4b0fdd4 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -264,6 +264,7 @@ public class Commands {
+@@ -264,6 +264,8 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
 +        org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command (always register; enabled check is at execution time)
++        org.osmium.OsmiumTeam.registerCommand(this.dispatcher); // Osmium - /team command (always register; enabled check is at execution time)
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index d9402a7..5fccec6 100644
+index d9402a7..2b814ee 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
 @@ -650,6 +650,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -40,7 +42,7 @@ index d9402a7..5fccec6 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1896,6 +1898,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1896,6 +1898,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
@@ -48,6 +50,7 @@ index d9402a7..5fccec6 100644
 +        org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
 +        org.osmium.OsmiumRtp.tick(this);
 +        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); }
++        if (org.osmium.OsmiumConfig.teamEnabled) { org.osmium.OsmiumTeam.tick(this); } // Osmium - team invite expiry
 +        // Osmium end
      }
  
@@ -71,18 +74,20 @@ index c87bc86..3970f74 100644
                  if (online != null) {
                      online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index 9b19888..81ff7e0 100644
+index 9b19888..2525d38 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
-@@ -244,10 +244,17 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -244,10 +244,19 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
          }
          org.purpurmc.purpur.PurpurConfig.registerCommands();
          // Purpur end - Migrate Setting to reintroduce end void rings
 +        // Osmium start
 +        org.osmium.OsmiumConfig.init((java.io.File) options.valueOf("osmium-settings"));
 +        org.osmium.OsmiumRtp.initPermission();
++        org.osmium.OsmiumTeam.initPermission();
 +        org.osmium.anticheat.OsmiumAltTracker.init(new java.io.File("."));
 +        org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File("."));
++        org.osmium.OsmiumTeam.init(new java.io.File("."));
 +        // Osmium end
          // Paper start - initialize global and world-defaults configuration
          this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
@@ -92,7 +97,7 @@ index 9b19888..81ff7e0 100644
          this.server.spark.enableEarlyIfRequested(); // Paper - spark
          // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
          if (this.convertOldUsers()) {
-@@ -415,6 +422,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -415,6 +424,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
          this.saveEverything(false, true, true);
          this.notificationManager().serverStarted();
@@ -100,7 +105,7 @@ index 9b19888..81ff7e0 100644
          return true;
      }
  
-@@ -951,6 +959,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -951,6 +961,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
      @Override
      protected void stopServer() {
@@ -171,7 +176,7 @@ index 7e93614..2a4e074 100644
                      if (this.seenBy.add(player.connection)) {
                          // Paper start - entity tracking events
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index d1dce39..55187d2 100644
+index d1dce39..08ef9f2 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
 @@ -732,6 +732,7 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
@@ -182,6 +187,19 @@ index d1dce39..55187d2 100644
          this.gameMode.tick();
          this.wardenSpawnTracker.tick();
          if (this.invulnerableTime > 0) {
+@@ -1325,6 +1326,12 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+             }
+         }
+         // Purpur end - Add boat fall damage config
++        // Osmium start - team friendly fire
++        if (source.getEntity() instanceof ServerPlayer ffAttacker
++                && org.osmium.OsmiumTeam.isFriendlyFireBlocked(this, ffAttacker)) {
++            return false;
++        }
++        // Osmium end - team friendly fire
+         Entity entity = source.getEntity();
+         if (!( // Paper - split the if statement. If below statement is false, hurtServer would not have been evaluated. Return false.
+             !(entity instanceof Player player && !this.canHarmPlayer(player))
 diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
 index 948a8a2..0d2ed97 100644
 --- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
@@ -238,10 +256,10 @@ index 048bbab..b9d2d45 100644
          } catch (final Exception e) {
              LOGGER.error("Couldn't handle custom payload on channel {}", identifier, e);
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 817ec3f..3f6f1b7 100644
+index 817ec3f..b0480aa 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2349,6 +2349,12 @@ public class ServerGamePacketListenerImpl
+@@ -2349,6 +2349,13 @@ public class ServerGamePacketListenerImpl
  
      @Override
      public void onDisconnect(final DisconnectionDetails details) {
@@ -249,12 +267,13 @@ index 817ec3f..3f6f1b7 100644
 +        org.osmium.anticheat.OsmiumYLevelTracker.onPlayerDisconnect(this.player.getUUID());
 +        org.osmium.OsmiumScoreboard.onQuit(this.player.getUUID());
 +        org.osmium.OsmiumRtp.cancel(this.player.getUUID());
++        org.osmium.OsmiumTeam.cancel(this.player.getUUID()); // Osmium - clear team GUI state and pending invite
 +        org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
 +        // Osmium end
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2691,6 +2697,19 @@ public class ServerGamePacketListenerImpl
+@@ -2691,6 +2698,19 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
@@ -274,20 +293,22 @@ index 817ec3f..3f6f1b7 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3128,6 +3147,7 @@ public class ServerGamePacketListenerImpl
+@@ -3128,6 +3148,8 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
 +        org.osmium.OsmiumRtp.handleClose(this.player); // Osmium - RTP GUI cleanup
++        org.osmium.OsmiumTeam.handleClose(this.player); // Osmium - team GUI cleanup
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3137,6 +3157,12 @@ public class ServerGamePacketListenerImpl
+@@ -3137,6 +3159,13 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
 +        // Osmium start - RTP GUI click interception
-+        if (org.osmium.OsmiumRtp.handleClick(this.player, packet.slotNum())) {
++        if (org.osmium.OsmiumRtp.handleClick(this.player, packet.slotNum())
++                | org.osmium.OsmiumTeam.handleClick(this.player, packet.slotNum())) { // Osmium - RTP + team GUI clicks
 +            this.player.containerMenu.sendAllDataToRemote();
 +            return;
 +        }
@@ -295,7 +316,7 @@ index 817ec3f..3f6f1b7 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3862,6 +3888,14 @@ public class ServerGamePacketListenerImpl
+@@ -3862,6 +3891,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();
