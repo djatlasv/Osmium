@@ -31,6 +31,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     private final ChunkPacketBlockController delegate;
     private final boolean enabled;
+    private final boolean antiXrayActive;   // delegate does its own per-packet rewrite: sharing disabled
     private final int hideBelow;
     private final int proximityRadius;
     private final BlockState replacementState;
@@ -41,6 +42,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     public OsmiumChunkProcessor(ChunkPacketBlockController delegate, Level level) {
         this.delegate = delegate;
         this.enabled = org.osmium.OsmiumConfig.chunkHidingEnabled;
+        this.antiXrayActive = delegate instanceof io.papermc.paper.antixray.ChunkPacketBlockControllerAntiXray;
         this.hideBelow = org.osmium.OsmiumConfig.chunkHidingYThreshold;
         this.proximityRadius = org.osmium.OsmiumConfig.chunkHidingProximityRadius;
 
@@ -182,6 +184,26 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         int proxSq = proximityRadius * proximityRadius;
         boolean xzNear = xzDistSq <= proxSq;
 
+        // 200-player scaling: when this player is far enough that the output is
+        // player-independent (no proximity reveal), reuse a shared rewritten
+        // buffer instead of redoing the bit rewrite per viewer.
+        long chunkKey = ((long) chunk.getPos().x() & 0xFFFFFFFFL)
+                | (((long) chunk.getPos().z() & 0xFFFFFFFFL) << 32);
+        if (!antiXrayActive && !xzNear) {
+            Object cachedObj = SHARED_REWRITES.get(chunkKey);
+            if (cachedObj instanceof SharedRewrite entry) {
+                if (System.currentTimeMillis() - entry.atMillis() > SHARED_TTL_MS) {
+                    SHARED_REWRITES.remove(chunkKey);
+                } else {
+                    byte[] shared = entry.data();
+                    if (shared.length == buffer.length) {
+                        System.arraycopy(shared, 0, buffer, 0, buffer.length);
+                        return;
+                    }
+                }
+            }
+        }
+
         io.papermc.paper.antixray.BitStorageReader reader = new io.papermc.paper.antixray.BitStorageReader();
         io.papermc.paper.antixray.BitStorageWriter writer = new io.papermc.paper.antixray.BitStorageWriter();
         reader.setBuffer(buffer);
@@ -244,7 +266,23 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
             writer.flush();
         }
+
+        if (!antiXrayActive && !xzNear) {
+            // Bound memory: wholesale clear keeps worst case ~tens of MB.
+            if (SHARED_REWRITES.size() > 512) SHARED_REWRITES.clear();
+            long now = System.currentTimeMillis();
+            SHARED_REWRITES.values().removeIf(o ->
+                    now - ((SharedRewrite) o).atMillis() > SHARED_TTL_MS);
+            SHARED_REWRITES.put(chunkKey, new SharedRewrite(buffer.clone(), now));
+        }
     }
+
+    // --- Shared far-view rewrites ---
+    private static final long SHARED_TTL_MS = 30_000;
+    private record SharedRewrite(byte[] data, long atMillis) {}
+    /** chunkKey -> SharedRewrite */
+    private static final java.util.concurrent.ConcurrentHashMap<Long, SharedRewrite> SHARED_REWRITES =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Raytrace-based selective ore hiding. Unlike applyHiding (which rewrites
@@ -402,6 +440,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                               @Block.UpdateFlags int flags, int maxUpdateDepth) {
         delegate.onBlockChange(level, blockPos, newBlockState, oldBlockState, flags, maxUpdateDepth);
         org.osmium.anticheat.OsmiumOcclusion.onBlockChanged(level, blockPos); // Osmium - invalidate visibility cache
+        long ck = ((long) blockPos.getX() >> 4 & 0xFFFFFFFFL) | (((long) blockPos.getZ() >> 4 & 0xFFFFFFFFL) << 32);
+        SHARED_REWRITES.remove(ck); // Osmium - drop shared far-view rewrite for this chunk
     }
 
     @Override

@@ -21,11 +21,18 @@ import java.util.logging.Level;
  */
 public class OsmiumDiscordWebhook {
 
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "Osmium-Discord-Webhook");
-        t.setDaemon(true);
-        return t;
-    });
+    // Bounded queue: Discord rate-limits to ~30 req/min. Under a mass-ban or
+    // join wave, drop the OLDEST queued embed instead of growing memory and
+    // delivering minutes-stale messages.
+    private static final ExecutorService EXECUTOR = new java.util.concurrent.ThreadPoolExecutor(
+            1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+            new java.util.concurrent.ArrayBlockingQueue<>(256),
+            r -> {
+                Thread t = new Thread(r, "Osmium-Discord-Webhook");
+                t.setDaemon(true);
+                return t;
+            },
+            new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
 
     // Embed colors
     private static final int COLOR_GREEN  = 0x2ECC71; // server start

@@ -225,6 +225,7 @@ public class OsmiumConfig {
         raytraceChecksPerTick = getInt("raytrace-hiding.checks-per-tick", 4);
         raytraceSamplesPerBlock = getInt("raytrace-hiding.samples-per-block", 2);
         raytraceRefreshSeconds = getInt("raytrace-hiding.refresh-seconds", 120);
+        occlusionWorkerThreads = Math.max(1, getInt("raytrace-hiding.worker-threads", 2));
     }
 
     private static void entityOcclusion() {
@@ -367,6 +368,7 @@ public class OsmiumConfig {
     public static int raytraceChecksPerTick = 4;
     public static int raytraceSamplesPerBlock = 2;
     public static int raytraceRefreshSeconds = 120;
+    public static int occlusionWorkerThreads = 2;
 
     // Entity occlusion
     public static boolean entityOcclusionEnabled = false;
@@ -382,7 +384,7 @@ public class OsmiumConfig {
         rtpMinDistance = getInt("rtp.min-distance", 500);
         rtpOpOnly = getBoolean("rtp.op-only", false);
         rtpDebug = getBoolean("rtp.debug", false);
-        rtpCooldownSeconds = getInt("rtp.cooldown-seconds", 0);
+        rtpCooldownSeconds = getInt("rtp.cooldown-seconds", 60);
         config.addDefault("rtp.cooldown-seconds", rtpCooldownSeconds);
     }
 

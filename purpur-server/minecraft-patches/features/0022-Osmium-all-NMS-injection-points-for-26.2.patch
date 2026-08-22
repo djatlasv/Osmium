@@ -9,7 +9,7 @@ y-level tracker, scoreboard hooks, RTP command hooks, update checker,
 brand enforcement hooks, team system hooks (command, GUI clicks,
 friendly fire damage cancel), raytrace block hiding + entity occlusion.
 
-diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+diff --gitdiff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
 index 38bd5b1..4b0fdd4 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
@@ -74,7 +74,7 @@ index c87bc86..3970f74 100644
                  if (online != null) {
                      online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index 9b19888..2525d38 100644
+index 9b19888..218eb68 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -244,10 +244,19 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
@@ -105,10 +105,11 @@ index 9b19888..2525d38 100644
          return true;
      }
  
-@@ -951,6 +961,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -951,6 +961,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
      @Override
      protected void stopServer() {
++        org.osmium.anticheat.OsmiumAltTracker.flush(); // Osmium - persist alt tracker data before shutdown
 +        org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStop(); // Osmium - discord webhook (sync, before shutdown)
 +        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.stop(); } // Osmium - GrimAC
          this.notificationManager().serverShuttingDown();

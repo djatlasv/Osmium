@@ -12,6 +12,10 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
 /**
@@ -30,6 +34,16 @@ public class OsmiumAltTracker {
     private static final Map<String, Set<String>> ipToUuids = new ConcurrentHashMap<>();
     // Fingerprint -> Set of UUID strings
     private static final Map<String, Set<String>> fpToUuids = new ConcurrentHashMap<>();
+
+    // Debounced saving: joins/fingerprint events only mark dirty; a single
+    // background task flushes both files every few seconds. Prevents
+    // synchronous main-thread disk I/O during mass join waves.
+    private static final AtomicBoolean FLUSH_SCHEDULED = new AtomicBoolean();
+    private static final ScheduledExecutorService SAVER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "Osmium-AltTracker-Saver");
+        t.setDaemon(true);
+        return t;
+    });
 
     public static void init(File serverDir) {
         ipDataFile = new File(serverDir, "osmium-ips.json");
@@ -75,7 +89,32 @@ public class OsmiumAltTracker {
     public static void recordJoin(String ip, UUID uuid) {
         String uuidStr = uuid.toString();
         ipToUuids.computeIfAbsent(ip, k -> ConcurrentHashMap.newKeySet()).add(uuidStr);
+        scheduleFlush();
+    }
+
+    /**
+     * Marks data dirty and schedules one background flush. Never blocks.
+     */
+    private static void scheduleFlush() {
+        if (FLUSH_SCHEDULED.compareAndSet(false, true)) {
+            SAVER.schedule(() -> {
+                try {
+                    flush();
+                } catch (Exception e) {
+                    Bukkit.getLogger().log(Level.WARNING, "Alt tracker flush failed", e);
+                } finally {
+                    FLUSH_SCHEDULED.set(false);
+                }
+            }, 5, TimeUnit.SECONDS);
+        }
+    }
+
+    /**
+     * Writes both data files now. Safe to call from any thread.
+     */
+    public static void flush() {
         saveMap(ipDataFile, ipToUuids);
+        saveMap(fpDataFile, fpToUuids);
     }
 
     /**
@@ -85,7 +124,7 @@ public class OsmiumAltTracker {
     public static void recordFingerprint(String fingerprint, UUID uuid) {
         String uuidStr = uuid.toString();
         fpToUuids.computeIfAbsent(fingerprint, k -> ConcurrentHashMap.newKeySet()).add(uuidStr);
-        saveMap(fpDataFile, fpToUuids);
+        scheduleFlush();
     }
 
     /**

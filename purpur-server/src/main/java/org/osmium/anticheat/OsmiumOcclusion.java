@@ -58,18 +58,56 @@ public final class OsmiumOcclusion {
     // ------------------------------------------------------------------
 
     private static final Long2ObjectOpenHashMap<VisibilityData> visibilityCache = new Long2ObjectOpenHashMap<>();
-    private static final Object cacheLock = new Object();
+
+    // Striped locks: 200-player packet traffic hits these constantly; a single
+    // monitor would serialize every chunk send. Stripe by chunk key hash.
+    private static final int STRIPES = 16;
+    private static final Object[] STRIPE_LOCKS = new Object[STRIPES];
+    static {
+        for (int i = 0; i < STRIPES; i++) STRIPE_LOCKS[i] = new Object();
+    }
+    private static Object stripe(long key) {
+        int h = (int) (key ^ (key >>> 32));
+        h ^= h >>> 16;
+        return STRIPE_LOCKS[h & (STRIPES - 1)];
+    }
+    private static VisibilityData cacheGet(long key) {
+        synchronized (stripe(key)) { return visibilityCache.get(key); }
+    }
+    private static void cachePut(long key, VisibilityData data) {
+        synchronized (stripe(key)) { visibilityCache.put(key, data); }
+    }
+    private static void cacheRemove(long key) {
+        synchronized (stripe(key)) { visibilityCache.remove(key); }
+    }
     private static final ConcurrentLinkedQueue<ChunkJob> dirtyChunks = new ConcurrentLinkedQueue<>();
     private static final Set<Long> inFlight = ConcurrentHashMap.newKeySet();
     /** Keys invalidated while a compute was running: worker re-runs them. */
     private static final Set<Long> invalidatedWhileFlying = ConcurrentHashMap.newKeySet();
 
-    /** Two dedicated workers: bounded CPU, no unbounded virtual-thread fan-out. */
-    private static final ExecutorService WORKER = Executors.newFixedThreadPool(2, r -> {
-        Thread t = new Thread(r, "Osmium-Occlusion-Worker");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * Worker pool, sized from config (raytrace-hiding.worker-threads). Created
+     * lazily on first tick because config loads after class init.
+     */
+    private static volatile ExecutorService workerPool;
+    private static ExecutorService workers() {
+        ExecutorService w = workerPool;
+        if (w == null) {
+            synchronized (OsmiumOcclusion.class) {
+                w = workerPool;
+                if (w == null) {
+                    int n = Math.max(1, OsmiumConfig.occlusionWorkerThreads);
+                    w = Executors.newFixedThreadPool(n, r -> {
+                        Thread t = new Thread(r, "Osmium-Occlusion-Worker");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                    workerPool = w;
+                }
+            }
+        }
+        return w;
+    }
 
     private record ChunkJob(ServerLevel level, long chunkKey) {}
 
@@ -131,9 +169,12 @@ public final class OsmiumOcclusion {
     /** Config reload hook: force target re-resolution and drop caches. */
     public static void clearCaches() {
         resolvedTargets = null;
-        synchronized (cacheLock) { visibilityCache.clear(); }
+        for (Object lock : STRIPE_LOCKS) {
+            synchronized (lock) { visibilityCache.clear(); }
+        }
         dirtyChunks.clear();
         inFlight.clear();
+        pendingTraces.clear();
         entityVerdicts.clear();
     }
 
@@ -150,9 +191,7 @@ public final class OsmiumOcclusion {
                                           int sectionY, int packedBlockIndex) {
         if (!OsmiumConfig.raytraceHidingEnabled || targets().isEmpty()) return false;
         VisibilityData data;
-        synchronized (cacheLock) {
-            data = visibilityCache.get(chunkKey);
-        }
+        data = cacheGet(chunkKey);
         if (data == null || !data.ready) return false; // fail open until computed
         return !data.isSeen(sectionY, packedBlockIndex);
     }
@@ -160,7 +199,7 @@ public final class OsmiumOcclusion {
     /** Marks a chunk dirty for recomputation. Any thread. */
     public static void invalidateChunk(ServerLevel level, long chunkKey) {
         if (!OsmiumConfig.raytraceHidingEnabled) return;
-        synchronized (cacheLock) { visibilityCache.remove(chunkKey); }
+        cacheRemove(chunkKey);
         enqueue(level, chunkKey);
     }
 
@@ -198,6 +237,10 @@ public final class OsmiumOcclusion {
     private static long lastRefreshTick = 0;
     private static long lastVerdictSweep = 0;
 
+    // Async entity occlusion: pairKeys with a trace queued/running
+    private static final Set<Long> pendingTraces = ConcurrentHashMap.newKeySet();
+    private static final int MAX_PENDING_TRACES = 128;
+
     public static void tick(MinecraftServer server) {
         boolean blocks = OsmiumConfig.raytraceHidingEnabled && !targets().isEmpty();
         boolean entities = OsmiumConfig.entityOcclusionEnabled;
@@ -228,12 +271,12 @@ public final class OsmiumOcclusion {
 
             // Only compute chunks that still matter
             if (!hasPlayerInRange(job.level(), job.chunkKey())) {
-                synchronized (cacheLock) { visibilityCache.remove(job.chunkKey()); }
+                cacheRemove(job.chunkKey());
                 inFlight.remove(job.chunkKey());
                 continue;
             }
 
-            WORKER.execute(() -> {
+            workers().execute(() -> {
                 long key = job.chunkKey();
                 try {
                     VisibilityData data;
@@ -243,7 +286,7 @@ public final class OsmiumOcclusion {
                         rerun = invalidatedWhileFlying.remove(key);
                     } while (rerun);
                     if (data != null) {
-                        synchronized (cacheLock) { visibilityCache.put(key, data); }
+                        cachePut(key, data);
                     }
                 } catch (Exception e) {
                     LOGGER.error("[Osmium] occlusion compute failed for chunk " + key
@@ -263,7 +306,7 @@ public final class OsmiumOcclusion {
     /** Periodic refresh: re-enqueue live caches, evict dead ones. Bounded work. */
     private static void refreshCycle(MinecraftServer server) {
         List<Long> keys;
-        synchronized (cacheLock) {
+        synchronized (visibilityCache) {
             keys = new ArrayList<>(visibilityCache.keySet());
         }
         int enqueued = 0;
@@ -273,7 +316,7 @@ public final class OsmiumOcclusion {
                 if (hasPlayerInRange(lvl, key)) { anyRange = true; break; }
             }
             if (!anyRange) {
-                synchronized (cacheLock) { visibilityCache.remove(key); }
+                cacheRemove(key);
             } else if (enqueued < 256) {
                 // find owning level
                 for (ServerLevel lvl : server.getAllLevels()) {
@@ -486,27 +529,50 @@ public final class OsmiumOcclusion {
             }
         }
 
-        var bb = entity.getBoundingBox();
-        double midY = bb.minY + (bb.maxY - bb.minY) * 0.5;
-        boolean visible =
-                vanillaClipClear(player, bb.getCenter())
-             || vanillaClipClear(player, new Vec3(bb.minX + 0.1, midY, bb.minZ + 0.1))
-             || vanillaClipClear(player, new Vec3(bb.maxX - 0.1, midY, bb.maxZ - 0.1));
-        boolean occluded = !visible;
-
-        entityVerdicts.computeIfAbsent(entity.getId(), k -> new Long2LongOpenHashMap())
-                .put(pairKey, (occluded ? -1L : 1L) * (nowTick + 1));
-
-        return occluded;
+        // Stale verdict: queue an off-main-thread recompute using our own DDA
+        // walker (loaded chunks only, fails open). Until the fresh verdict
+        // lands the entity stays VISIBLE — never hide on unknown data.
+        scheduleTrace(player, entity, pairKey);
+        return false;
     }
 
-    /** True if the vanilla collider raycast reaches (near) the target point. */
-    private static boolean vanillaClipClear(ServerPlayer player, Vec3 target) {
-        ClipContext ctx = new ClipContext(player.getEyePosition(), target,
-                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player);
-        BlockHitResult result = player.level().clip(ctx);
-        return result.getType() == HitResult.Type.MISS
-                || result.getLocation().distanceToSqr(target) < 1.5;
+    private static void scheduleTrace(ServerPlayer player, Entity entity, long pairKey) {
+        if (!pendingTraces.add(pairKey)) return;                   // already queued
+        if (pendingTraces.size() > MAX_PENDING_TRACES) {           // overload: fail open
+            pendingTraces.remove(pairKey);
+            return;
+        }
+        final ServerLevel level = (ServerLevel) entity.level();
+        final Vec3 eye = player.getEyePosition();
+        final var bb = entity.getBoundingBox();
+        final double midY = bb.minY + (bb.maxY - bb.minY) * 0.5;
+        final Vec3[] targets = {
+                bb.getCenter(),
+                new Vec3(bb.minX + 0.1, midY, bb.minZ + 0.1),
+                new Vec3(bb.maxX - 0.1, midY, bb.maxZ - 0.1),
+        };
+        final int entityId = entity.getId();
+        final long nowTick = level.getGameTime();
+
+        try {
+            workers().execute(() -> {
+                try {
+                    boolean visible = false;
+                    for (Vec3 t : targets) {
+                        if (rayClear(level, eye, t)) { visible = true; break; }
+                    }
+                    boolean occluded = !visible;
+                    entityVerdicts.computeIfAbsent(entityId, k -> new Long2LongOpenHashMap())
+                            .put(pairKey, (occluded ? -1L : 1L) * (nowTick + 1));
+                } catch (Exception ignored) {
+                    // any failure: no verdict stored -> entity stays visible
+                } finally {
+                    pendingTraces.remove(pairKey);
+                }
+            });
+        } catch (Exception rejected) {
+            pendingTraces.remove(pairKey);
+        }
     }
 
     private static void sweepEntityVerdicts(long nowTick) {
