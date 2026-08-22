@@ -339,6 +339,7 @@ public class OsmiumConfig {
     public static int rtpMinDistance = 500;
     public static boolean rtpOpOnly = false;
     public static boolean rtpDebug = false;
+    public static int rtpCooldownSeconds = 0;
 
     private static void rtp() {
         rtpEnabled = getBoolean("rtp.enabled", false);
@@ -349,6 +350,8 @@ public class OsmiumConfig {
         rtpMinDistance = getInt("rtp.min-distance", 500);
         rtpOpOnly = getBoolean("rtp.op-only", false);
         rtpDebug = getBoolean("rtp.debug", false);
+        rtpCooldownSeconds = getInt("rtp.cooldown-seconds", 0);
+        config.addDefault("rtp.cooldown-seconds", rtpCooldownSeconds);
     }
 
     // -------------------------------------------------------------------------

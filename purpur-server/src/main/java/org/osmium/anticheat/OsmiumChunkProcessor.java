@@ -78,6 +78,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     public ChunkPacketInfo<BlockState> getChunkPacketInfo(
             ClientboundLevelChunkWithLightPacket chunkPacket, LevelChunk chunk) {
         ServerPlayer player = OsmiumChunkPacketInfo.CURRENT_PLAYER.get();
+        OsmiumChunkPacketInfo.CURRENT_PLAYER.remove();
         if (!enabled || player == null) {
             return delegate.getChunkPacketInfo(chunkPacket, chunk);
         }
@@ -115,41 +116,40 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
         int size = palette.getSize();
 
+        // Read all palette entries once — valueFor can be costly and the
+        // tiered scans below would otherwise re-walk it many times.
+        BlockState[] states = new BlockState[size];
         for (int i = 0; i < size; i++) {
-            try {
-                BlockState state = palette.valueFor(i);
-                if (replacementState.equals(state)) return i;
-            } catch (Exception e) { continue; }
+            try { states[i] = palette.valueFor(i); } catch (Exception e) { states[i] = null; }
         }
 
+        // Priority 1: exact configured block
+        for (int i = 0; i < size; i++) {
+            if (replacementState.equals(states[i])) return i;
+        }
+
+        // Priority 2: known stone-family fallbacks, in declared order
         for (BlockState fallback : fallbackStates) {
             if (fallback.equals(replacementState)) continue;
             for (int i = 0; i < size; i++) {
-                try {
-                    BlockState state = palette.valueFor(i);
-                    if (fallback.equals(state)) return i;
-                } catch (Exception e) { continue; }
+                if (fallback.equals(states[i])) return i;
             }
         }
 
+        // Priority 3: any solid opaque non-fluid block
         for (int i = 0; i < size; i++) {
-            try {
-                BlockState state = palette.valueFor(i);
-                if (state != null && !state.isAir()
-                        && state.getFluidState().is(Fluids.EMPTY)
-                        && state.isSolidRender()) {
-                    return i;
-                }
-            } catch (Exception e) { continue; }
+            BlockState state = states[i];
+            if (state != null && !state.isAir()
+                    && state.getFluidState().is(Fluids.EMPTY)
+                    && state.isSolidRender()) {
+                return i;
+            }
         }
 
-        // Absolute last resort: ANY non-air block (even fluids, non-solid)
+        // Priority 4 (last resort): ANY non-air block (even fluids, non-solid).
         // Hides lava pools, amethyst clusters, etc. — better than leaving gaps
         for (int i = 0; i < size; i++) {
-            try {
-                BlockState state = palette.valueFor(i);
-                if (state != null && !state.isAir()) return i;
-            } catch (Exception e) { continue; }
+            if (states[i] != null && !states[i].isAir()) return i;
         }
 
         return -1;
@@ -198,15 +198,14 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                 if (yDist * yDist + xzDistSq <= proxSq) continue;
             }
 
-            int bits = chunkPacketInfo.getBits(sectionIndex);
+            Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
+            if (palette == null || palette.getSize() < 1) continue;
 
-            // Handle single-value sections (bits=0): the entire section is one block.
-            // The palette entry is a single VarInt in the buffer right before the data array index.
-            // We can replace it in-place if the VarInt byte lengths match.
-            if (bits == 0) {
-                Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
-                if (palette == null || palette.getSize() < 1) continue;
-
+            // Single-value sections (palette size 1, any bit width): the whole
+            // section is one block stored as a single palette VarInt + uniform
+            // data array. Replace the palette entry in-place when the VarInt
+            // byte lengths match — skips a full 4096-entry rewrite.
+            if (palette.getSize() == 1) {
                 BlockState currentState;
                 try { currentState = palette.valueFor(0); } catch (Exception e) { continue; }
                 if (currentState == null) continue;
@@ -216,17 +215,15 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
                 int currentLen = varIntLen(currentGlobalId);
                 if (currentLen == replacementVarIntLen) {
-                    // Safe to overwrite in-place — same byte count
                     int dataArrayIndex = chunkPacketInfo.getIndex(sectionIndex);
                     writeVarInt(buffer, dataArrayIndex - currentLen, replacementGlobalId);
                 }
                 continue;
             }
 
-            if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
+            int bits = chunkPacketInfo.getBits(sectionIndex);
 
-            Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
-            if (palette == null) continue;
+            if (!chunkPacketInfo.isWritten(sectionIndex)) continue;
 
             int replacementPaletteId = findInPalette(palette);
             if (replacementPaletteId < 0) continue;

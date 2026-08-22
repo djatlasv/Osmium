@@ -5,7 +5,9 @@ import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.network.PlayerChunkSender;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.osmium.OsmiumConfig;
 
@@ -31,14 +33,15 @@ public class OsmiumYLevelTracker {
 
     private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
 
-    // Clear stale revealed state every 10 seconds to prevent chunks getting stuck
-    private static final int CLEAR_INTERVAL_TICKS = 200;
 
     private static class PlayerState {
         int chunkX, chunkZ, blockY;
         int lastResendY;
-        long lastClearTick;
         boolean initialized;
+        // Set when the player moved so far that per-chunk state is unreliable
+        // (teleport/respawn) — triggers a full re-scan of all sent chunks
+        boolean needsFullScan;
+        ResourceKey<Level> dimension;
         // Tracks which chunks were last sent as "revealed" (real blocks visible)
         // If a chunk key is in this set, it was sent with proximity reveal.
         // If not, it was sent with hiding applied (or never resent by us).
@@ -54,16 +57,23 @@ public class OsmiumYLevelTracker {
 
         drainQueue(player, state);
 
-        // Periodically clear revealed state so stale entries don't prevent resends
-        long currentTick = player.level().getGameTime();
-        if (currentTick - state.lastClearTick >= CLEAR_INTERVAL_TICKS) {
-            state.lastClearTick = currentTick;
-            state.revealedChunks.clear();
-        }
-
         int chunkX = player.blockPosition().getX() >> 4;
         int chunkZ = player.blockPosition().getZ() >> 4;
         int blockY = player.blockPosition().getY();
+
+        // Dimension switch invalidates all tracked chunk keys
+        ResourceKey<Level> dim = player.level().dimension();
+        if (state.dimension != null && state.dimension != dim) {
+            state.needsFullScan = true;
+            state.revealedChunks.clear();
+            state.lastResendY = blockY;
+            state.chunkX = chunkX;
+            state.chunkZ = chunkZ;
+            state.blockY = blockY;
+            state.dimension = dim;
+            return;
+        }
+        state.dimension = dim;
 
         if (!state.initialized) {
             state.chunkX = chunkX;
@@ -82,6 +92,15 @@ public class OsmiumYLevelTracker {
             return;
         }
 
+        // Detect teleports/large jumps: if the player moved beyond the tracked
+        // radius, per-chunk revealed state can no longer be diffed reliably.
+        // A full re-scan of all sent chunks fixes both directions (chunks that
+        // must now be hidden AND chunks stuck showing real blocks).
+        int jumpChunks = (OsmiumConfig.chunkHidingProximityRadius >> 4) + 2;
+        boolean bigJump = Math.abs(chunkX - state.chunkX) > jumpChunks
+                       || Math.abs(chunkZ - state.chunkZ) > jumpChunks;
+        if (bigJump) state.needsFullScan = true;
+
         int thresholdSection = OsmiumConfig.chunkHidingYThreshold >> 4;
         int proximityRadius = OsmiumConfig.chunkHidingProximityRadius;
 
@@ -93,12 +112,16 @@ public class OsmiumYLevelTracker {
         state.chunkZ = chunkZ;
         state.blockY = blockY;
 
-        if (!wasNear && !isNear) return;
+        boolean fullScan = state.needsFullScan;
+        if (!wasNear && !isNear && !fullScan) return;
+
+        state.needsFullScan = false;
 
         if (yMovedEnough) state.lastResendY = blockY;
 
         queueChangedChunks(player, state, chunkX, chunkZ, blockY, oldBlockY,
-                           proximityRadius, thresholdSection, yMovedEnough);
+                           proximityRadius, thresholdSection,
+                           yMovedEnough || fullScan, fullScan);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
@@ -118,7 +141,7 @@ public class OsmiumYLevelTracker {
     private static void queueChangedChunks(ServerPlayer player, PlayerState state,
                                             int chunkX, int chunkZ, int blockY, int oldBlockY,
                                             int proximityRadius, int thresholdSection,
-                                            boolean includeOuter) {
+                                            boolean includeOuter, boolean fullScan) {
         state.resendQueue.clear();
 
         ServerLevel level = player.level();
@@ -140,9 +163,11 @@ public class OsmiumYLevelTracker {
             int cx = (int) chunkKey;
             int cz = (int) (chunkKey >> 32);
 
-            int dx = Math.abs(cx - chunkX);
-            int dz = Math.abs(cz - chunkZ);
-            if (dx > outerChunkRadius || dz > outerChunkRadius) continue;
+            if (!fullScan) {
+                int dx = Math.abs(cx - chunkX);
+                int dz = Math.abs(cz - chunkZ);
+                if (dx > outerChunkRadius || dz > outerChunkRadius) continue;
+            }
 
             // Skip chunks entirely above the threshold — nothing to hide
             // (min section Y for overworld is -4, threshold section 0 means sections -4 to -1 are hidden)

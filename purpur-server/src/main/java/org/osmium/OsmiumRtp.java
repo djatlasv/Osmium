@@ -51,6 +51,9 @@ public class OsmiumRtp {
     // Pending teleports: player UUID -> PendingRtp
     private static final Map<UUID, PendingRtp> PENDING = new ConcurrentHashMap<>();
 
+    // Last /rtp use per player (cooldown enforcement)
+    private static final Map<UUID, Long> LAST_RTP_USE = new ConcurrentHashMap<>();
+
     // Economy reflection cache
     private static Object economy = null;
     private static java.lang.reflect.Method withdrawMethod = null;
@@ -121,6 +124,21 @@ public class OsmiumRtp {
      * Opens the RTP GUI for a player.
      */
     public static void openGui(ServerPlayer player) {
+        // Cooldown check (rtp.cooldown-seconds, 0 = disabled)
+        if (OsmiumConfig.rtpCooldownSeconds > 0) {
+            long now = System.currentTimeMillis();
+            Long last = LAST_RTP_USE.get(player.getUUID());
+            if (last != null) {
+                long elapsed = (now - last) / 1000L;
+                if (elapsed < OsmiumConfig.rtpCooldownSeconds) {
+                    long remaining = OsmiumConfig.rtpCooldownSeconds - elapsed;
+                    player.sendSystemMessage(Component.literal(
+                            "\u00a7cYou can use /rtp again in \u00a7e" + remaining + "s\u00a7c."));
+                    return;
+                }
+            }
+            LAST_RTP_USE.put(player.getUUID(), now);
+        }
         debug(player.getGameProfile().name() + " opening RTP dimension picker GUI");
         GUI_OPEN.add(player.getUUID());
 
@@ -329,45 +347,118 @@ public class OsmiumRtp {
         debug(name + " searching for safe location async (minDist=" + OsmiumConfig.rtpMinDistance
                 + " maxDist=" + OsmiumConfig.rtpMaxDistance + ")");
 
-        final ServerLevel finalTargetLevel = targetLevel;
-        final double finalCost = cost;
-        Thread.ofVirtual().name("Osmium-RTP-Search").start(() -> {
-            BlockPos target = findSafeLocation(finalTargetLevel);
-            server.execute(() -> {
-                // Player may have disconnected while we were searching
-                if (server.getPlayerList().getPlayer(player.getUUID()) == null) {
-                    debug(name + " disconnected during location search, refunding");
-                    return;
-                }
-                if (target == null) {
-                    debug(name + " could NOT find safe location after 50 attempts");
-                    player.sendSystemMessage(Component.literal("\u00a7cCould not find a safe location. Try again."));
-                    if (finalCost > 0) deposit(player, finalCost);
-                    return;
-                }
-                debug(name + " found safe location at " + target.getX() + ", " + target.getY() + ", " + target.getZ());
-
-                if (PENDING.containsKey(player.getUUID())) {
-                    debug(name + " already has a pending teleport (queued during search), aborting");
-                    if (finalCost > 0) deposit(player, finalCost);
-                    return;
-                }
-
-                int delayTicks = OsmiumConfig.rtpDelaySeconds * 20;
-                int teleportAt = server.getTickCount() + delayTicks;
-
-                PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target));
-                debug(name + " pending teleport created (teleportAt tick=" + teleportAt
-                        + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
-
-                if (OsmiumConfig.rtpDelaySeconds > 0) {
-                    player.sendSystemMessage(Component.literal(
-                            "\u00a7eTeleporting in \u00a7f" + OsmiumConfig.rtpDelaySeconds
-                                    + "\u00a7e seconds... Don't move!"));
-                }
-            });
-        });
+        // Search is spread across ticks: each attempt asynchronously loads the
+        // candidate chunk (thread-safe, non-blocking) and all world reads happen
+        // on the main thread when the chunk is ready. Never blocks or races.
+        searchLocation(player, targetLevel, dimension, 0, cost);
     }
+
+    private static final int MAX_SEARCH_ATTEMPTS = 50;
+
+    /**
+     * One search attempt. Picks a random candidate, asynchronously loads its
+     * chunk, then evaluates safety on the main thread. Recurses via callback
+     * until a location is found or attempts are exhausted.
+     */
+    private static void searchLocation(ServerPlayer player, ServerLevel level,
+                                       ResourceKey<Level> dimension, int attempt, double chargedCost) {
+        String name = player.getGameProfile().name();
+        MinecraftServer server = level.getServer();
+
+        if (attempt >= MAX_SEARCH_ATTEMPTS) {
+            debug(name + " could NOT find safe location after " + MAX_SEARCH_ATTEMPTS + " attempts");
+            failSearch(player, chargedCost);
+            return;
+        }
+
+        // Candidate selection — world border reads are stable and safe here
+        WorldBorder border = level.getWorldBorder();
+        double centerX = border.getCenterX();
+        double centerZ = border.getCenterZ();
+        double borderRadius = border.getSize() / 2.0;
+
+        int minDist = OsmiumConfig.rtpMinDistance;
+        int maxDist = OsmiumConfig.rtpMaxDistance;
+        if (maxDist > borderRadius - 1) {
+            maxDist = (int) (borderRadius - 1);
+            debug("Clamped maxDist to " + maxDist + " (border radius=" + borderRadius + ")");
+        }
+        if (minDist > maxDist) {
+            minDist = maxDist / 2;
+            debug("Adjusted minDist to " + minDist + " (was > maxDist)");
+        }
+        if (maxDist <= 0) {
+            debug("maxDist <= 0 after clamping, no valid area to teleport");
+            failSearch(player, chargedCost);
+            return;
+        }
+
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        double distance = minDist + random.nextDouble() * (maxDist - minDist);
+        double angle = random.nextDouble() * Math.PI * 2;
+        int x = (int) (centerX + distance * Math.cos(angle));
+        int z = (int) (centerZ + distance * Math.sin(angle));
+
+        if (!border.isWithinBounds(new BlockPos(x, 64, z))) {
+            debug("Attempt " + attempt + ": (" + x + ", " + z + ") outside world border");
+            searchLocation(player, level, dimension, attempt + 1, chargedCost);
+            return;
+        }
+
+        debug("Attempt " + attempt + ": requesting chunk for (" + x + ", " + z + ") async");
+
+        // Async chunk request — never blocks, never touches world state off-thread.
+        final int fx = x;
+        final int fz = z;
+        level.getWorld().getChunkAtAsync(fx >> 4, fz >> 4, chunk ->
+                server.execute(() -> {
+                    // Player may have disconnected while the chunk loaded
+                    if (server.getPlayerList().getPlayer(player.getUUID()) == null) {
+                        debug(name + " disconnected during location search");
+                        if (chargedCost > 0) deposit(player, chargedCost);
+                        return;
+                    }
+
+                    BlockPos target = evaluateCandidate(level, fx, fz, attempt);
+                    if (target == null) {
+                        searchLocation(player, level, dimension, attempt + 1, chargedCost);
+                        return;
+                    }
+
+                    debug(name + " found safe location at " + target.getX() + ", " + target.getY() + ", " + target.getZ());
+
+                    if (PENDING.containsKey(player.getUUID())) {
+                        debug(name + " already has a pending teleport (queued during search), aborting");
+                        if (chargedCost > 0) deposit(player, chargedCost);
+                        return;
+                    }
+
+                    int delayTicks = OsmiumConfig.rtpDelaySeconds * 20;
+                    int teleportAt = server.getTickCount() + delayTicks;
+
+                    PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target));
+                    debug(name + " pending teleport created (teleportAt tick=" + teleportAt
+                            + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
+
+                    if (OsmiumConfig.rtpDelaySeconds > 0) {
+                        player.sendSystemMessage(Component.literal(
+                                "\u00a7eTeleporting in \u00a7f" + OsmiumConfig.rtpDelaySeconds
+                                        + "\u00a7e seconds... Don't move!"));
+                    }
+                }));
+    }
+
+    private static void failSearch(ServerPlayer player, double chargedCost) {
+        if (player.connection != null && player.connection.isAcceptingMessages()) {
+            player.sendSystemMessage(Component.literal("\u00a7cCould not find a safe location. Try again."));
+        }
+        if (chargedCost > 0) deposit(player, chargedCost);
+    }
+
+    /**
+     * Main-thread safety evaluation of one candidate coordinate.
+     * All world access here is main thread — safe by construction.
+     */
 
     /**
      * Called when a player closes any container.
@@ -463,91 +554,49 @@ public class OsmiumRtp {
     // Location finding
     // ------------------------------------------------------------------
 
-    private static BlockPos findSafeLocation(ServerLevel level) {
-        WorldBorder border = level.getWorldBorder();
-        double centerX = border.getCenterX();
-        double centerZ = border.getCenterZ();
-        double borderRadius = border.getSize() / 2.0;
+    private static BlockPos evaluateCandidate(ServerLevel level, int x, int z, int attempt) {
+        // Get the highest block
+        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
 
-        int minDist = OsmiumConfig.rtpMinDistance;
-        int maxDist = OsmiumConfig.rtpMaxDistance;
+        // Nether: scan downward from y=120 for air pocket
+        if (level.dimension() == Level.NETHER) {
+            y = findNetherSafe(level, x, z);
+            if (y < 0) {
+                debug("Attempt " + attempt + ": (" + x + ", " + z + ") no safe nether pocket");
+                return null;
+            }
+        }
 
-        // Clamp max distance to world border
-        if (maxDist > borderRadius - 1) {
-            maxDist = (int) (borderRadius - 1);
-            debug("Clamped maxDist to " + maxDist + " (border radius=" + borderRadius + ")");
+        // Basic safety: block below must be solid, block at feet and head must be passable
+        BlockPos feet = new BlockPos(x, y, z);
+        BlockPos below = feet.below();
+        BlockPos head = feet.above();
+
+        if (!level.getBlockState(below).isSolid()) {
+            debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") block below not solid");
+            return null;
         }
-        if (minDist > maxDist) {
-            minDist = maxDist / 2;
-            debug("Adjusted minDist to " + minDist + " (was > maxDist)");
+        if (level.getBlockState(feet).isSolid()) {
+            debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") feet block is solid");
+            return null;
         }
-        if (maxDist <= 0) {
-            debug("maxDist <= 0 after clamping, no valid area to teleport");
+        if (level.getBlockState(head).isSolid()) {
+            debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") head block is solid");
             return null;
         }
 
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-
-        // Try up to 50 times to find a safe spot
-        for (int attempt = 0; attempt < 50; attempt++) {
-            // Random distance and angle for uniform distribution
-            double distance = minDist + random.nextDouble() * (maxDist - minDist);
-            double angle = random.nextDouble() * 2 * Math.PI;
-
-            int x = (int) (centerX + distance * Math.cos(angle));
-            int z = (int) (centerZ + distance * Math.sin(angle));
-
-            // Verify within world border
-            if (!border.isWithinBounds(new BlockPos(x, 64, z))) {
-                debug("Attempt " + attempt + ": (" + x + ", " + z + ") outside world border");
-                continue;
-            }
-
-            // Get the highest block
-            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-
-            // Nether: scan downward from y=120 for air pocket
-            if (level.dimension() == Level.NETHER) {
-                y = findNetherSafe(level, x, z);
-                if (y < 0) {
-                    debug("Attempt " + attempt + ": (" + x + ", " + z + ") no safe nether pocket");
-                    continue;
-                }
-            }
-
-            // Basic safety: block below must be solid, block at feet and head must be passable
-            BlockPos feet = new BlockPos(x, y, z);
-            BlockPos below = feet.below();
-            BlockPos head = feet.above();
-
-            if (!level.getBlockState(below).isSolid()) {
-                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") block below not solid");
-                continue;
-            }
-            if (level.getBlockState(feet).isSolid()) {
-                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") feet block is solid");
-                continue;
-            }
-            if (level.getBlockState(head).isSolid()) {
-                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") head block is solid");
-                continue;
-            }
-
-            // Don't spawn in lava or water
-            if (level.getBlockState(feet).liquid()) {
-                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") feet in liquid");
-                continue;
-            }
-            if (level.getBlockState(below).liquid()) {
-                debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") standing on liquid");
-                continue;
-            }
-
-            debug("Attempt " + attempt + ": found safe location at (" + x + ", " + y + ", " + z + ")");
-            return feet;
+        // Don't spawn in lava or water
+        if (level.getBlockState(feet).liquid()) {
+            debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") feet in liquid");
+            return null;
+        }
+        if (level.getBlockState(below).liquid()) {
+            debug("Attempt " + attempt + ": (" + x + ", " + y + ", " + z + ") standing on liquid");
+            return null;
         }
 
-        return null; // couldn't find safe spot
+        debug("Attempt " + attempt + ": found safe location at (" + x + ", " + y + ", " + z + ")");
+        return feet;
     }
 
     private static int findNetherSafe(ServerLevel level, int x, int z) {
