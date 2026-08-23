@@ -68,6 +68,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
 
     private static class StoreData {
         String ownerId = "";      // discord user id of setup owner
+        String guildId = "";      // the ONLY guild this bot operates in
         Map<String, String> roles = new LinkedHashMap<>(); // roleId -> LEVEL name
     }
 
@@ -193,14 +194,24 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     // Permission resolution
     // ------------------------------------------------------------------
 
+    /**
+     * True only inside the BOUND guild (set at first setup). Any other guild
+     * where the bot may have been invited is ignored entirely — this prevents
+     * a foreign guild owner from hijacking global ownership.
+     */
+    private static boolean inBoundGuild(net.dv8tion.jda.api.entities.Guild guild) {
+        if (guild == null) return false;
+        return store.guildId.isEmpty() || guild.getId().equals(store.guildId);
+    }
+
     private boolean isOwner(SlashCommandInteractionEvent e) {
-        long gid = e.getGuild() != null ? e.getGuild().getIdLong() : -1;
-        if (e.getUser().getIdLong() == e.getGuild().getOwnerIdLong()) return true; // real guild owner
+        if (!inBoundGuild(e.getGuild())) return false;
+        if (e.getUser().getIdLong() == e.getGuild().getOwnerIdLong()) return true; // real guild owner of the bound guild
         return !store.ownerId.isEmpty() && e.getUser().getId().equals(store.ownerId);
     }
 
     private boolean isOwner(ButtonInteractionEvent e) {
-        if (e.getGuild() == null) return false;
+        if (!inBoundGuild(e.getGuild())) return false;
         if (e.getUser().getIdLong() == e.getGuild().getOwnerIdLong()) return true;
         return !store.ownerId.isEmpty() && e.getUser().getId().equals(store.ownerId);
     }
@@ -256,6 +267,15 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
 
     private void handleSlash(SlashCommandInteractionEvent e) {
         if (e.getGuild() == null) { replyError(e, "Server commands only work inside a guild."); return; }
+        if (!inBoundGuild(e.getGuild())) {
+            // Bot was invited somewhere else: allow setup ONLY if unbound, otherwise stay silent-ish.
+            if ("osmium".equals(e.getName()) && "setup".equals(e.getSubcommandName()) && store.guildId.isEmpty()) {
+                // fall through to setup below — it will bind to this guild
+            } else {
+                replyError(e, "This bot is bound to another server.");
+                return;
+            }
+        }
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) { replyError(e, "Server is not running."); return; }
 
@@ -316,10 +336,11 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                     return;
                 }
                 store.ownerId = e.getUser().getId();
-                if (e.getGuild() != null) {
-                    // seed nothing else; roles start empty
-                }
+                store.guildId = e.getGuild().getId();
+                // A fresh bind starts with clean role mappings
+                if (!store.roles.isEmpty()) store.roles.clear();
                 saveStore();
+                LOGGER.info("[Discord] Bound to guild {} by {}", store.guildId, e.getUser().getId());
                 audit(e, "became bot owner");
                 replyInfo(e, "✅ You are now the bot owner.\n\nNext steps:\n" +
                         "1. Create Discord roles for your staff (or reuse existing ones)\n" +
@@ -525,6 +546,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
 
     @Override
     public void onButtonInteraction(ButtonInteractionEvent e) {
+        if (!inBoundGuild(e.getGuild())) { e.reply("This bot is bound to another server.").setEphemeral(true).queue(); return; }
         String id = e.getComponentId();
         String[] parts = id.split(":", 2);
         if (!parts[0].equals("act")) { e.reply("Expired.").setEphemeral(true).queue(); return; }
