@@ -60,7 +60,8 @@ public class OsmiumRtp {
     private static java.lang.reflect.Method balanceMethod = null;
     private static boolean economyChecked = false;
 
-    private record PendingRtp(UUID playerUuid, ResourceKey<Level> dimension, int teleportAtTick, BlockPos target) {}
+    private record PendingRtp(UUID playerUuid, ResourceKey<Level> dimension, int teleportAtTick, BlockPos target,
+                              double startX, double startY, double startZ) {}
 
     private static void debug(String msg) {
         if (OsmiumConfig.rtpDebug) {
@@ -124,21 +125,6 @@ public class OsmiumRtp {
      * Opens the RTP GUI for a player.
      */
     public static void openGui(ServerPlayer player) {
-        // Cooldown check (rtp.cooldown-seconds, 0 = disabled)
-        if (OsmiumConfig.rtpCooldownSeconds > 0) {
-            long now = System.currentTimeMillis();
-            Long last = LAST_RTP_USE.get(player.getUUID());
-            if (last != null) {
-                long elapsed = (now - last) / 1000L;
-                if (elapsed < OsmiumConfig.rtpCooldownSeconds) {
-                    long remaining = OsmiumConfig.rtpCooldownSeconds - elapsed;
-                    player.sendSystemMessage(Component.literal(
-                            "\u00a7cYou can use /rtp again in \u00a7e" + remaining + "s\u00a7c."));
-                    return;
-                }
-            }
-            LAST_RTP_USE.put(player.getUUID(), now);
-        }
         debug(player.getGameProfile().name() + " opening RTP dimension picker GUI");
         GUI_OPEN.add(player.getUUID());
 
@@ -307,6 +293,21 @@ public class OsmiumRtp {
             return;
         }
 
+        // Cooldown starts only when an actual search begins — browsing the
+        // GUI or going back a page is never punished.
+        int cd = Math.max(0, OsmiumConfig.rtpCooldownSeconds);
+        if (cd > 0) {
+            long now = System.currentTimeMillis();
+            Long last = LAST_RTP_USE.get(player.getUUID());
+            if (last != null && now - last < cd * 1000L) {
+                long remaining = cd - (now - last) / 1000L;
+                player.sendSystemMessage(Component.literal(
+                        "\u00a7cYou can use /rtp again in \u00a7e" + remaining + "s\u00a7c."));
+                return;
+            }
+            LAST_RTP_USE.put(player.getUUID(), now);
+        }
+
         double cost = OsmiumConfig.rtpCost;
         if (cost > 0) {
             debug(name + " economy check: cost=" + cost);
@@ -394,7 +395,11 @@ public class OsmiumRtp {
         }
 
         ThreadLocalRandom random = ThreadLocalRandom.current();
-        double distance = minDist + random.nextDouble() * (maxDist - minDist);
+        // Uniform-area distribution: plain radius sampling clusters ~80% of
+        // results near minDist because area grows with r^2. Sampling the
+        // square root gives every location equal probability.
+        double distance = Math.sqrt(minDist * (double) minDist
+                + random.nextDouble() * ((maxDist * (double) maxDist) - (minDist * (double) minDist)));
         double angle = random.nextDouble() * Math.PI * 2;
         int x = (int) (centerX + distance * Math.cos(angle));
         int z = (int) (centerZ + distance * Math.sin(angle));
@@ -436,7 +441,8 @@ public class OsmiumRtp {
                     int delayTicks = OsmiumConfig.rtpDelaySeconds * 20;
                     int teleportAt = server.getTickCount() + delayTicks;
 
-                    PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target));
+                    PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target,
+                        player.getX(), player.getY(), player.getZ()));
                     debug(name + " pending teleport created (teleportAt tick=" + teleportAt
                             + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
 
@@ -493,6 +499,17 @@ public class OsmiumRtp {
             if (player == null) {
                 debug("Player " + pending.playerUuid + " disconnected, removing pending RTP");
                 it.remove();
+                continue;
+            }
+
+            // Move cancel: >2 blocks from where the countdown started
+            double mdx = player.getX() - pending.startX();
+            double mdy = player.getY() - pending.startY();
+            double mdz = player.getZ() - pending.startZ();
+            if (mdx * mdx + mdy * mdy + mdz * mdz > 4.0) {
+                it.remove();
+                player.sendSystemMessage(Component.literal("\u00a7cTeleport cancelled — you moved!"));
+                debug(player.getGameProfile().name() + " moved during RTP countdown — cancelled");
                 continue;
             }
 

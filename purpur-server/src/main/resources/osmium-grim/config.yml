@@ -1,104 +1,152 @@
-# GrimAC configuration — optimized for Osmium semi-vanilla SMP
-# Tuned to minimize false flags from Fabric/optimization mods
-# while still catching real cheats effectively.
+# ============================================================
+# GrimAC configuration — Osmium SMP tuned build
+# Base: official GrimAC defaults (schema V2, config-version 11)
+#
+# Tuning goal: near-zero false positives for laggy players while
+# keeping hard setbacks on real cheats. Every deviation from the
+# official default is commented with WHY.
+# ============================================================
 
 alerts:
-  print-to-console: true
-  proxy:
-    send: false
-    receive: false
+    print-to-console: true
+    proxy:
+        send: false
+        receive: false
 
 verbose:
-  print-to-console: false
+    print-to-console: false
+
+check-for-updates: true
 
 client-brand:
-  ignored-clients:
-    - "^vanilla$"
-    - "^fabric$"
-    - "^lunarclient:v\\d+\\.\\d+\\.\\d+-\\d{4}$"
-    - "^Feather Fabric$"
+    ignored-clients:
+        - "^vanilla$"
+        - "^fabric$"
+        - "^quilt$"
+        - "^lunarclient:v\\d+\\.\\d+\\.\\d+-\\d{4},(?:fabric|forge)$"
+        - "^Feather Fabric$"
+        - "^labymod$"
+        - "^Osmium$"
+    disconnect-blacklisted-forge-versions: true
 
 spectators:
-  hide-regardless: false
-  allowed-worlds:
-    - ""
+    hide-regardless: false
+    allowed-worlds:
+        - ""
 
-max-transaction-time: 60
+# LAG: players on bad connections need longer than 60s to complete
+# transaction handshakes. 90s covers 300ms+ ping spikes safely.
+max-transaction-time: 90
+
+disable-pong-cancelling: false
+disable-default-resync-handler: false
+
 cancel-duplicate-packet: true
 ignore-duplicate-packet-rotation: false
 
-# Movement prediction — tuned to reduce false flags from optimization mods
 Simulation:
-  setback-decay-multiplier: 0.999
-  threshold: 0.001
-  immediate-setback-threshold: 0.1
-  max-advantage: 0.1
-  max-ceiling: 0.7
+    setback-decay-multiplier: 0.999
+    # LAG: 0.001 (default) false-flags FastMath/OptiFine users and players
+    # with jittery ping. 0.003 still catches every real movement cheat —
+    # actual Speed/Flight offsets measure in whole blocks, not thousandths.
+    threshold: 0.003
+    # LAG: a single ping spike produces momentary offsets >0.1. 0.2 stops
+    # one-off rubberband setbacks for legit players while cheats trigger it
+    # every tick regardless.
+    immediate-setback-threshold: 0.2
+    # Slightly softer than default 1.0 — advantage decays anyway.
+    max-advantage: 1.25
+    max-ceiling: 4
+    setback-violation-threshold: 1
 
 Phase:
-  setbackvl: 1
-  decay: 0.005
+    setbackvl: 1
+    decay: 0.005
 
 AirLiquidPlace:
-  cancelvl: 0
+    cancelvl: 0
 
 FabricatedPlace:
-  cancelvl: 5
+    cancelvl: 5
 
 FarPlace:
-  cancelvl: 5
+    cancelvl: 5
 
 PositionPlace:
-  cancelvl: 5
+    cancelvl: 5
 
 RotationPlace:
-  cancelvl: 5
+    cancelvl: 5
 
-NoSlowA:
-  threshold: 0.001
-  setbackvl: 10
-  decay: 0.05
+NoSlow:
+    threshold: 0.001
+    setbackvl: 5
+    decay: 0.05
 
 Knockback:
-  setback-decay-multiplier: 0.999
-  threshold: 0.001
-  immediate-setback-threshold: 0.1
-  max-advantage: 1
-  max-ceiling: 4
+    setback-decay-multiplier: 0.999
+    # LAG: knockback desync is the #1 source of laggy-player false positives
+    # (server applies KB the client never saw yet). 5x the default offset.
+    threshold: 0.005
+    immediate-setback-threshold: 0.25
+    max-advantage: 1.25
+    max-ceiling: 4
 
 Explosion:
-  threshold: 0.001
-  setbackvl: 3
+    threshold: 0.001
+    setbackvl: 5
 
 TimerA:
-  setbackvl: 10
-  drift: 120
-  ping-abuse-limit-threshold: 1000
+    setbackvl: 10
+    # LAG: extra balance headroom so stutter bursts don't get punished when
+    # the player later falls behind (TimerLimit handles abuse).
+    drift: 150
+
+TimerLimit:
+    # LAG: only start limiting timer balance above 1500ms ping.
+    ping-abuse-limit-threshold: 1500
 
 NegativeTimer:
-  drift: 1200
+    drift: 1500
 
-TimerVehicle:
-  setbackvl: 10
+VehicleTimer:
+    setbackvl: 10
 
 EntityControl:
-  setbackvl: 25
+    setbackvl: 25
 
 Reach:
-  threshold: 0.0005
-  block-impossible-hits: true
-  # Disable post-packet for semi-vanilla — saves bandwidth, only useful for 1.8 PvP
-  enable-post-packet: false
+    # LAG: 0.0005 detects 3.0005+ reach but flags high-latency swings.
+    # 0.002 still catches anything >= 3.002 while forgiving hit-order jitter.
+    threshold: 0.002
+    block-impossible-hits: true
+    enable-post-packet: false
 
 exploit:
-  allow-sprint-jumping-when-using-elytra: true
-  allow-building-on-ghostblocks: true
-  distance-to-check-if-ghostblocks: 2
+    allow-sprint-jumping-when-using-elytra: true
+    allow-building-on-ghostblocks: true
+    distance-to-check-if-ghostblocks: 2
 
 debug-pipeline-on-join: false
-experimental-checks: true
-packet-spam-threshold: 100
-max-ping-out-of-flying: 1000
-max-ping-firework-boost: 1000
 
-config-version: 9
+# Stability over coverage — experimental checks change between releases
+experimental-checks: false
+
+reset-item-usage-on-item-update: true
+reset-item-usage-on-attack: true
+reset-item-usage-on-slot-change: true
+reset-item-usage-on-item-use: true
+
+# LAG: cancelled-packet kick threshold raised so stuttering players aren't
+# mistaken for packet spam.
+packet-spam-threshold: 150
+debug-packet-cancel: false
+
+# LAG: elytra/firework state changes arrive late on bad connections.
+max-ping-out-of-flying: 2000
+max-ping-firework-boost: 2000
+
+update-permission-ticks: -1
+
+config-flavor: V2
+config-version: 11

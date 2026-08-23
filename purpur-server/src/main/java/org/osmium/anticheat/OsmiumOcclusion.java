@@ -203,6 +203,19 @@ public final class OsmiumOcclusion {
         enqueue(level, chunkKey);
     }
 
+    /**
+     * Packet-time trigger: ensures a chunk being sent has a (re)computation
+     * queued. First send computes it; until then lookups fail open.
+     */
+    public static void ensureComputed(ServerLevel level, long chunkKey) {
+        if (!OsmiumConfig.raytraceHidingEnabled) return;
+        synchronized (stripe(chunkKey)) {
+            VisibilityData d = visibilityCache.get(chunkKey);
+            if (d != null && d.ready) return;
+        }
+        enqueue(level, chunkKey);
+    }
+
     /** Block change hook: invalidate own chunk + touched neighbors. */
     public static void onBlockChanged(Level level, BlockPos pos) {
         if (!OsmiumConfig.raytraceHidingEnabled || !(level instanceof ServerLevel sl)) return;
@@ -269,13 +282,9 @@ public final class OsmiumOcclusion {
             ChunkJob job = dirtyChunks.poll();
             if (job == null) break;
 
-            // Only compute chunks that still matter
-            if (!hasPlayerInRange(job.level(), job.chunkKey())) {
-                cacheRemove(job.chunkKey());
-                inFlight.remove(job.chunkKey());
-                continue;
-            }
-
+            // Compute every invalidated chunk — chunks beyond ray range of any
+            // player legitimately hide everything (eyes list comes back empty),
+            // which is exactly the correct output for far chunks.
             workers().execute(() -> {
                 long key = job.chunkKey();
                 try {
@@ -311,20 +320,12 @@ public final class OsmiumOcclusion {
         }
         int enqueued = 0;
         for (long key : keys) {
-            boolean anyRange = false;
+            if (enqueued >= 256) break;
             for (ServerLevel lvl : server.getAllLevels()) {
-                if (hasPlayerInRange(lvl, key)) { anyRange = true; break; }
-            }
-            if (!anyRange) {
-                cacheRemove(key);
-            } else if (enqueued < 256) {
-                // find owning level
-                for (ServerLevel lvl : server.getAllLevels()) {
-                    if (lvl.getChunkSource().getChunkNow((int) key, (int) (key >> 32)) != null) {
-                        enqueue(lvl, key);
-                        enqueued++;
-                        break;
-                    }
+                if (lvl.getChunkSource().getChunkNow((int) key, (int) (key >> 32)) != null) {
+                    enqueue(lvl, key);
+                    enqueued++;
+                    break;
                 }
             }
         }
@@ -492,6 +493,29 @@ public final class OsmiumOcclusion {
             if (state.isSolidRender()) return false; // blocked
         }
         return true;
+    }
+
+    /**
+     * Block-entity variant of entity occlusion: chests, furnaces, item frames'
+     * holders etc. rendered from chunk data get stripped from the packet when
+     * terrain blocks all lines of sight to the receiving player.
+     * Called during per-player packet construction (CURRENT_PLAYER set).
+     */
+    public static boolean shouldHideBlockEntity(ServerLevel level, BlockPos pos) {
+        if (!OsmiumConfig.entityOcclusionEnabled) return false;
+        ServerPlayer p = OsmiumChunkPacketInfo.CURRENT_PLAYER.get();
+        if (p == null || p.level() != level) return false;
+
+        Vec3 eye = p.getEyePosition();
+        double dx = pos.getX() + 0.5 - eye.x;
+        double dy = pos.getY() + 0.5 - eye.y;
+        double dz = pos.getZ() + 0.5 - eye.z;
+        double distSq = dx * dx + dy * dy + dz * dz;
+        double maxDist = OsmiumConfig.entityOcclusionMaxDistance;
+        if (distSq > maxDist * maxDist) return false;
+        if (distSq < 9.0) return false;
+
+        return !canSee(level, eye, pos);
     }
 
     // ------------------------------------------------------------------

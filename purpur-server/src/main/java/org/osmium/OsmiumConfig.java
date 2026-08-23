@@ -203,6 +203,7 @@ public class OsmiumConfig {
     public static int chunkHidingProximityRadius = 32;
     public static boolean chunkHidingHideEntities = true;
     public static boolean chunkHidingHideLight = true;
+    public static boolean chunkHidingSharedRewrites = false;
 
     private static void chunkHiding() {
         chunkHidingEnabled = getBoolean("chunk-hiding.enabled", false);
@@ -212,6 +213,7 @@ public class OsmiumConfig {
         chunkHidingProximityRadius = getInt("chunk-hiding.proximity-radius", 32);
         chunkHidingHideEntities = getBoolean("chunk-hiding.hide-entities", true);
         chunkHidingHideLight = getBoolean("chunk-hiding.hide-light", true);
+        chunkHidingSharedRewrites = getBoolean("chunk-hiding.shared-far-view-rewrites", false);
     }
 
     private static void raytraceHiding() {

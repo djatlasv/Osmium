@@ -148,8 +148,6 @@ public class OsmiumYLevelTracker {
         int proxSq = proximityRadius * proximityRadius;
         int playerBlockX = player.blockPosition().getX();
         int playerBlockZ = player.blockPosition().getZ();
-        // Check Y at the top of the hidden zone (the boundary that matters)
-        int checkY = (thresholdSection << 4) - 8;
 
         // Determine range of chunks to check
         int outerChunkRadius = includeOuter ? (proximityRadius >> 4) + 2 : 1;
@@ -174,14 +172,12 @@ public class OsmiumYLevelTracker {
             // We can't easily check per-chunk, so use a simple heuristic:
             // the chunk must be loaded and sent to us — that's guaranteed by sentChunks
 
-            // Compute distance from player to nearest block in this chunk at the check Y
+            // Horizontal distance to the chunk — reveal is XZ-based (see processor)
             int chunkMinX = cx << 4;
             int chunkMinZ = cz << 4;
             int nearX = Math.max(chunkMinX, Math.min(playerBlockX, chunkMinX + 15));
             int nearZ = Math.max(chunkMinZ, Math.min(playerBlockZ, chunkMinZ + 15));
-            int dyCheck = blockY - checkY;
             int distSq = (playerBlockX - nearX) * (playerBlockX - nearX)
-                       + dyCheck * dyCheck
                        + (playerBlockZ - nearZ) * (playerBlockZ - nearZ);
 
             boolean shouldBeRevealed = distSq <= proxSq;

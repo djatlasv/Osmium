@@ -189,7 +189,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         // buffer instead of redoing the bit rewrite per viewer.
         long chunkKey = ((long) chunk.getPos().x() & 0xFFFFFFFFL)
                 | (((long) chunk.getPos().z() & 0xFFFFFFFFL) << 32);
-        if (!antiXrayActive && !xzNear) {
+        if (!antiXrayActive && !xzNear && org.osmium.OsmiumConfig.chunkHidingSharedRewrites) {
             Object cachedObj = SHARED_REWRITES.get(chunkKey);
             if (cachedObj instanceof SharedRewrite entry) {
                 if (System.currentTimeMillis() - entry.atMillis() > SHARED_TTL_MS) {
@@ -213,15 +213,10 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             int sectionY = sectionIndex + minSectionY;
             if (sectionY >= hideBelowSection) continue;
 
-            // 3D proximity: skip hiding if player is close to this section
-            if (xzNear) {
-                int sectionMinY = sectionY << 4;
-                int sectionMaxY = sectionMinY + 15;
-                int yDist = playerBlockY < sectionMinY ? sectionMinY - playerBlockY
-                          : playerBlockY > sectionMaxY ? playerBlockY - sectionMaxY
-                          : 0;
-                if (yDist * yDist + xzDistSq <= proxSq) continue;
-            }
+            // Proximity reveal: horizontal distance only — the hidden zone is
+            // always BELOW surface players, so vertical offset would make
+            // reveal impossible at realistic radii.
+            if (xzNear) continue;
 
             Palette<BlockState> palette = chunkPacketInfo.getPalette(sectionIndex);
             if (palette == null || palette.getSize() < 1) continue;
@@ -267,7 +262,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             writer.flush();
         }
 
-        if (!antiXrayActive && !xzNear) {
+        if (!antiXrayActive && !xzNear && org.osmium.OsmiumConfig.chunkHidingSharedRewrites) {
             // Bound memory: wholesale clear keeps worst case ~tens of MB.
             if (SHARED_REWRITES.size() > 512) SHARED_REWRITES.clear();
             long now = System.currentTimeMillis();
@@ -297,6 +292,10 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         LevelChunk chunk = info.getChunk();
         long chunkKey = ((long) chunk.getPos().x() & 0xFFFFFFFFL)
                 | (((long) chunk.getPos().z() & 0xFFFFFFFFL) << 32);
+        // First time this chunk is sent: queue visibility computation.
+        // This packet still fails open; the next one carries hidden ores.
+        org.osmium.anticheat.OsmiumOcclusion.ensureComputed(
+                (ServerLevel) chunk.getLevel(), chunkKey);
         byte[] buffer = info.getBuffer();
         if (buffer == null) return;
 
