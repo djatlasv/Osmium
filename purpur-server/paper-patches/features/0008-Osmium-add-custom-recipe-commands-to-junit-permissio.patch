@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 15:04:59 -0600
+Subject: [PATCH] Osmium: add custom recipe commands to junit permission skip
+ list
+
+
+diff --git a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+index 72f9f6720814f2529701d7e2e95779316599a7b6..89820d56debd1587c77320f4618afa2fd515cce9 100644
+--- a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
++++ b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+@@ -87,6 +87,8 @@ public class MinecraftCommandPermissionsTest {
+         "minecraft.command.home",
+         "minecraft.command.homes",
+         "minecraft.command.spawn",
++        "minecraft.command.customrecipes",
++        "minecraft.command.osmium-recipes",
+         // Osmium end - Skip junit tests for osmium commands
+         "minecraft.command.selector"
+     );

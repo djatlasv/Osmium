@@ -13,10 +13,10 @@ signed chat enforcement, modded known-packs rejection,
 signed-chat login check, Discord bot lifecycle.
 
 diff --gitdiff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index 38bd5b1..32b8af6 100644
+index 38bd5b1..d8b79a9 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -264,6 +264,10 @@ public class Commands {
+@@ -264,6 +264,11 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
@@ -24,6 +24,7 @@ index 38bd5b1..32b8af6 100644
 +        org.osmium.OsmiumTeam.registerCommand(this.dispatcher); // Osmium - /team command (always register; enabled check is at execution time)
 +        org.osmium.OsmiumTpa.registerCommand(this.dispatcher); // Osmium - /tpa /tpaccept /tpdeny
 +        org.osmium.OsmiumHomes.registerCommand(this.dispatcher); // Osmium - /sethome /home /homes /spawn
++        org.osmium.OsmiumRecipes.registerCommand(this.dispatcher); // Osmium - /customrecipes GUI + reload
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
@@ -119,7 +120,7 @@ index c87bc86..3970f74 100644
                  if (online != null) {
                      online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index 9b19888..ae2f7c4 100644
+index 9b19888..0821742 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -244,10 +244,20 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
@@ -149,7 +150,7 @@ index 9b19888..ae2f7c4 100644
          this.notificationManager().serverStarted();
 +        org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStart(); // Osmium - discord webhook
 +        org.osmium.discord.OsmiumDiscordBot.start(new java.io.File(".")); // Osmium - discord bot (after server fully ready)
-+        org.osmium.discord.OsmiumDiscordBot.start(new java.io.File(".")); // Osmium - discord bot (after server fully ready)
++        org.osmium.OsmiumRecipes.loadAll(this); // Osmium - custom recipe loading (after registries ready)
          return true;
      }
  

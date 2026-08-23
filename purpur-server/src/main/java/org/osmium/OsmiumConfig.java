@@ -209,6 +209,10 @@ public class OsmiumConfig {
         }
     }
 
+    private static void recipes() {
+        recipesEnabled = getBoolean("recipes.enabled", true);
+    }
+
     private static void homes() {
         homesEnabled = getBoolean("homes.enabled", false);
         homesMaxPerPlayer = Math.max(1, getInt("homes.max-per-player", 3));
@@ -399,6 +403,9 @@ public class OsmiumConfig {
     public static String discordBotAuditChannelId = "";
     public static String discordBotChatChannelId = "";
 
+    // Custom recipes
+    public static boolean recipesEnabled = true;
+
     // Homes
     public static boolean homesEnabled = false;
     public static int homesMaxPerPlayer = 3;
@@ -505,7 +512,7 @@ public class OsmiumConfig {
             String[] order = {
                 "chunk-hiding", "raytrace-hiding", "entity-occlusion", "brand-enforcement",
                 "identity-enforcement", "alt-ban", "chat-filter", "grim", "spawn-dimension",
-                "rtp", "tpa", "homes", "team", "scoreboard",
+                "rtp", "tpa", "homes", "team", "scoreboard", "recipes",
                 "discord-webhook", "discord-bot", "backups"
             };
 
