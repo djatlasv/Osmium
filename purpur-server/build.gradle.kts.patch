@@ -70,6 +70,7 @@
      implementation("org.spongepowered:configurate-yaml:4.2.0")
  
 +    implementation("org.mozilla:rhino-runtime:1.7.14") // Purpur
++    implementation("net.dv8tion:JDA:5.6.1") // Osmium - Discord bot (no audio)
 +    implementation("org.mozilla:rhino-engine:1.7.14") // Purpur
 +    implementation("dev.omega24:upnp4j:1.0") // Purpur
 +

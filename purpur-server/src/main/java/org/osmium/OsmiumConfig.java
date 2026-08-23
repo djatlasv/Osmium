@@ -230,6 +230,15 @@ public class OsmiumConfig {
         occlusionWorkerThreads = Math.max(1, getInt("raytrace-hiding.worker-threads", 2));
     }
 
+    private static void discordBot() {
+        discordBotEnabled = getBoolean("discord-bot.enabled", false);
+        discordBotToken = config.getString("discord-bot.token", "");
+        discordBotAuditChannelId = config.getString("discord-bot.audit-channel-id", "");
+        if (discordBotEnabled && (discordBotToken == null || discordBotToken.isBlank())) {
+            Bukkit.getLogger().warning("[Osmium] discord-bot.enabled=true but no token set — bot will not start");
+        }
+    }
+
     private static void tpa() {
         tpaEnabled = getBoolean("tpa.enabled", false);
         tpaTimeoutSeconds = Math.max(1, getInt("tpa.timeout-seconds", 60));
@@ -389,6 +398,11 @@ public class OsmiumConfig {
     public static int raytraceSamplesPerBlock = 2;
     public static int raytraceRefreshSeconds = 120;
     public static int occlusionWorkerThreads = 2;
+
+    // Discord bot
+    public static boolean discordBotEnabled = false;
+    public static String discordBotToken = "";
+    public static String discordBotAuditChannelId = "";
 
     // /tpa
     public static boolean tpaEnabled = false;
