@@ -216,6 +216,15 @@ public class OsmiumConfig {
         homesDebug = getBoolean("homes.debug", false);
     }
 
+    private static void spawnDimension() {
+        spawnDimensionEnabled = getBoolean("spawn-dimension.enabled", false);
+        spawnDimensionName = config.getString("spawn-dimension.name", "spawn").trim().toLowerCase(java.util.Locale.ROOT);
+        if (!spawnDimensionName.matches("[a-z0-9_]+")) {
+            Bukkit.getLogger().warning("[Osmium] spawn-dimension.name must be [a-z0-9_] — using 'spawn'");
+            spawnDimensionName = "spawn";
+        }
+    }
+
     private static void backups() {
         backupsEnabled = getBoolean("backups.enabled", false);
         backupsIntervalMinutes = Math.max(5, getInt("backups.interval-minutes", 60));
@@ -396,6 +405,10 @@ public class OsmiumConfig {
     public static int homesDelaySeconds = 3;
     public static boolean homesDebug = false;
 
+    // Spawn dimension
+    public static boolean spawnDimensionEnabled = false;
+    public static String spawnDimensionName = "spawn";
+
     // Backups
     public static boolean backupsEnabled = false;
     public static int backupsIntervalMinutes = 60;
@@ -491,7 +504,7 @@ public class OsmiumConfig {
 
             String[] order = {
                 "chunk-hiding", "raytrace-hiding", "entity-occlusion", "brand-enforcement",
-                "identity-enforcement", "alt-ban", "chat-filter", "grim",
+                "identity-enforcement", "alt-ban", "chat-filter", "grim", "spawn-dimension",
                 "rtp", "tpa", "homes", "team", "scoreboard",
                 "discord-webhook", "discord-bot", "backups"
             };

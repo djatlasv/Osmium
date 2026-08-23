@@ -154,6 +154,17 @@ public class OsmiumHomes {
     }
 
     private static void goToSpawn(ServerPlayer player) {
+        // Spawn dimension takes priority when enabled and loaded
+        if (org.osmium.OsmiumConfig.spawnDimensionEnabled) {
+            ServerLevel spawnDim = org.osmium.OsmiumSpawnDim.spawnTargetLevel(player.level().getServer());
+            if (spawnDim != null) {
+                var rd = spawnDim.getLevelData().getRespawnData();
+                var sp = rd.pos();
+                startCountdown(player, new HomePos(spawnDim.dimension().identifier().toString(),
+                        sp.getX() + 0.5, sp.getY() + 1.0, sp.getZ() + 0.5, rd.yaw(), rd.pitch()), "spawn");
+                return;
+            }
+        }
         var respawn = ((net.minecraft.world.level.storage.PrimaryLevelData)
                 player.level().getServer().getWorldData()).getRespawnData();
         var spawnPos = respawn.pos();

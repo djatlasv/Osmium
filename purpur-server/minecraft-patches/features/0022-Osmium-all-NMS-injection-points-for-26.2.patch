@@ -13,16 +13,17 @@ signed chat enforcement, modded known-packs rejection,
 signed-chat login check, Discord bot lifecycle.
 
 diff --gitdiff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index 38bd5b1..d9f2376 100644
+index 38bd5b1..32b8af6 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -264,6 +264,9 @@ public class Commands {
+@@ -264,6 +264,10 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
 +        org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command (always register; enabled check is at execution time)
 +        org.osmium.OsmiumTeam.registerCommand(this.dispatcher); // Osmium - /team command (always register; enabled check is at execution time)
 +        org.osmium.OsmiumTpa.registerCommand(this.dispatcher); // Osmium - /tpa /tpaccept /tpdeny
++        org.osmium.OsmiumHomes.registerCommand(this.dispatcher); // Osmium - /sethome /home /homes /spawn
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
@@ -44,10 +45,18 @@ index a52f93d..dc1e88b 100644
          }
      }
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index d9402a7..802cc5c 100644
+index d9402a7..ebe74be 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -650,6 +650,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -258,6 +258,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     protected final Services services;
+     private final NotificationManager notificationManager;
+     private final ServerActivityMonitor serverActivityMonitor;
++    private volatile org.osmium.OsmiumBackups.MinecraftServerLike osmiumBackupLike; // Osmium - backups
+     private long lastServerStatus;
+     private final Thread serverThread;
+     private long lastTickNanos = Util.getNanos();
+@@ -650,6 +651,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          }
          // Paper end - Configurable player collision; Handle collideRule team for player collision toggle
          this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.POSTWORLD);
@@ -55,7 +64,7 @@ index d9402a7..802cc5c 100644
          this.server.spark.registerCommandBeforePlugins(this.server); // Paper - spark
          this.server.spark.enableAfterPlugins(this.server); // Paper - spark
          io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.setValid(); // Paper - reset invalid state for event fire below
-@@ -1299,6 +1300,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1299,6 +1301,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              // tasks are default scheduled at -1 + delay, and first tick will tick at 1
              final long actualDoneTimeMs = System.currentTimeMillis() - org.bukkit.craftbukkit.Main.BOOT_TIME.toEpochMilli(); // Paper - Improve startup message
              LOGGER.info("Done ({})! For help, type \"help\"", String.format(java.util.Locale.ROOT, "%.3fs", actualDoneTimeMs / 1000.00D)); // Paper - Improve startup message
@@ -63,16 +72,30 @@ index d9402a7..802cc5c 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1896,6 +1898,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1896,6 +1899,27 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
-+        // Osmium start - tick processing
++
++    // Osmium start - tick processing
 +        org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
 +        org.osmium.OsmiumRtp.tick(this);
 +        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); }
 +        if (org.osmium.OsmiumConfig.teamEnabled) { org.osmium.OsmiumTeam.tick(this); } // Osmium - team invite expiry
 +        if (org.osmium.OsmiumConfig.tpaEnabled) { org.osmium.OsmiumTpa.tick(this); } // Osmium - tpa expiry/countdowns
++        if (org.osmium.OsmiumConfig.homesEnabled) { org.osmium.OsmiumHomes.tick(this); } // Osmium - home countdowns
++        if (org.osmium.OsmiumConfig.spawnDimensionEnabled) { org.osmium.OsmiumSpawnDim.tick(this); } // Osmium - spawn dimension
++        // Osmium start - auto backups
++        if (org.osmium.OsmiumConfig.backupsEnabled) {
++            if (this.osmiumBackupLike == null) {
++                this.osmiumBackupLike = new org.osmium.OsmiumBackups.MinecraftServerLike() {
++                    @Override public long currentTick() { return MinecraftServer.this.tickCount; }
++                    @Override public void saveAllChunks() { MinecraftServer.this.saveEverything(false, true, true); }
++                };
++            }
++            org.osmium.OsmiumBackups.tick(this.osmiumBackupLike);
++        }
++        // Osmium end - auto backups
 +        // Osmium end
      }
  
@@ -96,10 +119,10 @@ index c87bc86..3970f74 100644
                  if (online != null) {
                      online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index 9b19888..71a77c9 100644
+index 9b19888..ae2f7c4 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
-@@ -244,10 +244,19 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -244,10 +244,20 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
          }
          org.purpurmc.purpur.PurpurConfig.registerCommands();
          // Purpur end - Migrate Setting to reintroduce end void rings
@@ -110,6 +133,7 @@ index 9b19888..71a77c9 100644
 +        org.osmium.anticheat.OsmiumAltTracker.init(new java.io.File("."));
 +        org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File("."));
 +        org.osmium.OsmiumTeam.init(new java.io.File("."));
++        org.osmium.OsmiumHomes.init(new java.io.File("."));
 +        // Osmium end
          // Paper start - initialize global and world-defaults configuration
          this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
@@ -119,21 +143,23 @@ index 9b19888..71a77c9 100644
          this.server.spark.enableEarlyIfRequested(); // Paper - spark
          // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
          if (this.convertOldUsers()) {
-@@ -415,6 +424,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -415,6 +425,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
          this.saveEverything(false, true, true);
          this.notificationManager().serverStarted();
 +        org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStart(); // Osmium - discord webhook
 +        org.osmium.discord.OsmiumDiscordBot.start(new java.io.File(".")); // Osmium - discord bot (after server fully ready)
++        org.osmium.discord.OsmiumDiscordBot.start(new java.io.File(".")); // Osmium - discord bot (after server fully ready)
          return true;
      }
  
-@@ -951,6 +962,10 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -951,6 +964,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
      @Override
      protected void stopServer() {
 +        org.osmium.discord.OsmiumDiscordBot.stop(); // Osmium - disconnect discord bot first
 +        org.osmium.anticheat.OsmiumAltTracker.flush(); // Osmium - persist alt tracker data before shutdown
++        org.osmium.OsmiumTeam.flush(); // Osmium - persist teams before shutdown
 +        org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStop(); // Osmium - discord webhook (sync, before shutdown)
 +        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.stop(); } // Osmium - GrimAC
          this.notificationManager().serverShuttingDown();
@@ -206,7 +232,7 @@ index 7e93614..7ab0e30 100644
                      if (this.seenBy.add(player.connection)) {
                          // Paper start - entity tracking events
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index d1dce39..08ef9f2 100644
+index d1dce39..d3325e9 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
 @@ -732,6 +732,7 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
@@ -217,7 +243,16 @@ index d1dce39..08ef9f2 100644
          this.gameMode.tick();
          this.wardenSpawnTracker.tick();
          if (this.invulnerableTime > 0) {
-@@ -1325,6 +1326,12 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+@@ -1150,6 +1151,8 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+     // Paper end - Expand PlayerDeathEvent API
+     @Override
+     public void die(final DamageSource source) {
++        org.osmium.discord.OsmiumDiscordBot.onPlayerEvent("\u2620 " + this.getPlainTextName() + " " +
++                this.getCombatTracker().getDeathMessage().getString()); // Osmium - discord bridge
+         // this.gameEvent(GameEvent.ENTITY_DIE); // Paper - move below event cancellation check
+         boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
+         // CraftBukkit start - fire PlayerDeathEvent
+@@ -1325,6 +1328,12 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
              }
          }
          // Purpur end - Add boat fall damage config
@@ -230,6 +265,21 @@ index d1dce39..08ef9f2 100644
          Entity entity = source.getEntity();
          if (!( // Paper - split the if statement. If below statement is false, hurtServer would not have been evaluated. Return false.
              !(entity instanceof Player player && !this.canHarmPlayer(player))
+@@ -1360,6 +1369,14 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+         final org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason
+     ) {
+         RespawnResult result = this.findRespawnPositionAndUseSpawnBlock0(consumeSpawnBlock, postTeleportTransition, respawnReason);
++        // Osmium start - spawn dimension default death respawn
++        if (result != null && !result.isBedSpawn() && !result.isAnchorSpawn()
++                && respawnReason == org.bukkit.event.player.PlayerRespawnEvent.RespawnReason.DEATH
++                && org.osmium.OsmiumConfig.spawnDimensionEnabled) {
++            var osmiumTransition = org.osmium.OsmiumSpawnDim.respawnTransition(this, postTeleportTransition);
++            if (osmiumTransition != null) return osmiumTransition;
++        }
++        // Osmium end - spawn dimension default death respawn
+         return result == null ? null : result.transition();
+     }
+ 
 diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
 index 948a8a2..0d2ed97 100644
 --- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
@@ -286,10 +336,10 @@ index 048bbab..b9d2d45 100644
          } catch (final Exception e) {
              LOGGER.error("Couldn't handle custom payload on channel {}", identifier, e);
 diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
-index 6baa9d2..6588a4b 100644
+index 6baa9d2..3cfc132 100644
 --- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
-@@ -183,6 +183,23 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+@@ -183,6 +183,28 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
              throw new IllegalStateException("Unexpected response from client: received pack selection, but no negotiation ongoing");
          }
  
@@ -299,6 +349,7 @@ index 6baa9d2..6588a4b 100644
 +        // a non-minecraft namespace proves a modded client regardless of what
 +        // brand name it reported earlier.
 +        if (org.osmium.OsmiumConfig.rejectModdedKnownPacks) {
++            var osmiumPacks = new java.util.ArrayList<String[]>();
 +            for (net.minecraft.server.packs.repository.KnownPack osmiumPack : packet.knownPacks()) {
 +                if (!osmiumPack.isVanilla()) {
 +                    LOGGER.info("[Osmium] Rejecting {}: modded known pack {}", this.gameProfile.name(), osmiumPack);
@@ -306,7 +357,11 @@ index 6baa9d2..6588a4b 100644
 +                            org.osmium.OsmiumConfig.knownPacksKickMessage));
 +                    return;
 +                }
++                osmiumPacks.add(new String[]{osmiumPack.namespace(), osmiumPack.id(), osmiumPack.version()});
 +            }
++            // Store for play-phase version validation (ViaVersion-aware)
++            org.osmium.OsmiumIdentity.storeKnownPacks(this.gameProfile.id(),
++                    java.util.Collections.unmodifiableList(osmiumPacks));
 +        }
 +        // Osmium end - reject modded known packs
 +
@@ -314,10 +369,10 @@ index 6baa9d2..6588a4b 100644
          this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
      }
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 817ec3f..f06fe41 100644
+index 817ec3f..5a759ad 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2349,6 +2349,14 @@ public class ServerGamePacketListenerImpl
+@@ -2349,6 +2349,16 @@ public class ServerGamePacketListenerImpl
  
      @Override
      public void onDisconnect(final DisconnectionDetails details) {
@@ -327,12 +382,14 @@ index 817ec3f..f06fe41 100644
 +        org.osmium.OsmiumRtp.cancel(this.player.getUUID());
 +        org.osmium.OsmiumTeam.cancel(this.player.getUUID()); // Osmium - clear team GUI state and pending invite
 +        org.osmium.OsmiumTpa.cancel(this.player.getUUID()); // Osmium - drop tpa requests/pending teleports
++        org.osmium.OsmiumHomes.cancel(this.player.getUUID()); // Osmium - drop pending home teleport
++        org.osmium.discord.OsmiumDiscordBot.onPlayerEvent("\u00a7c\u274c " + this.player.getPlainTextName() + " left the game"); // Osmium - discord bridge
 +        org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
 +        // Osmium end
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2691,6 +2699,33 @@ public class ServerGamePacketListenerImpl
+@@ -2691,6 +2701,35 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
@@ -350,6 +407,8 @@ index 817ec3f..f06fe41 100644
 +            return;
 +        }
 +        // Osmium end - signed chat enforcement
++        org.osmium.discord.OsmiumDiscordBot.onMinecraftChat(
++                this.player.getPlainTextName(), rawMessage); // Osmium - discord chat bridge
 +        // Osmium start - chat filter
 +        String filterMatch = org.osmium.anticheat.OsmiumChatFilter.check(rawMessage);
 +        if (filterMatch != null) {
@@ -366,7 +425,7 @@ index 817ec3f..f06fe41 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3128,6 +3163,8 @@ public class ServerGamePacketListenerImpl
+@@ -3128,6 +3167,8 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
@@ -375,7 +434,7 @@ index 817ec3f..f06fe41 100644
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3137,6 +3174,13 @@ public class ServerGamePacketListenerImpl
+@@ -3137,6 +3178,13 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
@@ -389,7 +448,7 @@ index 817ec3f..f06fe41 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3862,6 +3906,14 @@ public class ServerGamePacketListenerImpl
+@@ -3862,6 +3910,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();
@@ -405,10 +464,10 @@ index 817ec3f..f06fe41 100644
          // Paper end - Add PlayerLoadedWorldEvent
          this.clientLoadedTimeoutTimer = 0;
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index 331c781..1f42516 100644
+index 331c781..8c9e9a1 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
-@@ -314,6 +314,43 @@ public abstract class PlayerList {
+@@ -314,6 +314,75 @@ public abstract class PlayerList {
          }
          // Paper end - Configurable player collision
          org.purpurmc.purpur.task.BossBarTask.addToAll(player); // Purpur - Implement TPSBar
@@ -425,6 +484,38 @@ index 331c781..1f42516 100644
 +            return;
 +        }
 +        // Osmium end - signed chat identity check
++
++        // Osmium start - known packs version validation (play phase, Via-aware)
++        if (org.osmium.OsmiumConfig.rejectModdedKnownPacks) {
++            boolean viaPresent = org.bukkit.Bukkit.getPluginManager().getPlugin("ViaVersion") != null;
++            var osmiumPacks = org.osmium.OsmiumIdentity.takeKnownPacks(player.getUUID());
++            boolean coreSeen = false;
++            for (String[] pk : osmiumPacks) {
++                if ("minecraft".equals(pk[0]) && "core".equals(pk[1])) {
++                    coreSeen = true;
++                    if (!viaPresent && !pk[2].equals(net.minecraft.SharedConstants.getCurrentVersion().id())) {
++                        LOGGER.info("[Osmium] {}: known-pack version {} does not match server {}",
++                                player.getPlainTextName(), pk[2], net.minecraft.SharedConstants.getCurrentVersion().id());
++                        connection.disconnect(net.minecraft.network.chat.Component.literal(
++                                org.osmium.OsmiumConfig.knownPacksKickMessage));
++                        return;
++                    }
++                }
++            }
++            if (!viaPresent && !coreSeen && !osmiumPacks.isEmpty()) {
++                LOGGER.info("[Osmium] {}: no minecraft:core known pack reported", player.getPlainTextName());
++                connection.disconnect(net.minecraft.network.chat.Component.literal(
++                        org.osmium.OsmiumConfig.knownPacksKickMessage));
++                return;
++            }
++        } else {
++            org.osmium.OsmiumIdentity.clear(player.getUUID());
++        }
++        // Osmium end - known packs version validation
++        org.osmium.discord.OsmiumDiscordBot.onPlayerEvent("\u00a7a\u25b6 " + player.getPlainTextName() + " joined the game"); // Osmium - discord bridge
++        // Osmium start - spawn dimension first-join placement
++        org.osmium.OsmiumSpawnDim.onPlaceNewPlayer(player, this.server);
++        // Osmium end - spawn dimension first-join placement
 +
 +        // Osmium start - alt tracker: record join and check for banned alts
 +        if (connection.getRemoteAddress() instanceof java.net.InetSocketAddress inetAddr) {
@@ -468,3 +559,21 @@ index bad7d3d..8b5dbd2 100644
      }
  
      public int getNextEntityId() {
+diff --git a/net/minecraft/world/level/block/NetherPortalBlock.java b/net/minecraft/world/level/block/NetherPortalBlock.java
+index 0e07cdf..7aec212 100644
+--- a/net/minecraft/world/level/block/NetherPortalBlock.java
++++ b/net/minecraft/world/level/block/NetherPortalBlock.java
+@@ -145,6 +145,13 @@ public class NetherPortalBlock extends Block implements Portal {
+ 
+     @Override
+     public @Nullable TeleportTransition getPortalDestination(final ServerLevel currentLevel, final Entity entity, final BlockPos portalEntryPos) {
++        // Osmium start - spawn dimension: nether portals exit to the overworld
++        if (org.osmium.OsmiumConfig.spawnDimensionEnabled
++                && org.osmium.OsmiumSpawnDim.isSpawnDimension(currentLevel)) {
++            var osmiumRedirect = org.osmium.OsmiumSpawnDim.portalRedirect(currentLevel, entity);
++            if (osmiumRedirect != null) return osmiumRedirect;
++        }
++        // Osmium end - spawn dimension
+         ResourceKey<Level> newDimension = currentLevel.getTypeKey() == net.minecraft.world.level.dimension.LevelStem.NETHER ? Level.OVERWORLD : Level.NETHER; // CraftBukkit
+         ServerLevel newLevel = currentLevel.getServer().getLevel(newDimension);
+         // Paper start - Add EntityPortalReadyEvent
