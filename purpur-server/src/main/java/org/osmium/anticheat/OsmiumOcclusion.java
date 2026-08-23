@@ -331,22 +331,6 @@ public final class OsmiumOcclusion {
         }
     }
 
-    private static boolean hasPlayerInRange(ServerLevel level, long chunkKey) {
-        int cx = (int) chunkKey;
-        int cz = (int) (chunkKey >> 32);
-        double centerX = (cx << 4) + 8;
-        double centerZ = (cz << 4) + 8;
-        double rangeSq = sq(OsmiumConfig.raytraceMaxRayDistance + 32);
-        List<ServerPlayer> players = level.players();
-        for (int i = 0; i < players.size(); i++) {
-            ServerPlayer p = players.get(i);
-            double dx = p.getX() - centerX;
-            double dz = p.getZ() - centerZ;
-            if (dx * dx + dz * dz <= rangeSq) return true;
-        }
-        return false;
-    }
-
     private static long chunkKey(int cx, int cz) {
         return ((long) cx & 0xFFFFFFFFL) | (((long) cz & 0xFFFFFFFFL) << 32);
     }
@@ -445,8 +429,26 @@ public final class OsmiumOcclusion {
         return false;
     }
 
+    /** Opacity probe abstraction so the traversal is unit-testable. */
+    public interface OpacityFn {
+        boolean isOpaque(int x, int y, int z);
+    }
+
     /** Amanatides–Woo voxel DDA; true if nothing opaque blocks the segment. */
     static boolean rayClear(ServerLevel level, Vec3 from, Vec3 to) {
+        return traverse(from, to, (x, y, z) -> {
+            BlockState state = level.getBlockStateIfLoaded(new BlockPos(x, y, z));
+            if (state == null) return false; // unloaded: fail open
+            return state.isSolidRender();
+        });
+    }
+
+    /**
+     * Pure Amanatides–Woo traversal: steps voxels from `from` toward `to`,
+     * stopping at the target voxel (returns true) or at the first opaque
+     * voxel (returns false). Unit-testable without a world.
+     */
+    public static boolean traverse(Vec3 from, Vec3 to, OpacityFn opacity) {
         double dx = to.x - from.x;
         double dy = to.y - from.y;
         double dz = to.z - from.z;
@@ -488,9 +490,8 @@ public final class OsmiumOcclusion {
             if (x == targetX && y == targetY && z == targetZ) return true; // reached target voxel
 
             mpos.set(x, y, z);
-            BlockState state = level.getBlockStateIfLoaded(mpos);
-            if (state == null) return true;   // unloaded chunk: fail open
-            if (state.isSolidRender()) return false; // blocked
+            if (x == targetX && y == targetY && z == targetZ) break;
+            if (opacity.isOpaque(x, y, z)) return false; // blocked
         }
         return true;
     }
@@ -542,10 +543,13 @@ public final class OsmiumOcclusion {
         if (distSq > maxDist * maxDist) return false;              // far: distance culling handles it
         if (distSq < 9.0) return false;                            // adjacent: always visible
 
-        long pairKey = (player.getId() & 0xFFFFFFFFL) | ((entity.getId() & 0xFFFFFFFFL) << 32);
+        // Keyed by UUIDs: entity int ids are recycled after despawn, which
+        // could hand a stale verdict to an unrelated new entity.
+        long entityKey = entity.getUUID().getMostSignificantBits() ^ entity.getUUID().getLeastSignificantBits();
+        long pairKey = player.getUUID().getMostSignificantBits() ^ player.getUUID().getLeastSignificantBits();
         long nowTick = player.level().getGameTime();
 
-        Long2LongOpenHashMap perEntity = entityVerdicts.get(entity.getId());
+        Long2LongOpenHashMap perEntity = entityVerdicts.get(entityKey);
         if (perEntity != null) {
             long verdict = perEntity.get(pairKey);
             if (verdict != 0 && nowTick - (Math.abs(verdict) - 1) < OsmiumConfig.entityOcclusionCheckIntervalTicks) {
@@ -575,7 +579,7 @@ public final class OsmiumOcclusion {
                 new Vec3(bb.minX + 0.1, midY, bb.minZ + 0.1),
                 new Vec3(bb.maxX - 0.1, midY, bb.maxZ - 0.1),
         };
-        final int entityId = entity.getId();
+        final long entityKey = entity.getUUID().getMostSignificantBits() ^ entity.getUUID().getLeastSignificantBits();
         final long nowTick = level.getGameTime();
 
         try {
@@ -586,7 +590,7 @@ public final class OsmiumOcclusion {
                         if (rayClear(level, eye, t)) { visible = true; break; }
                     }
                     boolean occluded = !visible;
-                    entityVerdicts.computeIfAbsent(entityId, k -> new Long2LongOpenHashMap())
+                    entityVerdicts.computeIfAbsent(entityKey, k -> new Long2LongOpenHashMap())
                             .put(pairKey, (occluded ? -1L : 1L) * (nowTick + 1));
                 } catch (Exception ignored) {
                     // any failure: no verdict stored -> entity stays visible

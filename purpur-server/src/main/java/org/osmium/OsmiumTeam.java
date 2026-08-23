@@ -26,6 +26,10 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 public class OsmiumTeam {
@@ -78,9 +82,16 @@ public class OsmiumTeam {
     private static final Map<UUID, UUID> GUI_MANAGE = new ConcurrentHashMap<>();              // player -> target member
     private static final Map<UUID, List<UUID>> GUI_MEMBERS_SLOTS = new ConcurrentHashMap<>(); // player -> ordered member UUIDs
 
-    // Persistence
+    // Persistence — debounced like the alt tracker: GUI actions mark dirty,
+    // one background task writes the file. No main-thread disk I/O.
     private static File dataFile;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final AtomicBoolean FLUSH_SCHEDULED = new AtomicBoolean();
+    private static final ScheduledExecutorService SAVER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "Osmium-Team-Saver");
+        t.setDaemon(true);
+        return t;
+    });
 
     private static void debug(String msg) {
         if (OsmiumConfig.teamDebug) {
@@ -161,6 +172,26 @@ public class OsmiumTeam {
     }
 
     private static void save() {
+        scheduleFlush();
+    }
+
+    /** Writes teams to disk now (shutdown hook / explicit flushes). */
+    public static void flush() {
+        FLUSH_SCHEDULED.set(false);
+        saveNow();
+    }
+
+    private static void scheduleFlush() {
+        if (FLUSH_SCHEDULED.compareAndSet(false, true)) {
+            SAVER.schedule(() -> {
+                try { saveNow(); }
+                catch (Exception e) { LOGGER.warning("Team flush failed: " + e.getMessage()); }
+                finally { FLUSH_SCHEDULED.set(false); }
+            }, 3, TimeUnit.SECONDS);
+        }
+    }
+
+    private static void saveNow() {
         if (dataFile == null) return;
         List<TeamJson> list = new ArrayList<>();
         for (TeamData team : teams.values()) {

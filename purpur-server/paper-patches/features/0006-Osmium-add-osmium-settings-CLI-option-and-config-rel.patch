@@ -6,10 +6,10 @@ Subject: [PATCH] Osmium: add --osmium-settings CLI option and config reload
 
 
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index ecc3d78eeaa776e3aef4cfad5ab5c7191f5eed06..142cafa23399b6bb6673d234e94da6add2365c60 100644
+index ec9dd18d380db6e153dfc704a86b578fc0458eb5..e7bc99e5ad2da422742f871dc2ec07d927dda901 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-@@ -1005,6 +1005,7 @@ public final class CraftServer implements Server {
+@@ -1000,6 +1000,7 @@ public final class CraftServer implements Server {
          org.spigotmc.SpigotConfig.init((File) this.console.options.valueOf("spigot-settings")); // Spigot
          this.console.paperConfigurations.reloadConfigs(this.console);
          org.purpurmc.purpur.PurpurConfig.init((File) console.options.valueOf("purpur-settings")); // Purpur - Purpur config files
@@ -18,10 +18,10 @@ index ecc3d78eeaa776e3aef4cfad5ab5c7191f5eed06..142cafa23399b6bb6673d234e94da6ad
              // world.serverLevelData.setDifficulty(config.difficulty); // Paper - per level difficulty
              world.setSpawnSettings(world.isSpawningMonsters()); // Paper - per level difficulty (from MinecraftServer#setDifficulty(ServerLevel, Difficulty, boolean))
 diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
-index d665dc3fbd0989eb399c55d0717bc6fd79a0db17..91f031e3810744d66d0c5ea885ab33fd67d3d22d 100644
+index e6ea34b18c6db63efa77bb67d3484e4d66315ed6..cd91b8f9b5eb74aa44e48b0016f12385fb331a64 100644
 --- a/src/main/java/org/bukkit/craftbukkit/Main.java
 +++ b/src/main/java/org/bukkit/craftbukkit/Main.java
-@@ -177,6 +177,14 @@ public class Main {
+@@ -147,6 +147,14 @@ public class Main {
                      .describedAs("Yml file");
                  // Purpur end - Purpur config files
  

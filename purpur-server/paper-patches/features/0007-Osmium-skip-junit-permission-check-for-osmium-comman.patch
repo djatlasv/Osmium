@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 02:37:12 -0600
+Subject: [PATCH] Osmium: skip junit permission check for osmium commands
+
+
+diff --git a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+index 1ae700532dad07a39a3b973d7c077f308c3301ee..72f9f6720814f2529701d7e2e95779316599a7b6 100644
+--- a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
++++ b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+@@ -78,6 +78,16 @@ public class MinecraftCommandPermissionsTest {
+         "minecraft.command.gamemode.survival",
+         "minecraft.command.gamemode.survival.other",
+         // Purpur end - Skip junit tests for purpur commands
++        // Osmium start - Skip junit tests for osmium commands (registered always, permissions set at runtime)
++        "minecraft.command.rtp",
++        "minecraft.command.tpa",
++        "minecraft.command.tpaccept",
++        "minecraft.command.tpdeny",
++        "minecraft.command.sethome",
++        "minecraft.command.home",
++        "minecraft.command.homes",
++        "minecraft.command.spawn",
++        // Osmium end - Skip junit tests for osmium commands
+         "minecraft.command.selector"
+     );
+ 

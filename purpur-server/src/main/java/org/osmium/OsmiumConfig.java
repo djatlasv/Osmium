@@ -234,9 +234,29 @@ public class OsmiumConfig {
         discordBotEnabled = getBoolean("discord-bot.enabled", false);
         discordBotToken = config.getString("discord-bot.token", "");
         discordBotAuditChannelId = config.getString("discord-bot.audit-channel-id", "");
+        discordBotChatChannelId = config.getString("discord-bot.chat-channel-id", "");
+        if (discordBotChatChannelId != null && !discordBotChatChannelId.isBlank()
+                && (discordBotToken == null || discordBotToken.isBlank())) {
+            Bukkit.getLogger().warning("[Osmium] chat-channel-id set but no token — bridge disabled");
+        }
         if (discordBotEnabled && (discordBotToken == null || discordBotToken.isBlank())) {
             Bukkit.getLogger().warning("[Osmium] discord-bot.enabled=true but no token set — bot will not start");
         }
+    }
+
+    private static void homes() {
+        homesEnabled = getBoolean("homes.enabled", false);
+        homesMaxPerPlayer = Math.max(1, getInt("homes.max-per-player", 3));
+        homesDelaySeconds = Math.max(0, getInt("homes.delay-seconds", 3));
+        homesDebug = getBoolean("homes.debug", false);
+    }
+
+    private static void backups() {
+        backupsEnabled = getBoolean("backups.enabled", false);
+        backupsIntervalMinutes = Math.max(5, getInt("backups.interval-minutes", 60));
+        backupsKeep = Math.max(1, getInt("backups.keep", 8));
+        backupsDirectory = config.getString("backups.directory", "backups");
+        backupsWorlds = config.getString("backups.worlds", "");
     }
 
     private static void tpa() {
@@ -403,6 +423,20 @@ public class OsmiumConfig {
     public static boolean discordBotEnabled = false;
     public static String discordBotToken = "";
     public static String discordBotAuditChannelId = "";
+    public static String discordBotChatChannelId = "";
+
+    // Homes
+    public static boolean homesEnabled = false;
+    public static int homesMaxPerPlayer = 3;
+    public static int homesDelaySeconds = 3;
+    public static boolean homesDebug = false;
+
+    // Backups
+    public static boolean backupsEnabled = false;
+    public static int backupsIntervalMinutes = 60;
+    public static int backupsKeep = 8;
+    public static String backupsDirectory = "backups";
+    public static String backupsWorlds = "";   // blank = auto-detect
 
     // /tpa
     public static boolean tpaEnabled = false;

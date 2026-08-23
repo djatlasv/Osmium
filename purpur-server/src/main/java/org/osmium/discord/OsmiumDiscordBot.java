@@ -26,6 +26,7 @@ import java.io.File;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.EnumSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
 
@@ -58,9 +59,9 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     // ------------------------------------------------------------------
 
     public enum Level { NONE(0), VIEWER(1), HELPER(2), MOD(3), ADMIN(4);
-        final int rank;
+        public final int rank;
         Level(int r) { rank = r; }
-        static Level of(String s) {
+        public static Level of(String s) {
             try { return valueOf(s.toUpperCase(Locale.ROOT)); }
             catch (Exception e) { return NONE; }
         }
@@ -111,9 +112,12 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         }
         loadStore(serverDir);
         try {
+            boolean bridge = OsmiumConfig.discordBotChatChannelId != null
+                    && !OsmiumConfig.discordBotChatChannelId.isBlank();
             jda = JDABuilder.createDefault(token)
+                    .enableIntents(bridge ? EnumSet.of(GatewayIntent.MESSAGE_CONTENT) : EnumSet.noneOf(GatewayIntent.class))
                     .disableIntents(GatewayIntent.GUILD_MEMBERS, GatewayIntent.GUILD_PRESENCES,
-                            GatewayIntent.MESSAGE_CONTENT, GatewayIntent.GUILD_MESSAGE_TYPING)
+                            GatewayIntent.GUILD_MESSAGE_TYPING)
                     .setActivity(net.dv8tion.jda.api.entities.Activity.watching("the server"))
                     .addEventListeners(new OsmiumDiscordBot())
                     .build();
@@ -453,7 +457,9 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         replyInfo(e, "👢 Kicked **" + target.getGameProfile().name() + "** — " + reason);
     }
 
-    private record PendingAction(UUID id, String type, String player, String reason, long userId) {}
+    private record PendingAction(UUID id, String type, String player, String reason, long userId, long createdAt) {
+        boolean expired() { return System.currentTimeMillis() - createdAt > 10 * 60_000L; }
+    }
     private static final Map<String, PendingAction> PENDING_ACTIONS = new ConcurrentHashMap<>();
 
     private void handleBan(SlashCommandInteractionEvent e, MinecraftServer server) {
@@ -462,7 +468,12 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         String reason = e.getOption("reason", "Banned via Discord", OptionMapping::getAsString);
 
         UUID actionId = UUID.randomUUID();
-        PENDING_ACTIONS.put(actionId.toString(), new PendingAction(actionId, "ban", player, reason, e.getUser().getIdLong()));
+        PENDING_ACTIONS.put(actionId.toString(), new PendingAction(actionId, "ban", player, reason, e.getUser().getIdLong(),
+                System.currentTimeMillis()));
+        // Opportunistic cleanup: drop stale confirmations
+        if (PENDING_ACTIONS.size() > 32) {
+            PENDING_ACTIONS.values().removeIf(PendingAction::expired);
+        }
 
         e.replyEmbeds(new EmbedBuilder()
                         .setDescription("Ban **" + player + "**?\nReason: " + reason)
@@ -532,13 +543,17 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         audit(e, "CONSOLE `" + cmd + "`");
         server.execute(() -> {
             try {
-                server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), cmd);
+                var base = server.createCommandSourceStack();
+                var capture = new CapturingCommandSource(base.source);
+                server.getCommands().performPrefixedCommand(base.withSource(capture), cmd);
+                replyInfo(e, "Executed: `" + cmd + "`\n" + capture.captured());
             } catch (Exception ex) {
                 LOGGER.warn("Console command failed: {}", ex.getMessage());
+                replyError(e, "Command failed: " + ex.getMessage());
             }
         });
-        replyInfo(e, "🖥️ Executed: `" + cmd + "`");
     }
+
 
     // ------------------------------------------------------------------
     // Buttons (confirmations)
@@ -618,7 +633,83 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     }
 
     // ------------------------------------------------------------------
+    // Chat bridge
+    // ------------------------------------------------------------------
+
+    private static volatile TextChannel chatChannel;
+
+    private static TextChannel chatChannel(JDA api) {
+        if (chatChannel != null) return chatChannel;
+        String id = OsmiumConfig.discordBotChatChannelId;
+        if (id == null || id.isBlank()) return null;
+        TextChannel ch = api.getTextChannelById(id.trim());
+        if (ch != null) chatChannel = ch;
+        return ch;
+    }
+
+    /** Minecraft -> Discord. Called from the chat pipeline (any thread). */
+    public static void onMinecraftChat(String playerName, String message) {
+        JDA j = jda;
+        if (j == null) return;
+        String id = OsmiumConfig.discordBotChatChannelId;
+        if (id == null || id.isBlank()) return;
+        TextChannel ch = chatChannel(j);
+        if (ch == null) return;
+        String clean = sanitize(message);
+        if (clean.isEmpty()) return;
+        ch.sendMessage("`" + sanitize(playerName) + "` " + clean).queue(ok -> {}, err -> {});
+    }
+
+    /** Player joined / left / died notices. */
+    public static void onPlayerEvent(String text) {
+        JDA j = jda;
+        if (j == null) return;
+        TextChannel ch = chatChannel(j);
+        if (ch == null) return;
+        ch.sendMessage(sanitize(text)).queue(ok -> {}, err -> {});
+    }
+
+    private static String sanitize(String s) {
+        if (s == null) return "";
+        String out = s.replace("@everyone", "@\u200beveryone")
+                      .replace("@here", "@\u200bhere");
+        // strip discord markdown headers that break embeds/looks
+        while (out.startsWith("#")) out = out.substring(1);
+        return out.length() > 350 ? out.substring(0, 350) + "…" : out;
+    }
+
+    @Override
+    public void onMessageReceived(net.dv8tion.jda.api.events.message.MessageReceivedEvent event) {
+        try {
+            if (event.getAuthor().isBot() || event.isWebhookMessage()) return;
+            String id = OsmiumConfig.discordBotChatChannelId;
+            if (id == null || event.getChannel().getIdLong() != parseLongSafe(id)) return;
+            if (!inBoundGuild(event.getGuild())) return;
+
+            String content = event.getMessage().getContentDisplay();
+            if (content.isBlank()) return;
+
+            MinecraftServer server = MinecraftServer.getServer();
+            if (server == null) return;
+            String name = event.getMember() != null ? event.getMember().getEffectiveName()
+                                                    : event.getAuthor().getName();
+            server.execute(() -> server.getPlayerList().broadcastSystemMessage(
+                    net.minecraft.network.chat.Component.literal("\u00a77[Discord] \u00a7f" + name + "\u00a77: \u00a7f" + sanitize(content)),
+                    false));
+        } catch (Exception ex) {
+            LOGGER.warn("Bridge relay failed", ex);
+        }
+    }
+
+    private static long parseLongSafe(String s) {
+        try { return Long.parseLong(s.trim()); } catch (Exception e) { return -1; }
+    }
+
+    // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
 
+    private void auditChannelText(net.dv8tion.jda.api.entities.Guild guild, String text) {
+        auditChannel(guild, text);
+    }
 }
