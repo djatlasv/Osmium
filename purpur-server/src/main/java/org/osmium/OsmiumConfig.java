@@ -15,70 +15,7 @@ import java.util.logging.Level;
 
 public class OsmiumConfig {
 
-    private static final String HEADER = "Osmium Configuration\n"
-            + "Osmium is a custom Purpur fork with native anticheat and security features.\n"
-            + "GitHub: https://github.com/djatlasv/Osmium\n"
-            + "\n"
-            + "--- chunk-hiding ---\n"
-            + "Replaces all blocks below a Y level with a fake block in the chunk packet.\n"
-            + "Players within the proximity radius see real blocks. Blocks re-hide when they leave.\n"
-            + "  enabled: master toggle\n"
-            + "  y-threshold: blocks below this Y level are hidden (0 = hide everything below sea level)\n"
-            + "  block: the block to replace hidden blocks with (e.g. deepslate, stone, netherrack)\n"
-            + "  hide-entities: also hide entities (mobs, items, etc.) below the threshold from distant players\n"
-            + "  hide-light: zero out light data below the threshold to defeat Light Finder hacks\n"
-            + "  proximity-radius: how many blocks around the player to reveal real blocks\n"
-            + "\n"
-            + "--- brand-enforcement ---\n"
-            + "Enforces client mod rules using the HandShaker protocol at the NMS level.\n"
-            + "  enabled: master toggle\n"
-            + "  mode: 'strict' requires all clients to have HandShaker, 'vanilla' allows vanilla clients\n"
-            + "  kick-message: message shown when a player is kicked for missing HandShaker or required mods\n"
-            + "  blacklist-kick-message: message shown when kicked for a blacklisted mod — {mods} = detected mods\n"
-            + "  check-delay-ticks: ticks to wait for HandShaker payload before checking (100 = 5 seconds)\n"
-            + "  required-mods: mod IDs that must be installed (e.g. [hand-shaker])\n"
-            + "  blacklisted-mods: mod IDs that trigger a kick (e.g. [wurst, meteor-client])\n"
-            + "\n"
-            + "--- alt-ban ---\n"
-            + "Tracks IP-to-UUID and fingerprint-to-UUID associations for alt detection.\n"
-            + "IP-based detection always works. Fingerprint-based detection requires brand-enforcement\n"
-            + "to be enabled (fingerprints are sent via the HandShaker protocol).\n"
-            + "  enabled: master toggle\n"
-            + "  kick-message: message shown when an alt is kicked\n"
-            + "\n"
-            + "--- chat-filter ---\n"
-            + "Filters chat messages using a word list from osmium-words.json.\n"
-            + "Supports exact matches (case-insensitive) and regex: prefixed patterns.\n"
-            + "  enabled: master toggle\n"
-            + "  action: what to do on match — block (cancel message), kick, or mute\n"
-            + "  message: message shown to the player when their message is filtered\n"
-            + "\n"
-            + "--- scoreboard ---\n"
-            + "Custom sidebar scoreboard with live-updating placeholders.\n"
-            + "  enabled: master toggle\n"
-            + "  title: scoreboard title (supports & color codes)\n"
-            + "  lines: list of lines (supports & color codes and placeholders)\n"
-            + "  update-ticks: how often to refresh (20 = 1 second)\n"
-            + "  Placeholders: {player} {ping} {kills} {deaths} {kd} {money} {online} {max} {tps}\n"
-            + "\n"
-            + "--- grim ---\n"
-            + "Runs GrimAC 2.3.74 as a native server module instead of a plugin.\n"
-            + "GrimAC configs live in the ./grim/ directory.\n"
-            + "  enabled: master toggle\n"
-            + "\n"
-            + "--- rtp ---\n"
-            + "Random Teleport GUI — /rtp opens a dimension picker.\n"
-            + "  enabled: master toggle\n"
-            + "  delay-seconds: countdown before teleporting\n"
-            + "  cost: economy charge per teleport (0 = free, requires Vault + economy plugin)\n"
-            + "  max-distance: maximum distance from world center\n"
-            + "  min-distance: minimum distance from world center\n"
-            + "\n"
-            + "--- discord-webhook ---\n"
-            + "Sends Discord embed notifications for server events (start/stop, bans, alts, etc.).\n"
-            + "  enabled: master toggle\n"
-            + "  url: your Discord webhook URL\n"
-            + "  ping-on-stop: list of Discord user IDs to ping when the server stops (e.g. ['123456789'])\n";
+    private static final String HEADER = "Osmium Configuration\nOsmium is a custom Purpur fork with native anticheat and security features.\nGitHub: https://github.com/djatlasv/Osmium\n\n======================================================================\n  ANTICHEAT & SECURITY\n======================================================================\n\n--- chunk-hiding ---\nReplaces all blocks below a Y level with a fake block in the chunk packet.\nPlayers within the proximity radius see real blocks (horizontal distance).\n  enabled: master toggle\n  y-threshold: blocks below this Y level are hidden\n  block: replacement block (e.g. deepslate)\n  hide-entities: also hide entities below the threshold from distant players\n  hide-light: zero out light data below the threshold (defeats Light Finder hacks)\n  proximity-radius: horizontal reveal radius around the player\n  shared-far-view-rewrites: cache rewritten buffers for distant viewers (experimental)\n\n--- raytrace-hiding ---\nRaycast ore hiding: protected blocks with no line of sight to any player are replaced.\n  enabled: master toggle (default false)\n  blocks: block ids to protect (default: diamond/emerald/gold/iron ore + ancient debris)\n  max-ray-distance: LOS ray length in blocks\n  checks-per-tick: max chunk recomputations queued per tick\n  samples-per-block: rays cast per block (1-4)\n  refresh-seconds: periodic visibility recalculation\n  worker-threads: background compute threads\n\n--- entity-occlusion ---\nHides entities and block entities (chests, ...) occluded by terrain.\n  enabled: master toggle (default false)\n  max-distance: beyond this, normal distance culling applies\n  check-interval-ticks: how often each entity+player pair is retraced\n\n--- brand-enforcement ---\nEnforces client mod rules using the HandShaker protocol.\n  enabled: master toggle\n  mode: 'strict' requires HandShaker; 'vanilla' allows vanilla clients\n  kick-message: shown when kicked for missing HandShaker/required mods\n  blacklist-kick-message: shown for blacklisted mods ({mods} = detected mods)\n  check-delay-ticks: ticks to wait for the HandShaker payload (100 = 5s)\n  require-osmium-handshaker: reject stock HandShaker (fingerprint needed)\n  required-mods: mod ids that must be installed\n  blacklisted-mods: mod ids that trigger a kick\n\n--- identity-enforcement ---\nDetects spoofed/vanilla-pretending clients without trusting their mod list.\n  signed-chat-kick: kick clients with signing keys that send unsigned chat or never establish a session (requires enforce-secure-profile=true)\n  signed-chat-kick-message: custom kick message\n  reject-modded-known-packs: reject clients reporting non-vanilla known packs + version validation (skipped when ViaVersion installed)\n  known-packs-kick-message: custom kick message\n\n--- alt-ban ---\nAlt detection via IP and hardware fingerprint associations.\nIP always works; fingerprints require brand-enforcement (HandShaker).\n  enabled: master toggle\n  kick-message: message shown when an alt is kicked\n\n--- chat-filter ---\nChat word-list filter (osmium-words.json). Exact + regex patterns.\n  enabled: master toggle\n  action: block | kick | mute\n  message: message shown when filtered\n\n--- grim ---\nAuto-installs GrimAC from Modrinth into plugins/ on first start.\n  enabled: master toggle\n\n======================================================================\n  GAMEPLAY\n======================================================================\n\n--- rtp ---\nRandom Teleport GUI (/rtp), charges economy via Vault if configured.\n  enabled: master toggle\n  delay-seconds: countdown (moving cancels)\n  cost: economy charge (0 = free)\n  max-distance / min-distance: radius range from world center\n  cooldown-seconds: between uses (0 = none)\n  op-only: restrict to ops\n  debug: verbose logging\n\n--- tpa ---\nTeleport requests: /tpa <player>, accept via clickable chat buttons or /tpaccept [player].\n  enabled: master toggle\n  timeout-seconds: request expiry\n  delay-seconds: countdown (moving cancels)\n  cooldown-seconds: between outgoing requests (0 = none)\n  debug: verbose logging\n\n--- homes ---\nPersonal homes + world spawn teleport (/sethome /home /homes /spawn).\n  enabled: master toggle\n  max-per-player: home limit\n  delay-seconds: countdown (moving cancels)\n  debug: verbose logging\n\n--- team ---\nTeam system: /team opens GUI — create, invite via clickable chat buttons,\nfriendly fire toggle by leader, kick/disband. Persists to osmium-teams.json.\n  enabled: master toggle\n  max-size: members per team\n  invite-timeout-seconds: invite expiry\n  debug: verbose logging\n\n--- scoreboard ---\nCustom sidebar scoreboard with live placeholders ({player} {ping} {tps} {money} ...).\n  enabled: master toggle\n  title: scoreboard title (& color codes)\n  lines: list of lines\n  update-ticks: refresh rate (20 = 1 second)\n\n======================================================================\n  DISCORD & SERVER OPS\n======================================================================\n\n--- discord-webhook ---\nDiscord embed notifications (start/stop, bans, alts, chat filter).\n  enabled: master toggle\n  url: webhook URL\n  ping-on-stop: user IDs to ping on stop\n\n--- discord-bot ---\nFull Discord bot — run the server from Discord with slash commands.\nSetup: /osmium setup in Discord (first runner becomes owner), then\n/osmium perm-add <role> <viewer|helper|mod|admin>.\n  enabled: master toggle (default false)\n  token: bot token — KEEP SECRET, never commit\n  audit-channel-id: channel for action log\n  chat-channel-id: two-way Minecraft <-> Discord chat relay\n\n--- backups ---\nAutomatic zipped backups of worlds + root configs into backups/.\n  enabled: master toggle (default false)\n  interval-minutes: time between backups (min 5)\n  keep: generations to retain\n  directory: output folder\n  worlds: comma-separated world names (blank = auto-detect)\n\n";
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
@@ -107,7 +44,35 @@ public class OsmiumConfig {
         }
 
         config.set("config-version", version);
-        readConfig(OsmiumConfig.class, null);
+
+        // Fixed, documented order — reflection order is JVM-dependent and
+        // scattered the file into a random mess.
+        chunkHiding();
+        raytraceHiding();
+        entityOcclusion();
+        brandEnforcement();
+        identityEnforcement();
+        altBan();
+        chatFilter();
+        grim();
+        rtp();
+        tpa();
+        homes();
+        team();
+        scoreboard();
+        backups();
+        discordWebhook();
+        discordBot();
+
+        try {
+            config.save(CONFIG_FILE);
+        } catch (IOException ex) {
+            Bukkit.getLogger().log(Level.SEVERE, "Could not save osmium.yml", ex);
+        }
+
+        // Bukkit's YAML saver does not preserve insertion order; reorder the
+        // serialized file into the documented layout.
+        reorderYamlFile(CONFIG_FILE);
     }
 
     /**
@@ -500,4 +465,57 @@ public class OsmiumConfig {
         teamMaxSize = getInt("team.max-size", 4);
         teamInviteTimeoutSeconds = getInt("team.invite-timeout-seconds", 60);
     }
+    /**
+     * Rewrites the saved yaml so top-level sections appear in documented order.
+     * Unknown/extra sections are kept at the end; config-version goes last.
+     */
+    private static void reorderYamlFile(File file) {
+        try {
+            List<String> lines = java.nio.file.Files.readAllLines(file.toPath());
+            List<String> preamble = new java.util.ArrayList<>();
+            java.util.LinkedHashMap<String, List<String>> blocks = new java.util.LinkedHashMap<>();
+            List<String> current = null;
+            String currentKey = null;
+            for (String line : lines) {
+                boolean topLevel = !line.isEmpty() && !Character.isWhitespace(line.charAt(0)) && !line.startsWith("#");
+                if (topLevel) {
+                    currentKey = line.split(":")[0].trim();
+                    current = blocks.computeIfAbsent(currentKey, k -> new java.util.ArrayList<>());
+                    current.add(line);
+                } else if (current != null) {
+                    current.add(line);
+                } else {
+                    preamble.add(line);
+                }
+            }
+
+            String[] order = {
+                "chunk-hiding", "raytrace-hiding", "entity-occlusion", "brand-enforcement",
+                "identity-enforcement", "alt-ban", "chat-filter", "grim",
+                "rtp", "tpa", "homes", "team", "scoreboard",
+                "discord-webhook", "discord-bot", "backups"
+            };
+
+            List<String> outText = new java.util.ArrayList<>();
+            for (String h : HEADER.split("\\n")) {
+                if (!h.isBlank()) outText.add("# " + h);
+            }
+            outText.add("");
+            for (String key : order) {
+                List<String> blk = blocks.remove(key);
+                if (blk != null) { outText.addAll(blk); outText.add(""); }
+            }
+            List<String> cv = blocks.get("config-version");
+            blocks.remove("config-version");
+            for (var e2 : blocks.entrySet()) { outText.addAll(e2.getValue()); outText.add(""); }
+            if (cv != null) { outText.addAll(cv); outText.add(""); }
+            while (!outText.isEmpty() && outText.get(outText.size()-1).isBlank()) outText.remove(outText.size()-1);
+
+            java.nio.file.Files.write(file.toPath(), outText);
+        } catch (Exception ex) {
+            Bukkit.getLogger().log(Level.WARNING, "Could not reorder osmium.yml", ex);
+        }
+    }
+
 }
+
