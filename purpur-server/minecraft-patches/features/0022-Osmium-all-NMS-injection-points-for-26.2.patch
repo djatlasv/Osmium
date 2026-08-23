@@ -8,23 +8,25 @@ GrimAC lifecycle, chunk processor, entity hiding, light hiding,
 y-level tracker, scoreboard hooks, RTP command hooks, update checker,
 brand enforcement hooks, team system hooks (command, GUI clicks,
 friendly fire damage cancel), raytrace block hiding + entity occlusion,
-signed chat enforcement, modded known-packs rejection.
+signed chat enforcement, modded known-packs rejection,
+/tpa teleport requests.
 
 diff --gitdiff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index 38bd5b1..4b0fdd4 100644
+index 38bd5b1..d9f2376 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -264,6 +264,8 @@ public class Commands {
+@@ -264,6 +264,9 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
 +        org.osmium.OsmiumRtp.registerCommand(this.dispatcher); // Osmium - /rtp command (always register; enabled check is at execution time)
 +        org.osmium.OsmiumTeam.registerCommand(this.dispatcher); // Osmium - /team command (always register; enabled check is at execution time)
++        org.osmium.OsmiumTpa.registerCommand(this.dispatcher); // Osmium - /tpa /tpaccept /tpdeny
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index d9402a7..2b814ee 100644
+index d9402a7..802cc5c 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
 @@ -650,6 +650,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -43,7 +45,7 @@ index d9402a7..2b814ee 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1896,6 +1898,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1896,6 +1898,13 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
@@ -52,6 +54,7 @@ index d9402a7..2b814ee 100644
 +        org.osmium.OsmiumRtp.tick(this);
 +        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); }
 +        if (org.osmium.OsmiumConfig.teamEnabled) { org.osmium.OsmiumTeam.tick(this); } // Osmium - team invite expiry
++        if (org.osmium.OsmiumConfig.tpaEnabled) { org.osmium.OsmiumTpa.tick(this); } // Osmium - tpa expiry/countdowns
 +        // Osmium end
      }
  
@@ -291,10 +294,10 @@ index 6baa9d2..6588a4b 100644
          this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
      }
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 817ec3f..fbb18af 100644
+index 817ec3f..f06fe41 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2349,6 +2349,13 @@ public class ServerGamePacketListenerImpl
+@@ -2349,6 +2349,14 @@ public class ServerGamePacketListenerImpl
  
      @Override
      public void onDisconnect(final DisconnectionDetails details) {
@@ -303,12 +306,13 @@ index 817ec3f..fbb18af 100644
 +        org.osmium.OsmiumScoreboard.onQuit(this.player.getUUID());
 +        org.osmium.OsmiumRtp.cancel(this.player.getUUID());
 +        org.osmium.OsmiumTeam.cancel(this.player.getUUID()); // Osmium - clear team GUI state and pending invite
++        org.osmium.OsmiumTpa.cancel(this.player.getUUID()); // Osmium - drop tpa requests/pending teleports
 +        org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
 +        // Osmium end
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2691,6 +2698,33 @@ public class ServerGamePacketListenerImpl
+@@ -2691,6 +2699,33 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
@@ -342,7 +346,7 @@ index 817ec3f..fbb18af 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3128,6 +3162,8 @@ public class ServerGamePacketListenerImpl
+@@ -3128,6 +3163,8 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
@@ -351,7 +355,7 @@ index 817ec3f..fbb18af 100644
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3137,6 +3173,13 @@ public class ServerGamePacketListenerImpl
+@@ -3137,6 +3174,13 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
@@ -365,7 +369,7 @@ index 817ec3f..fbb18af 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3862,6 +3905,14 @@ public class ServerGamePacketListenerImpl
+@@ -3862,6 +3906,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();

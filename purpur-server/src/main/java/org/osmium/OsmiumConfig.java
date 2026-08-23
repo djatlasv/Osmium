@@ -228,6 +228,14 @@ public class OsmiumConfig {
         occlusionWorkerThreads = Math.max(1, getInt("raytrace-hiding.worker-threads", 2));
     }
 
+    private static void tpa() {
+        tpaEnabled = getBoolean("tpa.enabled", false);
+        tpaTimeoutSeconds = Math.max(1, getInt("tpa.timeout-seconds", 60));
+        tpaDelaySeconds = Math.max(0, getInt("tpa.delay-seconds", 3));
+        tpaCooldownSeconds = Math.max(0, getInt("tpa.cooldown-seconds", 0));
+        tpaDebug = getBoolean("tpa.debug", false);
+    }
+
     private static void identityEnforcement() {
         signedChatKick = getBoolean("identity-enforcement.signed-chat-kick", false);
         signedChatKickMessage = config.getString("identity-enforcement.signed-chat-kick-message",
@@ -379,6 +387,13 @@ public class OsmiumConfig {
     public static int raytraceSamplesPerBlock = 2;
     public static int raytraceRefreshSeconds = 120;
     public static int occlusionWorkerThreads = 2;
+
+    // /tpa
+    public static boolean tpaEnabled = false;
+    public static int tpaTimeoutSeconds = 60;
+    public static int tpaDelaySeconds = 3;
+    public static int tpaCooldownSeconds = 0;
+    public static boolean tpaDebug = false;
 
     // Signed chat / known packs enforcement
     public static boolean signedChatKick = false;
