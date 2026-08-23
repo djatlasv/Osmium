@@ -228,6 +228,15 @@ public class OsmiumConfig {
         occlusionWorkerThreads = Math.max(1, getInt("raytrace-hiding.worker-threads", 2));
     }
 
+    private static void identityEnforcement() {
+        signedChatKick = getBoolean("identity-enforcement.signed-chat-kick", false);
+        signedChatKickMessage = config.getString("identity-enforcement.signed-chat-kick-message",
+                "Unsigned chat detected. Modified clients that block chat signing are not allowed.");
+        rejectModdedKnownPacks = getBoolean("identity-enforcement.reject-modded-known-packs", false);
+        knownPacksKickMessage = config.getString("identity-enforcement.known-packs-kick-message",
+                "Modified clients are not allowed on this server.");
+    }
+
     private static void entityOcclusion() {
         entityOcclusionEnabled = getBoolean("entity-occlusion.enabled", false);
         entityOcclusionMaxDistance = getInt("entity-occlusion.max-distance", 48);
@@ -370,6 +379,12 @@ public class OsmiumConfig {
     public static int raytraceSamplesPerBlock = 2;
     public static int raytraceRefreshSeconds = 120;
     public static int occlusionWorkerThreads = 2;
+
+    // Signed chat / known packs enforcement
+    public static boolean signedChatKick = false;
+    public static String signedChatKickMessage = "Unsigned chat detected. Modified clients that block chat signing are not allowed.";
+    public static boolean rejectModdedKnownPacks = false;
+    public static String knownPacksKickMessage = "Modified clients are not allowed on this server.";
 
     // Entity occlusion
     public static boolean entityOcclusionEnabled = false;

@@ -7,7 +7,8 @@ Config init, alt tracker, chat filter, discord webhooks,
 GrimAC lifecycle, chunk processor, entity hiding, light hiding,
 y-level tracker, scoreboard hooks, RTP command hooks, update checker,
 brand enforcement hooks, team system hooks (command, GUI clicks,
-friendly fire damage cancel), raytrace block hiding + entity occlusion.
+friendly fire damage cancel), raytrace block hiding + entity occlusion,
+signed chat enforcement, modded known-packs rejection.
 
 diff --gitdiff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
 index 38bd5b1..4b0fdd4 100644
@@ -261,8 +262,36 @@ index 048bbab..b9d2d45 100644
              this.cserver.getMessenger().dispatchIncomingMessage(paperConnection(), identifier.toString(), data);
          } catch (final Exception e) {
              LOGGER.error("Couldn't handle custom payload on channel {}", identifier, e);
+diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index 6baa9d2..6588a4b 100644
+--- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -183,6 +183,23 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+             throw new IllegalStateException("Unexpected response from client: received pack selection, but no negotiation ongoing");
+         }
+ 
++        // Osmium start - reject modded known packs
++        // Genuine vanilla clients report only minecraft:* known packs during the
++        // configuration handshake. Fabric/NeoForge add their own entries here, so
++        // a non-minecraft namespace proves a modded client regardless of what
++        // brand name it reported earlier.
++        if (org.osmium.OsmiumConfig.rejectModdedKnownPacks) {
++            for (net.minecraft.server.packs.repository.KnownPack osmiumPack : packet.knownPacks()) {
++                if (!osmiumPack.isVanilla()) {
++                    LOGGER.info("[Osmium] Rejecting {}: modded known pack {}", this.gameProfile.name(), osmiumPack);
++                    this.disconnect(net.minecraft.network.chat.Component.literal(
++                            org.osmium.OsmiumConfig.knownPacksKickMessage));
++                    return;
++                }
++            }
++        }
++        // Osmium end - reject modded known packs
++
+         this.synchronizeRegistriesTask.handleResponse(packet.knownPacks(), this::send);
+         this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
+     }
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 817ec3f..b0480aa 100644
+index 817ec3f..fbb18af 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -2349,6 +2349,13 @@ public class ServerGamePacketListenerImpl
@@ -279,10 +308,24 @@ index 817ec3f..b0480aa 100644
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2691,6 +2698,19 @@ public class ServerGamePacketListenerImpl
+@@ -2691,6 +2698,33 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
++        // Osmium start - signed chat enforcement
++        // A genuine vanilla client with secure profiles enabled signs every chat
++        // message. Clients that strip signing (privacy/anti-detection mods) send
++        // unsigned chat while claiming to be vanilla — that contradiction is
++        // detectable. Only applies when the client actually has signing keys
++        // (getChatSession() != null), so offline-mode players are never affected.
++        if (org.osmium.OsmiumConfig.signedChatKick
++                && !message.hasSignature()
++                && this.player.getChatSession() != null) {
++            this.disconnect(Component.literal(org.osmium.OsmiumConfig.signedChatKickMessage),
++                    org.bukkit.event.player.PlayerKickEvent.Cause.INVALID_PUBLIC_KEY_SIGNATURE);
++            return;
++        }
++        // Osmium end - signed chat enforcement
 +        // Osmium start - chat filter
 +        String filterMatch = org.osmium.anticheat.OsmiumChatFilter.check(rawMessage);
 +        if (filterMatch != null) {
@@ -299,7 +342,7 @@ index 817ec3f..b0480aa 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3128,6 +3148,8 @@ public class ServerGamePacketListenerImpl
+@@ -3128,6 +3162,8 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
@@ -308,7 +351,7 @@ index 817ec3f..b0480aa 100644
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3137,6 +3159,13 @@ public class ServerGamePacketListenerImpl
+@@ -3137,6 +3173,13 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
@@ -322,7 +365,7 @@ index 817ec3f..b0480aa 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3862,6 +3891,14 @@ public class ServerGamePacketListenerImpl
+@@ -3862,6 +3905,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();
