@@ -57,10 +57,12 @@ gradle.lifecycle.beforeProject {
     val mcVersion = providers.gradleProperty("mcVersion").get().trim()
     val paperVersionChannel = providers.gradleProperty("channel").get().trim()
     val paperBuildNumber = providers.environmentVariable("BUILD_NUMBER").orNull?.trim()?.toInt()
-    val versionString = if (paperBuildNumber == null) {
-        "$mcVersion.local-SNAPSHOT"
-    } else {
-        "$mcVersion.build.$paperBuildNumber-${paperVersionChannel.lowercase()}"
+    // Explicit release version (set `release-version` in gradle.properties for tagged releases)
+    val releaseVersion = providers.gradleProperty("release-version").orNull?.trim()
+    val versionString = when {
+        !releaseVersion.isNullOrBlank() -> releaseVersion
+        paperBuildNumber != null -> "$mcVersion.build.$paperBuildNumber-${paperVersionChannel.lowercase()}"
+        else -> "$mcVersion.local-SNAPSHOT"
     }
     version = versionString
 }
