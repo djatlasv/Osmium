@@ -262,7 +262,8 @@ public class OsmiumConfig {
         brandEnforcementRequiredMods = config.getStringList("brand-enforcement.required-mods");
         config.addDefault("brand-enforcement.required-mods", List.of());
         brandEnforcementBlacklistedMods = config.getStringList("brand-enforcement.blacklisted-mods");
-        config.addDefault("brand-enforcement.blacklisted-mods", List.of());
+        config.addDefault("brand-enforcement.blacklisted-mods", List.of(
+                "krloader", "krypton", "wurst", "meteor-client", "aristois", "meteor_client"));
     }
 
     // -------------------------------------------------------------------------
