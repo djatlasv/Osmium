@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Djatlasv <djatlasv@users.noreply.github.com>
-Date: Sun, 24 Aug 2026 11:00:00 -0600
+Date: Sun, 24 Aug 2026 11:20:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
@@ -42,7 +42,7 @@ index a52f93d..4061384 100644
          }
      }
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index d9402a7..e57dd38 100644
+index d9402a7..94a164d 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
 @@ -258,6 +258,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -69,13 +69,14 @@ index d9402a7..e57dd38 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1896,6 +1899,28 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1896,6 +1899,29 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
 +
 +    // Osmium start - tick processing
 +        org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
++        org.osmium.anticheat.OsmiumOcclusion.tick(this); // Osmium - raytrace visibility + entity occlusion drivers
 +        org.osmium.OsmiumRtp.tick(this);
 +        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); }
 +        if (org.osmium.OsmiumConfig.teamEnabled) { org.osmium.OsmiumTeam.tick(this); } // Osmium - team invite expiry
