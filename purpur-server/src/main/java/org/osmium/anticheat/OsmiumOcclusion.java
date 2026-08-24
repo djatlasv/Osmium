@@ -514,6 +514,8 @@ public final class OsmiumOcclusion {
         // leak stash-finders (StorageESP / chest-cluster scanners) exploit.
         // No LOS check: the client believes the section is solid.
         if (OsmiumConfig.chunkHidingEnabled
+                && !OsmiumConfig.chunkHidingDisableInSpawnDim
+                && !org.osmium.OsmiumSpawnDim.isSpawnDimension(level)
                 && (pos.getY() >> 4) < (OsmiumConfig.chunkHidingYThreshold >> 4)
                 && !OsmiumChunkProcessor.withinProximityReveal(player, pos)) {
             return true;

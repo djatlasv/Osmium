@@ -41,7 +41,12 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     public OsmiumChunkProcessor(ChunkPacketBlockController delegate, Level level) {
         this.delegate = delegate;
-        this.enabled = org.osmium.OsmiumConfig.chunkHidingEnabled;
+        // Spawn dimension exclusion: the hub should render fully — no fake
+        // deepslate, no stripped block entities. Processor is per-Level so
+        // folding this into `enabled` gates every downstream layer.
+        boolean spawnDimExcluded = org.osmium.OsmiumConfig.chunkHidingDisableInSpawnDim
+                && org.osmium.OsmiumSpawnDim.isSpawnDimension(level);
+        this.enabled = org.osmium.OsmiumConfig.chunkHidingEnabled && !spawnDimExcluded;
         this.antiXrayActive = delegate instanceof io.papermc.paper.antixray.ChunkPacketBlockControllerAntiXray;
         this.hideBelow = org.osmium.OsmiumConfig.chunkHidingYThreshold;
         this.proximityRadius = org.osmium.OsmiumConfig.chunkHidingProximityRadius;
