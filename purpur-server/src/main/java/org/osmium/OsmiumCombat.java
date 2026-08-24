@@ -40,19 +40,13 @@ public final class OsmiumCombat {
 
     public static boolean isTagged(UUID uuid, MinecraftServer server) {
         Long until = TAGGED.get(uuid);
-        if (until == null) return false;
-        refreshExpiry(uuid, server);
-        until = TAGGED.get(uuid);
+        // Only tag() slides the expiry — checking must never refresh the timer,
+        // or spamming a blocked tp command would keep the tag alive forever.
         return until != null && until > server.getTickCount();
     }
 
     private static long expiryTick(MinecraftServer server) {
         return server.getTickCount() + Math.max(1, OsmiumConfig.combatDurationSeconds) * 20L;
-    }
-
-    private static void refreshExpiry(UUID uuid, MinecraftServer server) {
-        // Tag refresh on every hit: expiry slides to now + duration
-        TAGGED.computeIfPresent(uuid, (k, v) -> expiryTick(server));
     }
 
     /**
