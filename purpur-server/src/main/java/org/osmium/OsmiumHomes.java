@@ -245,9 +245,11 @@ public class OsmiumHomes {
     private static void executeTeleport(ServerPlayer player, HomePos home) {
         net.minecraft.server.MinecraftServer server = player.level().getServer();
         if (server == null) return;
-        ServerLevel level = server.getLevel(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.DIMENSION,
-                net.minecraft.resources.Identifier.withDefaultNamespace(home.dim())));
+        // dim is stored fully-namespaced ("minecraft:overworld") — tryParse
+        // handles that form; withDefaultNamespace would double-prefix it.
+        net.minecraft.resources.Identifier dimId = net.minecraft.resources.Identifier.tryParse(home.dim());
+        ServerLevel level = dimId == null ? null : server.getLevel(net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.DIMENSION, dimId));
         if (level == null) {
             player.sendSystemMessage(Component.literal(ChatFormatting.RED + "That dimension is not loaded."));
             return;
