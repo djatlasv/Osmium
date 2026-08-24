@@ -55,11 +55,14 @@ public class OsmiumConfig {
         altBan();
         chatFilter();
         grim();
+        spawnDimension();
+        combat();
         rtp();
         tpa();
         homes();
         team();
         scoreboard();
+        recipes();
         backups();
         discordWebhook();
         discordBot();
@@ -228,6 +231,7 @@ public class OsmiumConfig {
 
     private static void spawnDimension() {
         spawnDimensionEnabled = getBoolean("spawn-dimension.enabled", false);
+        config.addDefault("spawn-dimension.name", "spawn");
         spawnDimensionName = config.getString("spawn-dimension.name", "spawn").trim().toLowerCase(java.util.Locale.ROOT);
         if (!spawnDimensionName.matches("[a-z0-9_]+")) {
             Bukkit.getLogger().warning("[Osmium] spawn-dimension.name must be [a-z0-9_] — using 'spawn'");
