@@ -201,8 +201,11 @@ public class OsmiumConfig {
     private static void discordBot() {
         discordBotEnabled = getBoolean("discord-bot.enabled", false);
         discordBotToken = config.getString("discord-bot.token", "");
+        config.addDefault("discord-bot.token", "");
         discordBotAuditChannelId = config.getString("discord-bot.audit-channel-id", "");
+        config.addDefault("discord-bot.audit-channel-id", "");
         discordBotChatChannelId = config.getString("discord-bot.chat-channel-id", "");
+        config.addDefault("discord-bot.chat-channel-id", "");
         if (discordBotChatChannelId != null && !discordBotChatChannelId.isBlank()
                 && (discordBotToken == null || discordBotToken.isBlank())) {
             Bukkit.getLogger().warning("[Osmium] chat-channel-id set but no token — bridge disabled");
@@ -244,7 +247,9 @@ public class OsmiumConfig {
         backupsIntervalMinutes = Math.max(5, getInt("backups.interval-minutes", 60));
         backupsKeep = Math.max(1, getInt("backups.keep", 8));
         backupsDirectory = config.getString("backups.directory", "backups");
+        config.addDefault("backups.directory", backupsDirectory);
         backupsWorlds = config.getString("backups.worlds", "");
+        config.addDefault("backups.worlds", "");
     }
 
     private static void tpa() {
@@ -259,9 +264,11 @@ public class OsmiumConfig {
         signedChatKick = getBoolean("identity-enforcement.signed-chat-kick", false);
         signedChatKickMessage = config.getString("identity-enforcement.signed-chat-kick-message",
                 "Unsigned chat detected. Modified clients that block chat signing are not allowed.");
+        config.addDefault("identity-enforcement.signed-chat-kick-message", signedChatKickMessage);
         rejectModdedKnownPacks = getBoolean("identity-enforcement.reject-modded-known-packs", false);
         knownPacksKickMessage = config.getString("identity-enforcement.known-packs-kick-message",
                 "Modified clients are not allowed on this server.");
+        config.addDefault("identity-enforcement.known-packs-kick-message", knownPacksKickMessage);
     }
 
     private static void entityOcclusion() {
