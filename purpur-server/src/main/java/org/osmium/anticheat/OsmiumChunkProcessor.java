@@ -60,16 +60,47 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             Blocks.DEEPSLATE.defaultBlockState(),
             Blocks.STONE.defaultBlockState(),
             Blocks.TUFF.defaultBlockState(),
-            Blocks.COBBLESTONE.defaultBlockState(),
-            Blocks.COBBLED_DEEPSLATE.defaultBlockState(),
+            Blocks.SMOOTH_BASALT.defaultBlockState(),
             Blocks.ANDESITE.defaultBlockState(),
             Blocks.DIORITE.defaultBlockState(),
             Blocks.GRANITE.defaultBlockState(),
             Blocks.CALCITE.defaultBlockState(),
-            Blocks.SMOOTH_BASALT.defaultBlockState(),
-            Blocks.AMETHYST_BLOCK.defaultBlockState(),
-            Blocks.BUDDING_AMETHYST.defaultBlockState(),
         };
+    }
+
+    /**
+     * Blocks that cheat stash-finders treat as player-placed anomalies when
+     * found below the surface (cobbled/polished deepslate variants are
+     * explicit base-detection signals; amethyst family trips geode scanners).
+     * Never selected as replacement while any natural alternative exists.
+     */
+    private static final java.util.Set<Block> SUSPECT_REPLACEMENTS = java.util.Set.of(
+            Blocks.COBBLED_DEEPSLATE,
+            Blocks.POLISHED_DEEPSLATE,
+            Blocks.DEEPSLATE_BRICKS,
+            Blocks.DEEPSLATE_TILES,
+            Blocks.CHISELED_DEEPSLATE,
+            Blocks.COBBLESTONE,
+            Blocks.MOSSY_COBBLESTONE,
+            Blocks.AMETHYST_BLOCK,
+            Blocks.BUDDING_AMETHYST
+    );
+
+    /**
+     * True if the given position lies in a chunk whose packet this player
+     * receives UNREWRITTEN (inside the XZ proximity reveal radius).
+     */
+    public static boolean withinProximityReveal(ServerPlayer player, BlockPos pos) {
+        int px = player.blockPosition().getX();
+        int pz = player.blockPosition().getZ();
+        int chunkMinX = (pos.getX() >> 4) << 4;
+        int chunkMinZ = (pos.getZ() >> 4) << 4;
+        int nearestX = Math.max(chunkMinX, Math.min(px, chunkMinX + 15));
+        int nearestZ = Math.max(chunkMinZ, Math.min(pz, chunkMinZ + 15));
+        int dx = px - nearestX;
+        int dz = pz - nearestZ;
+        int r = org.osmium.OsmiumConfig.chunkHidingProximityRadius;
+        return dx * dx + dz * dz <= r * r;
     }
 
     @Override
@@ -133,7 +164,8 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             if (replacementState.equals(states[i])) return i;
         }
 
-        // Priority 2: known stone-family fallbacks, in declared order
+        // Priority 2: known natural stone-family fallbacks, in declared order
+        // (declared list is already free of player-associated variants)
         for (BlockState fallback : fallbackStates) {
             if (fallback.equals(replacementState)) continue;
             for (int i = 0; i < size; i++) {
@@ -141,18 +173,20 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             }
         }
 
-        // Priority 3: any solid opaque non-fluid block
+        // Priority 3: any solid opaque non-fluid NATURAL block — skips
+        // player-associated variants stash-finders flag as anomalies.
         for (int i = 0; i < size; i++) {
             BlockState state = states[i];
             if (state != null && !state.isAir()
                     && state.getFluidState().is(Fluids.EMPTY)
+                    && !SUSPECT_REPLACEMENTS.contains(state.getBlock())
                     && state.isSolidRender()) {
                 return i;
             }
         }
 
-        // Priority 4 (last resort): ANY non-air block (even fluids, non-solid).
-        // Hides lava pools, amethyst clusters, etc. — better than leaving gaps
+        // Priority 4 (absolute last resort): ANY non-air block, even
+        // suspicious ones — better a faint statistical anomaly than a hole.
         for (int i = 0; i < size; i++) {
             if (states[i] != null && !states[i].isAir()) return i;
         }

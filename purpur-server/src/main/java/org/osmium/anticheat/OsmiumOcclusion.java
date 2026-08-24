@@ -505,8 +505,21 @@ public final class OsmiumOcclusion {
      * block-entity list is serialized.
      */
     public static boolean shouldHideBlockEntity(ServerLevel level, ServerPlayer player, BlockPos pos) {
-        if (!OsmiumConfig.entityOcclusionEnabled) return false;
+        if (!OsmiumConfig.entityOcclusionEnabled && !OsmiumConfig.chunkHidingEnabled) return false;
         if (player == null || player.level() != level) return false;
+
+        // Chunk-hiding consistency: if this viewer's packet has the block's
+        // section replaced by fake deepslate, the block entity must never
+        // ship either — a container entry inside "solid rock" is exactly the
+        // leak stash-finders (StorageESP / chest-cluster scanners) exploit.
+        // No LOS check: the client believes the section is solid.
+        if (OsmiumConfig.chunkHidingEnabled
+                && (pos.getY() >> 4) < (OsmiumConfig.chunkHidingYThreshold >> 4)
+                && !OsmiumChunkProcessor.withinProximityReveal(player, pos)) {
+            return true;
+        }
+
+        if (!OsmiumConfig.entityOcclusionEnabled) return false;
 
         Vec3 eye = player.getEyePosition();
         double dx = pos.getX() + 0.5 - eye.x;
