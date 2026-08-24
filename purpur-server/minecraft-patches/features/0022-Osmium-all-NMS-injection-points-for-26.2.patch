@@ -1,18 +1,9 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Djatlasv <djatlasv@users.noreply.github.com>
-Date: Sat, 22 Aug 2026 01:30:00 -0600
+Date: Sun, 24 Aug 2026 11:00:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
-Config init, alt tracker, chat filter, discord webhooks,
-GrimAC lifecycle, chunk processor, entity hiding, light hiding,
-y-level tracker, scoreboard hooks, RTP command hooks, update checker,
-brand enforcement hooks, team system hooks (command, GUI clicks,
-friendly fire damage cancel), raytrace block hiding + entity occlusion,
-signed chat enforcement, modded known-packs rejection,
-/tpa teleport requests, block-entity occlusion,
-signed-chat login check, Discord bot lifecycle.
-
-diff --gitdiff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
 index 38bd5b1..d8b79a9 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
@@ -29,16 +20,21 @@ index 38bd5b1..d8b79a9 100644
              JfrCommand.register(this.dispatcher);
          }
 diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
-index a52f93d..dc1e88b 100644
+index a52f93d..4061384 100644
 --- a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
 +++ b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
-@@ -71,6 +71,12 @@ public class ClientboundLevelChunkPacketData {
+@@ -71,6 +71,17 @@ public class ClientboundLevelChunkPacketData {
                  }
              }
              // Paper end - Handle oversized block entities in chunks
 +            // Osmium start - hide occluded block entities
-+            if (org.osmium.anticheat.OsmiumOcclusion.shouldHideBlockEntity(
-+                    (net.minecraft.server.level.ServerLevel) levelChunk.getLevel(), entry.getKey())) {
++            // Player comes from the packet info, NOT the CURRENT_PLAYER
++            // ThreadLocal: getChunkPacketInfo() clears that before this
++            // constructor runs, so the ThreadLocal is always null here.
++            if (chunkPacketInfo instanceof org.osmium.anticheat.OsmiumChunkPacketInfo osmiumInfo
++                    && org.osmium.anticheat.OsmiumOcclusion.shouldHideBlockEntity(
++                        (net.minecraft.server.level.ServerLevel) levelChunk.getLevel(),
++                        osmiumInfo.getPlayer(), entry.getKey())) {
 +                continue;
 +            }
 +            // Osmium end - hide occluded block entities

@@ -500,14 +500,15 @@ public final class OsmiumOcclusion {
      * Block-entity variant of entity occlusion: chests, furnaces, item frames'
      * holders etc. rendered from chunk data get stripped from the packet when
      * terrain blocks all lines of sight to the receiving player.
-     * Called during per-player packet construction (CURRENT_PLAYER set).
+     * The receiving player is passed in from the per-packet chunk info —
+     * the CURRENT_PLAYER ThreadLocal is already cleared by the time the
+     * block-entity list is serialized.
      */
-    public static boolean shouldHideBlockEntity(ServerLevel level, BlockPos pos) {
+    public static boolean shouldHideBlockEntity(ServerLevel level, ServerPlayer player, BlockPos pos) {
         if (!OsmiumConfig.entityOcclusionEnabled) return false;
-        ServerPlayer p = OsmiumChunkPacketInfo.CURRENT_PLAYER.get();
-        if (p == null || p.level() != level) return false;
+        if (player == null || player.level() != level) return false;
 
-        Vec3 eye = p.getEyePosition();
+        Vec3 eye = player.getEyePosition();
         double dx = pos.getX() + 0.5 - eye.x;
         double dy = pos.getY() + 0.5 - eye.y;
         double dz = pos.getZ() + 0.5 - eye.z;
