@@ -209,6 +209,12 @@ public class OsmiumConfig {
         }
     }
 
+    private static void combat() {
+        combatEnabled = getBoolean("combat.enabled", false);
+        combatDurationSeconds = Math.max(3, getInt("combat.duration-seconds", 15));
+        combatActionBar = getBoolean("combat.action-bar", true);
+    }
+
     private static void recipes() {
         recipesEnabled = getBoolean("recipes.enabled", true);
     }
@@ -403,6 +409,11 @@ public class OsmiumConfig {
     public static String discordBotAuditChannelId = "";
     public static String discordBotChatChannelId = "";
 
+    // Combat tag
+    public static boolean combatEnabled = false;
+    public static int combatDurationSeconds = 15;
+    public static boolean combatActionBar = true;
+
     // Custom recipes
     public static boolean recipesEnabled = true;
 
@@ -511,7 +522,7 @@ public class OsmiumConfig {
 
             String[] order = {
                 "chunk-hiding", "raytrace-hiding", "entity-occlusion", "brand-enforcement",
-                "identity-enforcement", "alt-ban", "chat-filter", "grim", "spawn-dimension",
+                "identity-enforcement", "alt-ban", "chat-filter", "grim", "spawn-dimension", "combat",
                 "rtp", "tpa", "homes", "team", "scoreboard", "recipes",
                 "discord-webhook", "discord-bot", "backups"
             };

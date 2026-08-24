@@ -182,6 +182,7 @@ public class OsmiumHomes {
     // ------------------------------------------------------------------
 
     private static void startCountdown(ServerPlayer player, HomePos target, String label) {
+        if (org.osmium.OsmiumCombat.blockTeleport(player)) return;
         UUID uuid = player.getUUID();
         if (PENDING.containsKey(uuid)) {
             player.sendSystemMessage(Component.literal(ChatFormatting.RED + "You already have a teleport in progress!"));
@@ -258,6 +259,10 @@ public class OsmiumHomes {
     }
 
     public static void cancel(UUID playerUuid) {
+        PENDING.remove(playerUuid);
+    }
+    /** Combat-tag support: cancels only the pending countdown teleport. */
+    public static void cancelPendingTeleport(UUID playerUuid) {
         PENDING.remove(playerUuid);
     }
 

@@ -106,6 +106,7 @@ public class OsmiumTpa {
     // ------------------------------------------------------------------
 
     private static void sendRequest(ServerPlayer from, String targetNameRaw) {
+        if (org.osmium.OsmiumCombat.blockTeleport(from)) return;
         MinecraftServer server = from.level().getServer();
         String fromName = from.getGameProfile().name();
 
@@ -183,6 +184,16 @@ public class OsmiumTpa {
                 target.sendSystemMessage(Component.literal("\u00a7cYou have no pending teleport requests."));
                 return;
             }
+        }
+
+        if (accept && org.osmium.OsmiumCombat.blockTeleport(target)) {
+            ServerPlayer declinedBySystem = server.getPlayerList().getPlayer(request.fromUuid());
+            REQUESTS.remove(target.getUUID());
+            if (declinedBySystem != null) {
+                declinedBySystem.sendSystemMessage(Component.literal(
+                        "\u00a7c" + target.getPlainTextName() + " is in combat — request void."));
+            }
+            return;
         }
 
         REQUESTS.remove(target.getUUID());
@@ -301,6 +312,11 @@ public class OsmiumTpa {
                     org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.COMMAND);
             debug(player.getGameProfile().name() + " teleported to " + from.getGameProfile().name());
         }
+    }
+
+    /** Combat-tag support: cancels only the pending countdown teleport. */
+    public static void cancelPendingTeleport(UUID playerUuid) {
+        PENDING.remove(playerUuid);
     }
 
     /** Cleanup on disconnect: drop their incoming request, outgoing presence resolves via expiry. */

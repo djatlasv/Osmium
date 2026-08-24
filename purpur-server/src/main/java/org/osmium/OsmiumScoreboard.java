@@ -138,6 +138,7 @@ public class OsmiumScoreboard {
 
         line = line.replace("{player}", player.getPlainTextName());
         line = line.replace("{ping}", String.valueOf(player.connection.latency()));
+        line = line.replace("{combat}", org.osmium.OsmiumCombat.placeholderFor(player));
         line = line.replace("{online}", String.valueOf(org.bukkit.Bukkit.getOnlinePlayers().size()));
         line = line.replace("{max}", String.valueOf(org.bukkit.Bukkit.getMaxPlayers()));
 

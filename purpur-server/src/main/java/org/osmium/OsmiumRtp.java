@@ -293,6 +293,8 @@ public class OsmiumRtp {
             return;
         }
 
+        if (org.osmium.OsmiumCombat.blockTeleport(player)) return;
+
         // Cooldown starts only when an actual search begins — browsing the
         // GUI or going back a page is never punished.
         int cd = Math.max(0, OsmiumConfig.rtpCooldownSeconds);
@@ -552,6 +554,11 @@ public class OsmiumRtp {
                             + target.getX() + ", " + target.getY() + ", " + target.getZ()));
             debug(name + " teleport complete");
         }
+    }
+
+    /** Combat-tag support: cancels only the pending countdown teleport. */
+    public static void cancelPendingTeleport(UUID playerUuid) {
+        PENDING.remove(playerUuid);
     }
 
     /**
