@@ -82,10 +82,10 @@ To build:
 
 To produce a server-ready jar:
 ```
-./gradlew createMojmapBundlerJar
+./gradlew purpur-server:createBundlerJar
 ```
 
-The compiled jar will be in `purpur-server/build/libs`.
+The runnable jars land in `purpur-server/build/libs` (paperclip jar is the one to launch).
 
 > **Note:** this is a personal project meant for **small servers** only. This is also for me to learn minecraft specific java.
 
