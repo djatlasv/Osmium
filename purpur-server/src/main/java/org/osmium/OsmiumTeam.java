@@ -42,6 +42,8 @@ public class OsmiumTeam {
         UUID teamId;
         UUID leaderUuid;
         String leaderName;
+        /** Optional display name shown as the [tag] in chat. Null until renamed. */
+        String name;
         // When true, teammates can damage each other. Default: protected.
         boolean friendlyFire = false;
         final Set<UUID> memberUuids = new LinkedHashSet<>();
@@ -63,6 +65,7 @@ public class OsmiumTeam {
     private static class TeamJson {
         String id;
         String leader;
+        String name;
         boolean friendlyFire = false;
         Map<String, String> members; // uuid -> name
     }
@@ -81,6 +84,64 @@ public class OsmiumTeam {
     private static final Map<UUID, UUID> GUI_CONFIRM_INVITE = new ConcurrentHashMap<>();      // player -> target
     private static final Map<UUID, UUID> GUI_MANAGE = new ConcurrentHashMap<>();              // player -> target member
     private static final Map<UUID, List<UUID>> GUI_MEMBERS_SLOTS = new ConcurrentHashMap<>(); // player -> ordered member UUIDs
+    /** Players who clicked Rename and must type the new team name in chat. */
+    private static final Set<UUID> CHAT_RENAME = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Chat tag API: the display name of this player's team, or null when the
+     * player has no team or the team has not been named yet.
+     */
+    public static String teamNameOf(UUID playerUuid) {
+        if (!OsmiumConfig.teamEnabled) return null;
+        UUID teamId = playerToTeam.get(playerUuid);
+        if (teamId == null) return null;
+        TeamData team = teams.get(teamId);
+        return team != null ? team.name : null;
+    }
+
+    /**
+     * Consumes a chat message as team-rename input. Called from the chat
+     * pipeline before filtering/broadcast; true = message was consumed.
+     */
+    public static boolean consumeRenameInput(ServerPlayer player, String message) {
+        if (!CHAT_RENAME.remove(player.getUUID())) return false;
+
+        if (message.equalsIgnoreCase("cancel")) {
+            player.sendSystemMessage(Component.literal("\u00a77Team rename cancelled."));
+            return true;
+        }
+
+        String trimmed = message.trim();
+        if (!trimmed.matches("[A-Za-z0-9_\\-]{3,16}")) {
+            player.sendSystemMessage(Component.literal(
+                    "\u00a7cInvalid team name — 3-16 characters, letters/numbers/_/- only. Try again or type 'cancel'."));
+            CHAT_RENAME.add(player.getUUID()); // keep waiting for valid input
+            return true;
+        }
+
+        UUID teamId = playerToTeam.get(player.getUUID());
+        TeamData team = teamId != null ? teams.get(teamId) : null;
+        if (team == null || !team.leaderUuid.equals(player.getUUID())) {
+            player.sendSystemMessage(Component.literal("\u00a7cYou are not a team leader anymore."));
+            return true;
+        }
+
+        String oldName = team.name;
+        team.name = trimmed;
+        save();
+        debug("Renamed team " + teamId + ": " + oldName + " -> " + trimmed);
+
+        MinecraftServer server = player.level().getServer();
+        for (UUID memberUuid : team.memberUuids) {
+            ServerPlayer member = server.getPlayerList().getPlayer(memberUuid);
+            if (member != null) {
+                member.sendSystemMessage(Component.literal(
+                        "\u00a7aTeam renamed to \u00a7f[" + trimmed + "]"));
+                org.osmium.OsmiumChatTags.apply(member);
+            }
+        }
+        return true;
+    }
 
     // Persistence — debounced like the alt tracker: GUI actions mark dirty,
     // one background task writes the file. No main-thread disk I/O.
@@ -156,6 +217,7 @@ public class OsmiumTeam {
                 String leaderName = tj.members != null ? tj.members.getOrDefault(tj.leader, "Unknown") : "Unknown";
                 TeamData team = new TeamData(teamId, leaderId, leaderName);
                 team.friendlyFire = tj.friendlyFire;
+                team.name = tj.name;
                 if (tj.members != null) {
                     for (Map.Entry<String, String> entry : tj.members.entrySet()) {
                         UUID memberUuid = UUID.fromString(entry.getKey());
@@ -198,6 +260,7 @@ public class OsmiumTeam {
             TeamJson tj = new TeamJson();
             tj.id = team.teamId.toString();
             tj.leader = team.leaderUuid.toString();
+            tj.name = team.name;
             tj.friendlyFire = team.friendlyFire;
             tj.members = new LinkedHashMap<>();
             for (UUID memberUuid : team.memberUuids) {
@@ -322,14 +385,15 @@ public class OsmiumTeam {
                 container.setItem(15, noInvite);
             }
         } else {
-            // Has team — show Members, Invite (if leader), Leave/Disband
+            // Has team — show Members, Invite/Rename/FF (if leader), Leave/Disband
             TeamData team = teams.get(teamId);
+            String titleSuffix = team.name != null ? " \u00a77(" + team.name + ")" : "";
 
             ItemStack members = new ItemStack(Items.PLAYER_HEAD);
             members.set(DataComponents.CUSTOM_NAME,
                     Component.literal("\u00a7b\u00a7lMembers \u00a77(" + team.memberUuids.size()
-                            + "/" + OsmiumConfig.teamMaxSize + ")"));
-            container.setItem(11, members);
+                            + "/" + OsmiumConfig.teamMaxSize + ")" + titleSuffix));
+            container.setItem(10, members);
 
             if (team.leaderUuid.equals(uuid)) {
                 // Friendly fire toggle
@@ -341,12 +405,20 @@ public class OsmiumTeam {
                 ff.set(DataComponents.LORE, new ItemLore(List.of(
                         Component.literal("\u00a77Click to " + (team.friendlyFire ? "disable" : "enable")
                                 + " teammate damage"))));
-                container.setItem(12, ff);
+                container.setItem(11, ff);
 
                 ItemStack invite = new ItemStack(Items.EMERALD);
                 invite.set(DataComponents.CUSTOM_NAME,
                         Component.literal("\u00a7a\u00a7lInvite Player"));
-                container.setItem(13, invite);
+                container.setItem(12, invite);
+
+                ItemStack rename = new ItemStack(Items.NAME_TAG);
+                rename.set(DataComponents.CUSTOM_NAME,
+                        Component.literal("\u00a7d\u00a7lRename Team"));
+                rename.set(DataComponents.LORE, new ItemLore(List.of(
+                        Component.literal("\u00a77Current: \u00a7f" + (team.name != null ? team.name : "\u00a78unnamed")),
+                        Component.literal("\u00a77Click, then type the new name in chat"))));
+                container.setItem(13, rename);
             }
 
             ItemStack leave;
@@ -534,6 +606,13 @@ public class OsmiumTeam {
         head.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7l" + memberName));
         container.setItem(11, head);
 
+        ItemStack promote = new ItemStack(Items.GOLDEN_AXE);
+        promote.set(DataComponents.CUSTOM_NAME,
+                Component.literal("\u00a76\u00a7lPromote to Leader"));
+        promote.set(DataComponents.LORE, new ItemLore(List.of(
+                Component.literal("\u00a77Transfers team ownership to " + memberName))));
+        container.setItem(13, promote);
+
         ItemStack kick = new ItemStack(Items.BARRIER);
         kick.set(DataComponents.CUSTOM_NAME,
                 Component.literal("\u00a7c\u00a7lKick from Team"));
@@ -571,7 +650,11 @@ public class OsmiumTeam {
         // Manage member GUI
         if (GUI_MANAGE.containsKey(uuid)) {
             UUID memberUuid = GUI_MANAGE.get(uuid);
-            if (slot == 15) {
+            if (slot == 13) {
+                promoteMember(player, memberUuid);
+                player.closeContainer();
+                openMembersGui(player);
+            } else if (slot == 15) {
                 kickMember(player, memberUuid);
                 player.closeContainer();
                 openMembersGui(player);
@@ -652,7 +735,7 @@ public class OsmiumTeam {
             } else {
                 // Has team
                 TeamData team = teams.get(teamId);
-                if (slot == 12 && team != null && team.leaderUuid.equals(uuid)) {
+                if (slot == 11 && team != null && team.leaderUuid.equals(uuid)) {
                     // Friendly fire toggle (leader only)
                     team.friendlyFire = !team.friendlyFire;
                     save();
@@ -663,14 +746,20 @@ public class OsmiumTeam {
                                     ? "\u00a7cFriendly fire has been ENABLED."
                                     : "\u00a7aFriendly fire has been DISABLED."));
                     openMainGui(player);
-                } else if (slot == 11) {
+                } else if (slot == 10) {
                     // Members
                     player.closeContainer();
                     openMembersGui(player);
-                } else if (slot == 13 && team != null && team.leaderUuid.equals(uuid)) {
+                } else if (slot == 12 && team != null && team.leaderUuid.equals(uuid)) {
                     // Invite (leader only)
                     player.closeContainer();
                     openInviteListGui(player, 0);
+                } else if (slot == 13 && team != null && team.leaderUuid.equals(uuid)) {
+                    // Rename (leader only) — capture next chat message
+                    player.closeContainer();
+                    CHAT_RENAME.add(uuid);
+                    player.sendSystemMessage(Component.literal(
+                            "\u00a7eType the new team name in chat \u00a77(3-16 chars, letters/numbers/_/-)\u00a7e, or type 'cancel'."));
                 } else if (slot == 15) {
                     // Leave or Disband
                     if (team != null && team.leaderUuid.equals(uuid)) {
@@ -707,6 +796,7 @@ public class OsmiumTeam {
     public static void cancel(UUID playerUuid) {
         clearGuiState(playerUuid);
         pendingInvites.remove(playerUuid);
+        CHAT_RENAME.remove(playerUuid);
     }
 
     // ------------------------------------------------------------------
@@ -829,6 +919,7 @@ public class OsmiumTeam {
 
         debug(name + " joined team " + invite.teamId());
         player.sendSystemMessage(Component.literal("\u00a7aYou joined the team!"));
+        org.osmium.OsmiumChatTags.apply(player);
 
         // Notify team members
         MinecraftServer server = player.level().getServer();
@@ -860,6 +951,36 @@ public class OsmiumTeam {
         player.sendSystemMessage(Component.literal("\u00a7cInvite declined."));
     }
 
+    private static void promoteMember(ServerPlayer leader, UUID memberUuid) {
+        UUID teamId = playerToTeam.get(leader.getUUID());
+        TeamData team = teamId != null ? teams.get(teamId) : null;
+
+        if (team == null || !team.leaderUuid.equals(leader.getUUID())) {
+            leader.sendSystemMessage(Component.literal("\u00a7cYou are not the team leader!"));
+            return;
+        }
+
+        if (!team.memberUuids.contains(memberUuid)) {
+            leader.sendSystemMessage(Component.literal("\u00a7cThat player is not on your team."));
+            return;
+        }
+
+        String memberName = team.memberNames.getOrDefault(memberUuid, "Unknown");
+        team.leaderUuid = memberUuid;
+        team.leaderName = memberName;
+        save();
+
+        debug(leader.getGameProfile().name() + " promoted " + memberName + " to team leader");
+        notifyTeam(server(), team, Component.literal(
+                "\u00a76" + memberName + " is now the team leader!"));
+
+        // Leader badge changed for both — refresh chat tags
+        MinecraftServer server = leader.level().getServer();
+        ServerPlayer promoted = server.getPlayerList().getPlayer(memberUuid);
+        if (promoted != null) org.osmium.OsmiumChatTags.apply(promoted);
+        org.osmium.OsmiumChatTags.apply(leader);
+    }
+
     private static void kickMember(ServerPlayer leader, UUID memberUuid) {
         UUID teamId = playerToTeam.get(leader.getUUID());
         TeamData team = teamId != null ? teams.get(teamId) : null;
@@ -889,6 +1010,7 @@ public class OsmiumTeam {
         if (kicked != null) {
             kicked.sendSystemMessage(Component.literal(
                     "\u00a7cYou have been kicked from the team."));
+            org.osmium.OsmiumChatTags.apply(kicked);
         }
     }
 
@@ -910,6 +1032,7 @@ public class OsmiumTeam {
 
         debug(name + " left team " + teamId);
         player.sendSystemMessage(Component.literal("\u00a7cYou left the team."));
+        org.osmium.OsmiumChatTags.apply(player);
 
         // Notify remaining members
         MinecraftServer server = player.level().getServer();
@@ -952,6 +1075,7 @@ public class OsmiumTeam {
         save();
 
         leader.sendSystemMessage(Component.literal("\u00a7cTeam disbanded."));
+        org.osmium.OsmiumChatTags.apply(leader);
     }
 
     // ------------------------------------------------------------------

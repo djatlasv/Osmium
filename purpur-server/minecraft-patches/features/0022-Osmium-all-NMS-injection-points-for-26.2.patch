@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Djatlasv <djatlasv@users.noreply.github.com>
-Date: Sun, 24 Aug 2026 11:20:00 -0600
+Date: Sun, 24 Aug 2026 14:00:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
@@ -371,7 +371,7 @@ index 6baa9d2..3cfc132 100644
          this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
      }
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 817ec3f..5a759ad 100644
+index 817ec3f..e4ecb4c 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -2349,6 +2349,16 @@ public class ServerGamePacketListenerImpl
@@ -391,10 +391,15 @@ index 817ec3f..5a759ad 100644
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2691,6 +2701,35 @@ public class ServerGamePacketListenerImpl
+@@ -2691,6 +2701,40 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
++        // Osmium start - team rename chat capture (consumes next message while renaming)
++        if (org.osmium.OsmiumTeam.consumeRenameInput(this.player, rawMessage)) {
++            return;
++        }
++        // Osmium end - team rename chat capture
 +        // Osmium start - signed chat enforcement
 +        // A genuine vanilla client with secure profiles enabled signs every chat
 +        // message. Clients that strip signing (privacy/anti-detection mods) send
@@ -427,7 +432,7 @@ index 817ec3f..5a759ad 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3128,6 +3167,8 @@ public class ServerGamePacketListenerImpl
+@@ -3128,6 +3172,8 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
@@ -436,7 +441,7 @@ index 817ec3f..5a759ad 100644
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3137,6 +3178,13 @@ public class ServerGamePacketListenerImpl
+@@ -3137,6 +3183,13 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
@@ -450,7 +455,7 @@ index 817ec3f..5a759ad 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3862,6 +3910,14 @@ public class ServerGamePacketListenerImpl
+@@ -3862,6 +3915,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();
@@ -466,10 +471,10 @@ index 817ec3f..5a759ad 100644
          // Paper end - Add PlayerLoadedWorldEvent
          this.clientLoadedTimeoutTimer = 0;
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index 331c781..8c9e9a1 100644
+index 331c781..e07c958 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
-@@ -314,6 +314,75 @@ public abstract class PlayerList {
+@@ -314,6 +314,77 @@ public abstract class PlayerList {
          }
          // Paper end - Configurable player collision
          org.purpurmc.purpur.task.BossBarTask.addToAll(player); // Purpur - Implement TPSBar
@@ -518,6 +523,8 @@ index 331c781..8c9e9a1 100644
 +        // Osmium start - spawn dimension first-join placement
 +        org.osmium.OsmiumSpawnDim.onPlaceNewPlayer(player, this.server);
 +        // Osmium end - spawn dimension first-join placement
++
++        org.osmium.OsmiumChatTags.apply(player); // Osmium - chat tags (team/rank prefixes)
 +
 +        // Osmium start - alt tracker: record join and check for banned alts
 +        if (connection.getRemoteAddress() instanceof java.net.InetSocketAddress inetAddr) {
