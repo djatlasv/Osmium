@@ -68,6 +68,9 @@ public final class OsmiumSpawnDim {
     // Datapack extraction
     // ------------------------------------------------------------------
 
+    /** Bump when the bundled templates change so existing installs get refreshed. */
+    private static final int TEMPLATE_VERSION = 2;
+
     private static void extractDatapack(MinecraftServer server) {
         try {
             ServerLevel overworld = server.overworld();
@@ -76,18 +79,24 @@ public final class OsmiumSpawnDim {
             File packsDir = new File(overworld.getWorld().getName(), "datapacks");
             File target = new File(packsDir, "OsmiumSpawn");
             File marker = new File(target, ".osmium");
-            if (marker.exists()) { extracted = true; return; } // already installed
+            String markerContent = "osmium spawn-dimension template v" + TEMPLATE_VERSION + "\n";
+            if (marker.exists()
+                    && markerContent.equals(Files.readString(marker.toPath(), StandardCharsets.UTF_8))) {
+                extracted = true; return; // current version already installed
+            }
 
             target.mkdirs();
 
             int dpVersion = SharedConstantsMajor();
             String mcmeta = "{\"pack\":{\"pack_format\":" + dpVersion
+                    + ",\"min_format\":" + dpVersion
+                    + ",\"max_format\":" + dpVersion
                     + ",\"description\":\"Osmium spawn dimension\"}}";
             Files.writeString(new File(target, "pack.mcmeta").toPath(), mcmeta, StandardCharsets.UTF_8);
 
             writeResource(target, "data/osmium/dimension_type/spawn.json", DIMENSION_TYPE_JSON);
             writeResource(target, "data/osmium/dimension/spawn.json", DIMENSION_JSON);
-            Files.writeString(marker.toPath(), "managed by Osmium\n", StandardCharsets.UTF_8);
+            Files.writeString(marker.toPath(), markerContent, StandardCharsets.UTF_8);
 
             extracted = true;
             LOG.info("[Osmium] Spawn dimension datapack installed -> {}/datapacks/OsmiumSpawn. Restart required once.",
@@ -117,24 +126,20 @@ public final class OsmiumSpawnDim {
 
     private static final String DIMENSION_TYPE_JSON = """
             {
-              "ultrawarm": false,
-              "natural": true,
-              "piglin_safe": false,
-              "respawn_anchor_works": false,
-              "bed_works": true,
-              "has_raids": false,
-              "has_skylight": true,
-              "has_ceiling": false,
-              "coordinate_scale": 1.0,
               "ambient_light": 0.0,
-              "fixed_time": 6000,
-              "monster_spawn_light_level": 0,
-              "monster_spawn_block_light_limit": 0,
-              "infiniburn": "#minecraft:infiniburn_overworld",
-              "effects": "minecraft:overworld",
-              "min_y": -64,
+              "coordinate_scale": 1.0,
+              "default_clock": "minecraft:overworld",
+              "has_ceiling": false,
+              "has_ender_dragon_fight": false,
+              "has_fixed_time": true,
+              "has_skylight": true,
               "height": 384,
-              "logical_height": 384
+              "infiniburn": "#minecraft:infiniburn_overworld",
+              "logical_height": 384,
+              "min_y": -64,
+              "monster_spawn_block_light_limit": 0,
+              "monster_spawn_light_level": 0,
+              "timelines": "#minecraft:in_overworld"
             }
             """;
 
