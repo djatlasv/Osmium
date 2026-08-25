@@ -392,9 +392,14 @@ public final class OsmiumOcclusion {
 
     /** Periodic refresh: re-enqueue live caches, evict dead ones. Bounded work. */
     private static void refreshCycle(MinecraftServer server) {
-        List<Long> keys;
-        synchronized (visibilityCache) {
-            keys = new ArrayList<>(visibilityCache.keySet());
+        List<Long> keys = new ArrayList<>();
+        // Snapshot under the SAME stripe locks workers mutate through —
+        // a foreign monitor here let iteration race with cachePut and
+        // corrupted fastutil's internal arrays (server crash).
+        for (Object lock : STRIPE_LOCKS) {
+            synchronized (lock) {
+                keys.addAll(visibilityCache.keySet());
+            }
         }
         int enqueued = 0;
         for (long key : keys) {
