@@ -620,7 +620,14 @@ public final class OsmiumOcclusion {
         double dz = pos.getZ() + 0.5 - eye.z;
         double distSq = dx * dx + dy * dy + dz * dz;
         double maxDist = OsmiumConfig.entityOcclusionMaxDistance;
-        if (distSq > maxDist * maxDist) return false;
+        // Default-DENY beyond the confirmed-visible radius (RaycastedAntiESP
+        // model): an unverified distant block entity ships stripped rather
+        // than leaked. Chests/spawners reappear once the player is close
+        // enough for a definitive LOS verdict.
+        if (distSq > maxDist * maxDist) {
+            double beMax = OsmiumConfig.entityOcclusionBeMaxDistance;
+            return beMax <= 0 || distSq > beMax * beMax;
+        }
         if (distSq < 9.0) return false;
 
         return !canSee(level, eye, pos);
