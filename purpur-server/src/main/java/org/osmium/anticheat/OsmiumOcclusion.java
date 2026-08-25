@@ -58,28 +58,20 @@ public final class OsmiumOcclusion {
     // Block occlusion state
     // ------------------------------------------------------------------
 
-    private static final Long2ObjectOpenHashMap<VisibilityData> visibilityCache = new Long2ObjectOpenHashMap<>();
+    // ConcurrentHashMap: worker threads put while the main thread reads,
+    // iterates and clears. The previous striped-lock Long2ObjectOpenHashMap
+    // was unsound (different keys = different locks on ONE map = data race).
+    private static final java.util.concurrent.ConcurrentHashMap<Long, VisibilityData> visibilityCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
-    // Striped locks: 200-player packet traffic hits these constantly; a single
-    // monitor would serialize every chunk send. Stripe by chunk key hash.
-    private static final int STRIPES = 16;
-    private static final Object[] STRIPE_LOCKS = new Object[STRIPES];
-    static {
-        for (int i = 0; i < STRIPES; i++) STRIPE_LOCKS[i] = new Object();
-    }
-    private static Object stripe(long key) {
-        int h = (int) (key ^ (key >>> 32));
-        h ^= h >>> 16;
-        return STRIPE_LOCKS[h & (STRIPES - 1)];
-    }
     private static VisibilityData cacheGet(long key) {
-        synchronized (stripe(key)) { return visibilityCache.get(key); }
+        return visibilityCache.get(key);
     }
     private static void cachePut(long key, VisibilityData data) {
-        synchronized (stripe(key)) { visibilityCache.put(key, data); }
+        visibilityCache.put(key, data);
     }
     private static void cacheRemove(long key) {
-        synchronized (stripe(key)) { visibilityCache.remove(key); }
+        visibilityCache.remove(key);
     }
     private static final ConcurrentLinkedQueue<ChunkJob> dirtyChunks = new ConcurrentLinkedQueue<>();
     /** Chunks whose first visibility data just landed — need a resend to reveal. */
@@ -175,9 +167,7 @@ public final class OsmiumOcclusion {
     /** Config reload hook: force target re-resolution and drop caches. */
     public static void clearCaches() {
         resolvedTargets = null;
-        for (Object lock : STRIPE_LOCKS) {
-            synchronized (lock) { visibilityCache.clear(); }
-        }
+        visibilityCache.clear();
         dirtyChunks.clear();
         QUEUED.clear();
         inFlight.clear();
@@ -243,12 +233,9 @@ public final class OsmiumOcclusion {
      */
     public static void ensureComputed(ServerLevel level, long chunkKey) {
         if (!OsmiumConfig.raytraceHidingEnabled) return;
-        boolean wasReady;
-        synchronized (stripe(chunkKey)) {
-            VisibilityData d = visibilityCache.get(chunkKey);
-            wasReady = d != null && d.ready;
-            if (wasReady) return;
-        }
+        VisibilityData d = visibilityCache.get(chunkKey);
+        boolean wasReady = d != null && d.ready;
+        if (wasReady) return;
         debugLog("[antixray] chunk " + (int) chunkKey + "," + (int) (chunkKey >> 32)
                 + " not ready -> queued (cacheSize=" + visibilityCache.size()
                 + " dirty=" + dirtyChunks.size() + " inFlight=" + inFlight.size() + ")");
@@ -393,14 +380,7 @@ public final class OsmiumOcclusion {
     /** Periodic refresh: re-enqueue live caches, evict dead ones. Bounded work. */
     private static void refreshCycle(MinecraftServer server) {
         List<Long> keys = new ArrayList<>();
-        // Snapshot under the SAME stripe locks workers mutate through —
-        // a foreign monitor here let iteration race with cachePut and
-        // corrupted fastutil's internal arrays (server crash).
-        for (Object lock : STRIPE_LOCKS) {
-            synchronized (lock) {
-                keys.addAll(visibilityCache.keySet());
-            }
-        }
+        keys.addAll(visibilityCache.keySet());
         int enqueued = 0;
         for (long key : keys) {
             if (enqueued >= 256) break;
