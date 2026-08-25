@@ -505,6 +505,19 @@ public final class OsmiumOcclusion {
      * block-entity list is serialized.
      */
     public static boolean shouldHideBlockEntity(ServerLevel level, ServerPlayer player, BlockPos pos) {
+        boolean verdict = shouldHideBlockEntity0(level, player, pos);
+        if (OsmiumConfig.entityOcclusionDebug && net.minecraft.server.MinecraftServer.getServer() != null
+                && net.minecraft.server.MinecraftServer.getServer().getTickCount() % 20 == 0) {
+            double d = Math.sqrt(player.getEyePosition().distanceToSqr(
+                    pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
+            LOGGER.info("[BE-debug] " + pos.toShortString() + " sec=" + (pos.getY() >> 4)
+                    + " viewer=" + player.getGameProfile().name()
+                    + " dist=" + String.format("%.1f", d) + " hide=" + verdict);
+        }
+        return verdict;
+    }
+
+    private static boolean shouldHideBlockEntity0(ServerLevel level, ServerPlayer player, BlockPos pos) {
         if (!OsmiumConfig.entityOcclusionEnabled && !OsmiumConfig.chunkHidingEnabled) return false;
         if (player == null || player.level() != level) return false;
 
@@ -566,24 +579,30 @@ public final class OsmiumOcclusion {
         long nowTick = player.level().getGameTime();
 
         Long2LongOpenHashMap perEntity = entityVerdicts.get(entityKey);
+        long previous = 0;
         if (perEntity != null) {
-            long verdict = perEntity.get(pairKey);
-            if (verdict != 0 && nowTick - (Math.abs(verdict) - 1) < OsmiumConfig.entityOcclusionCheckIntervalTicks) {
-                return verdict < 0;
+            previous = perEntity.get(pairKey);
+            if (previous != 0 && nowTick - (Math.abs(previous) - 1) < OsmiumConfig.entityOcclusionCheckIntervalTicks) {
+                return previous < 0;
             }
         }
 
         // Stale verdict: queue an off-main-thread recompute using our own DDA
-        // walker (loaded chunks only, fails open). Until the fresh verdict
-        // lands the entity stays VISIBLE — never hide on unknown data.
+        // walker (loaded chunks only, fails open). The STALE verdict stays
+        // authoritative until fresh data lands — returning "visible" here
+        // made entities flicker on every interval boundary.
         scheduleTrace(player, entity, pairKey);
-        return false;
+        return previous != 0 && previous < 0;
     }
 
     private static void scheduleTrace(ServerPlayer player, Entity entity, long pairKey) {
-        if (!pendingTraces.add(pairKey)) return;                   // already queued
+        final long entityKey = entity.getUUID().getMostSignificantBits() ^ entity.getUUID().getLeastSignificantBits();
+        // Dedup per player+entity pair (not just player — that starved all
+        // but one entity of traces and amplified flicker).
+        final long traceKey = pairKey ^ (entityKey * 0x9E3779B97F4A7C15L);
+        if (!pendingTraces.add(traceKey)) return;                  // already queued
         if (pendingTraces.size() > MAX_PENDING_TRACES) {           // overload: fail open
-            pendingTraces.remove(pairKey);
+            pendingTraces.remove(traceKey);
             return;
         }
         final ServerLevel level = (ServerLevel) entity.level();
@@ -595,7 +614,6 @@ public final class OsmiumOcclusion {
                 new Vec3(bb.minX + 0.1, midY, bb.minZ + 0.1),
                 new Vec3(bb.maxX - 0.1, midY, bb.maxZ - 0.1),
         };
-        final long entityKey = entity.getUUID().getMostSignificantBits() ^ entity.getUUID().getLeastSignificantBits();
         final long nowTick = level.getGameTime();
 
         try {
@@ -611,11 +629,11 @@ public final class OsmiumOcclusion {
                 } catch (Exception ignored) {
                     // any failure: no verdict stored -> entity stays visible
                 } finally {
-                    pendingTraces.remove(pairKey);
+                    pendingTraces.remove(traceKey);
                 }
             });
         } catch (Exception rejected) {
-            pendingTraces.remove(pairKey);
+            pendingTraces.remove(traceKey);
         }
     }
 

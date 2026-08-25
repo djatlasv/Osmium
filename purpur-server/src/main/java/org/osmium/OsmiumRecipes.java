@@ -219,8 +219,9 @@ public final class OsmiumRecipes {
         container.setItem(45, book);
 
         int containerId = player.nextContainerCounter();
-        ChestMenu menu = ChestMenu.threeRows(containerId, player.getInventory(), container);
-        // 6-row variant: use sixRows if available
+        // 54-slot container needs the 9x6 menu — threeRows only maps 27 slots,
+        // which ghosted every control below row 3 (toggle/save/cancel/grid).
+        ChestMenu menu = ChestMenu.sixRows(containerId, player.getInventory(), container);
         menu.setTitle(Component.literal("\u00a78\u00a7lCustom Recipe Builder"));
 
         player.connection.send(new net.minecraft.network.protocol.game.ClientboundOpenScreenPacket(
