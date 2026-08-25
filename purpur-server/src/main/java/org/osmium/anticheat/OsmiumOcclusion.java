@@ -192,8 +192,35 @@ public final class OsmiumOcclusion {
         if (!OsmiumConfig.raytraceHidingEnabled || targets().isEmpty()) return false;
         VisibilityData data;
         data = cacheGet(chunkKey);
-        if (data == null || !data.ready) return false; // fail open until computed
+        if (data == null) {
+            debugLog("[antixray] lookup chunk " + (int) chunkKey + "," + (int) (chunkKey >> 32)
+                    + ": NO DATA -> visible");
+            return false; // fail open until computed
+        }
+        if (!data.ready) {
+            debugLog("[antixray] lookup chunk " + (int) chunkKey + "," + (int) (chunkKey >> 32)
+                    + ": data NOT READY -> visible");
+            return false;
+        }
         return !data.isSeen(sectionY, packedBlockIndex);
+    }
+
+    private static int countSeen(VisibilityData data) {
+        int n = 0;
+        for (long bits : data.seen) {
+            if (bits != 0) n += Long.bitCount(bits);
+        }
+        return n;
+    }
+
+    /** Debug logging — opt-in via raytrace-hiding.debug, unthrottled. */
+    private static void debugLog(String msg) {
+        if (OsmiumConfig.raytraceDebug) LOGGER.info(msg);
+    }
+
+    /** Public entry for debug logs from the chunk processor. */
+    public static void debugLogPublic(String msg) {
+        debugLog(msg);
     }
 
     /** Marks a chunk dirty for recomputation. Any thread. */
@@ -209,10 +236,15 @@ public final class OsmiumOcclusion {
      */
     public static void ensureComputed(ServerLevel level, long chunkKey) {
         if (!OsmiumConfig.raytraceHidingEnabled) return;
+        boolean wasReady;
         synchronized (stripe(chunkKey)) {
             VisibilityData d = visibilityCache.get(chunkKey);
-            if (d != null && d.ready) return;
+            wasReady = d != null && d.ready;
+            if (wasReady) return;
         }
+        debugLog("[antixray] chunk " + (int) chunkKey + "," + (int) (chunkKey >> 32)
+                + " not ready -> queued (cacheSize=" + visibilityCache.size()
+                + " dirty=" + dirtyChunks.size() + " inFlight=" + inFlight.size() + ")");
         enqueue(level, chunkKey);
     }
 
@@ -287,6 +319,7 @@ public final class OsmiumOcclusion {
             // which is exactly the correct output for far chunks.
             workers().execute(() -> {
                 long key = job.chunkKey();
+                long startNanos = System.nanoTime();
                 try {
                     VisibilityData data;
                     boolean rerun;
@@ -296,6 +329,11 @@ public final class OsmiumOcclusion {
                     } while (rerun);
                     if (data != null) {
                         cachePut(key, data);
+                    }
+                    if (OsmiumConfig.raytraceDebug) {
+                        debugLog("[antixray] computed chunk " + (int) key + "," + (int) (key >> 32)
+                                + " -> " + (data == null ? "NULL (chunk unloaded)" : "ready, seen=" + countSeen(data))
+                                + " in " + (System.nanoTime() - startNanos) / 1_000_000 + "ms");
                     }
                 } catch (Exception e) {
                     LOGGER.error("[Osmium] occlusion compute failed for chunk " + key

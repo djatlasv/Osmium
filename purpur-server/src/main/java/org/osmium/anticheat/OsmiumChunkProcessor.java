@@ -331,12 +331,20 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         LevelChunk chunk = info.getChunk();
         long chunkKey = ((long) chunk.getPos().x() & 0xFFFFFFFFL)
                 | (((long) chunk.getPos().z() & 0xFFFFFFFFL) << 32);
+        boolean debug = org.osmium.OsmiumConfig.raytraceDebug;
         // First time this chunk is sent: queue visibility computation.
         // This packet still fails open; the next one carries hidden ores.
         org.osmium.anticheat.OsmiumOcclusion.ensureComputed(
                 (ServerLevel) chunk.getLevel(), chunkKey);
+        int replaced = 0;
+        int targetEntries = 0;
         byte[] buffer = info.getBuffer();
-        if (buffer == null) return;
+        if (buffer == null) {
+            if (debug) org.osmium.anticheat.OsmiumOcclusion.debugLogPublic(
+                    "[antixray] chunk " + chunk.getPos().x() + "," + chunk.getPos().z()
+                            + ": buffer null -> nothing to rewrite");
+            return;
+        }
 
         Set<Block> targets = org.osmium.anticheat.OsmiumOcclusion.targetBlocks();
 
@@ -386,15 +394,24 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             for (int i = 0; i < 4096; i++) {
                 int original = reader.read();
                 int out = original;
-                if (original < size && targetById[original]
-                        && org.osmium.anticheat.OsmiumOcclusion.shouldHideBlock(
-                                (ServerLevel) chunk.getLevel(), chunkKey, sy, i)) {
-                    out = replacementPaletteId;
+                if (original < size && targetById[original]) {
+                    targetEntries++;
+                    if (org.osmium.anticheat.OsmiumOcclusion.shouldHideBlock(
+                            (ServerLevel) chunk.getLevel(), chunkKey, sy, i)) {
+                        out = replacementPaletteId;
+                        replaced++;
+                    }
                 }
                 writer.write(out);
             }
 
             writer.flush();
+        }
+
+        if (debug) {
+            org.osmium.anticheat.OsmiumOcclusion.debugLogPublic(
+                    "[antixray] packet chunk " + chunk.getPos().x() + "," + chunk.getPos().z()
+                            + ": target-entries=" + targetEntries + " replaced=" + replaced);
         }
     }
 
