@@ -81,6 +81,9 @@ public final class OsmiumOcclusion {
         synchronized (stripe(key)) { visibilityCache.remove(key); }
     }
     private static final ConcurrentLinkedQueue<ChunkJob> dirtyChunks = new ConcurrentLinkedQueue<>();
+    /** Chunks queued but not yet handed to a worker (dedup for enqueue). */
+    private static final Set<Long> QUEUED = ConcurrentHashMap.newKeySet();
+    /** Chunks currently being computed by a worker. */
     private static final Set<Long> inFlight = ConcurrentHashMap.newKeySet();
     /** Keys invalidated while a compute was running: worker re-runs them. */
     private static final Set<Long> invalidatedWhileFlying = ConcurrentHashMap.newKeySet();
@@ -173,6 +176,7 @@ public final class OsmiumOcclusion {
             synchronized (lock) { visibilityCache.clear(); }
         }
         dirtyChunks.clear();
+        QUEUED.clear();
         inFlight.clear();
         pendingTraces.clear();
         entityVerdicts.clear();
@@ -264,15 +268,15 @@ public final class OsmiumOcclusion {
     }
 
     private static void enqueue(ServerLevel level, long chunkKey) {
-        if (dirtyChunks.size() > 4096) return; // bounded backlog
+        if (QUEUED.size() > 4096) return; // bounded backlog
         Long boxed = chunkKey;
-        // If a compute for this key is currently running, remember that its
-        // result will be stale the moment it lands — the worker re-runs it.
-        if (!inFlight.add(boxed)) {
+        if (!QUEUED.add(boxed)) {
+            // already queued (or in flight): remember that its result will be
+            // stale the moment it lands — the worker re-runs it.
             invalidatedWhileFlying.add(boxed);
             return;
         }
-        dirtyChunks.add(new ChunkJob(level, chunkKey));
+        dirtyChunks.add(new ChunkJob(level, boxed));
     }
 
     // ------------------------------------------------------------------
@@ -307,24 +311,27 @@ public final class OsmiumOcclusion {
         }
     }
 
-    /** Submits up to the in-flight cap worth of jobs to the worker pool. */
+    /** Submits up to the per-tick cap worth of jobs to the worker pool. */
     private static void dispatchJobs(MinecraftServer server) {
         int cap = Math.max(1, OsmiumConfig.raytraceChecksPerTick);
-        while (inFlight.size() < cap) {
-            ChunkJob job = dirtyChunks.poll();
-            if (job == null) break;
-
+        int dispatched = 0;
+        ChunkJob job;
+        while (dispatched < cap && (job = dirtyChunks.poll()) != null) {
+            long key = job.chunkKey();
+            QUEUED.remove(key);
+            if (!inFlight.add(key)) continue; // already computing (race)
+            dispatched++;
             // Compute every invalidated chunk — chunks beyond ray range of any
             // player legitimately hide everything (eyes list comes back empty),
             // which is exactly the correct output for far chunks.
+            final ServerLevel level = job.level();
             workers().execute(() -> {
-                long key = job.chunkKey();
                 long startNanos = System.nanoTime();
                 try {
                     VisibilityData data;
                     boolean rerun;
                     do {
-                        data = computeVisibility(job.level(), key);
+                        data = computeVisibility(level, key);
                         rerun = invalidatedWhileFlying.remove(key);
                     } while (rerun);
                     if (data != null) {
@@ -342,7 +349,7 @@ public final class OsmiumOcclusion {
                     inFlight.remove(key);
                     // A last-moment invalidation may have raced past; requeue once.
                     if (invalidatedWhileFlying.remove(key)) {
-                        enqueue(job.level(), key);
+                        enqueue(level, key);
                     }
                 }
 
