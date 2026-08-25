@@ -7,6 +7,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
@@ -81,6 +82,8 @@ public final class OsmiumOcclusion {
         synchronized (stripe(key)) { visibilityCache.remove(key); }
     }
     private static final ConcurrentLinkedQueue<ChunkJob> dirtyChunks = new ConcurrentLinkedQueue<>();
+    /** Chunks whose first visibility data just landed — need a resend to reveal. */
+    private static final ConcurrentLinkedQueue<ChunkJob> newlyReady = new ConcurrentLinkedQueue<>();
     /** Chunks queued but not yet handed to a worker (dedup for enqueue). */
     private static final Set<Long> QUEUED = ConcurrentHashMap.newKeySet();
     /** Chunks currently being computed by a worker. */
@@ -178,6 +181,7 @@ public final class OsmiumOcclusion {
         dirtyChunks.clear();
         QUEUED.clear();
         inFlight.clear();
+        newlyReady.clear();
         pendingTraces.clear();
         entityVerdicts.clear();
     }
@@ -196,15 +200,14 @@ public final class OsmiumOcclusion {
         if (!OsmiumConfig.raytraceHidingEnabled || targets().isEmpty()) return false;
         VisibilityData data;
         data = cacheGet(chunkKey);
-        if (data == null) {
+        // Inverted (RayTraceAntiXray-style) semantics: unknown = HIDDEN.
+        // The packet ships the replacement block until a visibility
+        // computation confirms the block is exposed to a player; the next
+        // resend of this chunk then carries the real block. Never leaks.
+        if (data == null || !data.ready) {
             debugLog("[antixray] lookup chunk " + (int) chunkKey + "," + (int) (chunkKey >> 32)
-                    + ": NO DATA -> visible");
-            return false; // fail open until computed
-        }
-        if (!data.ready) {
-            debugLog("[antixray] lookup chunk " + (int) chunkKey + "," + (int) (chunkKey >> 32)
-                    + ": data NOT READY -> visible");
-            return false;
+                    + ": " + (data == null ? "NO DATA" : "NOT READY") + " -> hidden");
+            return true;
         }
         return !data.isSeen(sectionY, packedBlockIndex);
     }
@@ -303,6 +306,7 @@ public final class OsmiumOcclusion {
                 refreshCycle(server);
             }
             dispatchJobs(server);
+            resendNewlyReady(server);
         }
 
         if (entities && nowTick - lastVerdictSweep >= 20) {
@@ -317,6 +321,7 @@ public final class OsmiumOcclusion {
         int dispatched = 0;
         ChunkJob job;
         while (dispatched < cap && (job = dirtyChunks.poll()) != null) {
+            final ChunkJob readyJob = job;
             long key = job.chunkKey();
             QUEUED.remove(key);
             if (!inFlight.add(key)) continue; // already computing (race)
@@ -336,6 +341,12 @@ public final class OsmiumOcclusion {
                     } while (rerun);
                     if (data != null) {
                         cachePut(key, data);
+                        // First ready data for this chunk: packets already sent
+                        // carried hidden (replacement) blocks. Queue a resend so
+                        // exposed targets get revealed on the next packet.
+                        if (countSeen(data) > 0) {
+                            newlyReady.add(readyJob);
+                        }
                     }
                     if (OsmiumConfig.raytraceDebug) {
                         debugLog("[antixray] computed chunk " + (int) key + "," + (int) (key >> 32)
@@ -354,6 +365,28 @@ public final class OsmiumOcclusion {
                 }
 
             });
+        }
+    }
+
+    /**
+     * Resends chunks whose visibility data just became ready so blocks that
+     * were shipped hidden get revealed to players actually tracking them.
+     * Bounded per tick; main thread only (world access).
+     */
+    private static void resendNewlyReady(MinecraftServer server) {
+        int budget = 16;
+        ChunkJob job;
+        while (budget-- > 0 && (job = newlyReady.poll()) != null) {
+            ServerLevel level = job.level();
+            LevelChunk chunk = level.getChunkSource().getChunkNow(
+                    (int) job.chunkKey(), (int) (job.chunkKey() >> 32));
+            if (chunk == null) continue;
+            for (ServerPlayer p : level.players()) {
+                if (p.getChunkTrackingView().contains(chunk.getPos())) {
+                    net.minecraft.server.network.PlayerChunkSender.sendChunk(
+                            p.connection, level, chunk);
+                }
+            }
         }
     }
 
