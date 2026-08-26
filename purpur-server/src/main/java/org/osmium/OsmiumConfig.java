@@ -193,7 +193,8 @@ public class OsmiumConfig {
         config.addDefault("raytrace-hiding.blocks", List.of(
                 "diamond_ore", "deepslate_diamond_ore", "emerald_ore", "deepslate_emerald_ore",
                 "gold_ore", "deepslate_gold_ore", "iron_ore", "deepslate_iron_ore",
-                "ancient_debris"));
+                "ancient_debris",
+                "chest", "trapped_chest", "ender_chest", "barrel", "shulker_box"));
         raytraceMaxRayDistance = getInt("raytrace-hiding.max-ray-distance", 48);
         raytraceChecksPerTick = getInt("raytrace-hiding.checks-per-tick", 4);
         raytraceSamplesPerBlock = getInt("raytrace-hiding.samples-per-block", 2);

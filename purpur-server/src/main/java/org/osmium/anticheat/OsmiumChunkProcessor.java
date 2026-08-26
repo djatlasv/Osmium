@@ -119,8 +119,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             ClientboundLevelChunkWithLightPacket chunkPacket, LevelChunk chunk) {
         ServerPlayer player = OsmiumChunkPacketInfo.CURRENT_PLAYER.get();
         OsmiumChunkPacketInfo.CURRENT_PLAYER.remove();
-        if (!enabled || player == null) {
-            return delegate.getChunkPacketInfo(chunkPacket, chunk);
+        if (!enabled || player == null) {            return delegate.getChunkPacketInfo(chunkPacket, chunk);
         }
         OsmiumChunkPacketInfo osmiumInfo = new OsmiumChunkPacketInfo(chunkPacket, chunk, player);
         ChunkPacketInfo<BlockState> delegateInfo = delegate.getChunkPacketInfo(chunkPacket, chunk);
@@ -137,9 +136,22 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
             if (!enabled) return;
 
-            applyHiding(chunkPacket, osmiumInfo);
-            applyRaytraceHiding(chunkPacket, osmiumInfo);
-            applyLightHiding(chunkPacket, osmiumInfo);
+            // Paper EM1 obfuscates ASYNCHRONOUSLY (its executor rewrites the
+            // buffer after modifyBlocks returns, right before the packet
+            // flushes). A synchronous block rewrite here would be clobbered.
+            // Instead: register the packet and let the setReady hook apply
+            // our block layers AFTER EM1's final write, still before the
+            // flush. Light data is never touched by EM1 -> stays synchronous.
+            if (!enabled) return;
+            if (antiXrayActive) {
+                if (EM1_PENDING.size() > 2048) EM1_PENDING.clear();
+                EM1_PENDING.put(chunkPacket, new Em1Pending(this, osmiumInfo));
+                applyLightHiding(chunkPacket, osmiumInfo);
+            } else {
+                applyHiding(chunkPacket, osmiumInfo);
+                applyRaytraceHiding(chunkPacket, osmiumInfo);
+                applyLightHiding(chunkPacket, osmiumInfo);
+            }
         } else {
             delegate.modifyBlocks(chunkPacket, chunkPacketInfo);
         }
@@ -273,9 +285,30 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                 if (currentGlobalId == replacementGlobalId) continue; // already the right block
 
                 int currentLen = varIntLen(currentGlobalId);
+
+                // Length-mismatch fallback: a different-length VarInt would
+                // shift every later byte in the buffer, so we can't swap
+                // freely. Instead pick ANY natural stone-family block whose
+                // global id happens to encode to the SAME length — keeps the
+                // section rewritten (no water/air leaks below the threshold)
+                // without rebuilding the packet.
+                int chosenGlobalId = -1;
                 if (currentLen == replacementVarIntLen) {
+                    chosenGlobalId = replacementGlobalId;
+                } else {
+                    for (BlockState fallback : fallbackStates) {
+                        if (fallback.equals(replacementState)) continue;
+                        int gid = Block.BLOCK_STATE_REGISTRY.getId(fallback);
+                        if (gid >= 0 && varIntLen(gid) == currentLen) {
+                            chosenGlobalId = gid;
+                            break;
+                        }
+                    }
+                }
+
+                if (chosenGlobalId >= 0) {
                     int dataArrayIndex = chunkPacketInfo.getIndex(sectionIndex);
-                    writeVarInt(buffer, dataArrayIndex - currentLen, replacementGlobalId);
+                    writeVarInt(buffer, dataArrayIndex - currentLen, chosenGlobalId);
                 }
                 continue;
             }
@@ -317,6 +350,64 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     /** chunkKey -> SharedRewrite */
     private static final java.util.concurrent.ConcurrentHashMap<Long, SharedRewrite> SHARED_REWRITES =
             new java.util.concurrent.ConcurrentHashMap<>();
+
+    // --- Post-antixray composition (EM1 async pipeline) ---
+
+    private record Em1Pending(OsmiumChunkProcessor processor, OsmiumChunkPacketInfo info) {}
+    /** packet -> pending post-EM1 fill. Entries live only until the packet flushes. */
+    private static final java.util.concurrent.ConcurrentHashMap<
+            ClientboundLevelChunkWithLightPacket, Em1Pending> EM1_PENDING =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Called from ClientboundLevelChunkWithLightPacket#setReady(true) — i.e.
+     * by the EM1 worker the moment its obfuscation pass finished, BEFORE the
+     * ready flag publishes the buffer to the connection thread. This is the
+     * only safe point to apply our blanket hiding on top of EM1 output.
+     */
+
+    /**
+     * Re-assert our wrapping when a plugin reflectively replaces the level
+     * controller AFTER our constructor ran. RayTraceAntiXray does exactly
+     * that: it swaps chunkPacketBlockController to its own AntiXray
+     * implementation (final-field mutation), discarding our wrapper and
+     * with it all native layers. Re-wrap with the newcomer as delegate so
+     * composition is restored: RTAX obfuscates -> setReady hook -> our
+     * blanket fill -> flush.
+     */
+    public static void ensureWrapped(net.minecraft.server.MinecraftServer server) {
+        for (net.minecraft.server.level.ServerLevel lvl : server.getAllLevels()) {
+            io.papermc.paper.antixray.ChunkPacketBlockController cur = lvl.chunkPacketBlockController;
+            if (cur instanceof OsmiumChunkProcessor) continue;
+            try {
+                java.lang.reflect.Field f = net.minecraft.world.level.Level.class.getDeclaredField("chunkPacketBlockController");
+                f.setAccessible(true);
+                f.set(lvl, new OsmiumChunkProcessor(cur, lvl));
+                org.bukkit.Bukkit.getLogger().warning("[Osmium] re-wrapped level controller for "
+                        + lvl.dimension().identifier() + " (delegate=" + cur.getClass().getName() + ")");
+            } catch (Exception e) {
+                org.bukkit.Bukkit.getLogger().warning("[Osmium] failed to re-wrap level controller: " + e);
+            }
+        }
+    }
+
+    public static void onPacketReady(ClientboundLevelChunkWithLightPacket packet) {
+        try {
+            Em1Pending pending = EM1_PENDING.remove(packet);
+            if (pending == null) return;
+            // When an external antixray controller owns block rewriting
+            // (Paper EM1 / RayTraceAntiXray), it also owns below-threshold
+            // visibility — painting blanket deepslate here would cover the
+            // reveals it just computed. Light hiding already ran; BE
+            // stripping is handled at ChunkMap level.
+            if (!pending.processor().antiXrayActive) {
+                pending.processor().applyHiding(packet, pending.info());
+                pending.processor().applyRaytraceHiding(packet, pending.info());
+            }
+        } catch (Exception e) {
+            org.bukkit.Bukkit.getLogger().warning("[Osmium] post-antixray fill failed: " + e);
+        }
+    }
 
     /**
      * Raytrace-based selective ore hiding. Unlike applyHiding (which rewrites

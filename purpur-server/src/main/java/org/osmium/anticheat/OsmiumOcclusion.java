@@ -281,6 +281,9 @@ public final class OsmiumOcclusion {
     private static final int MAX_PENDING_TRACES = 128;
 
     public static void tick(MinecraftServer server) {
+        // Cheap per-tick guard: reclaim the controller seat if a plugin
+        // (RayTraceAntiXray) stole it via final-field mutation.
+        OsmiumChunkProcessor.ensureWrapped(server);
         boolean blocks = OsmiumConfig.raytraceHidingEnabled && !targets().isEmpty();
         boolean entities = OsmiumConfig.entityOcclusionEnabled;
         if (!blocks && !entities) return;
@@ -305,6 +308,11 @@ public final class OsmiumOcclusion {
     /** Submits up to the per-tick cap worth of jobs to the worker pool. */
     private static void dispatchJobs(MinecraftServer server) {
         int cap = Math.max(1, OsmiumConfig.raytraceChecksPerTick);
+        // Catch-up burst: a fresh login queues every view chunk at once;
+        // crawling through them at the steady-state rate leaves the player
+        // in fail-closed stone for far too long.
+        if (dirtyChunks.size() > 256) cap = Math.max(cap, 24);
+        else if (dirtyChunks.size() > 128) cap = Math.max(cap, 12);
         int dispatched = 0;
         ChunkJob job;
         while (dispatched < cap && (job = dirtyChunks.poll()) != null) {
@@ -381,9 +389,19 @@ public final class OsmiumOcclusion {
     private static void refreshCycle(MinecraftServer server) {
         List<Long> keys = new ArrayList<>();
         keys.addAll(visibilityCache.keySet());
+        if (keys.isEmpty()) return;
+        // Rotating slice: enqueue a bounded window per cycle, advancing each
+        // time, so every cached chunk is eventually refreshed EVEN under
+        // heavy backlog. A hard skip (or a huge burst enqueue) starved
+        // staleness correction forever: movement-triggered resends then
+        // shipped long-stale "seen" verdicts — ores popping in out of sight.
+        int slice = 48;
+        int totalCycles = Math.max(1, (keys.size() + slice - 1) / slice);
+        long cycle = server.getTickCount() / Math.max(1, OsmiumConfig.raytraceRefreshSeconds * 20L);
+        int offset = (int) ((cycle % totalCycles) * slice);
         int enqueued = 0;
-        for (long key : keys) {
-            if (enqueued >= 256) break;
+        for (int i = 0; i < keys.size() && enqueued < slice; i++) {
+            long key = keys.get((offset + i) % keys.size());
             for (ServerLevel lvl : server.getAllLevels()) {
                 if (lvl.getChunkSource().getChunkNow((int) key, (int) (key >> 32)) != null) {
                     enqueue(lvl, key);
@@ -438,17 +456,23 @@ public final class OsmiumOcclusion {
             return data;
         }
 
-        // Qualifying player eyes: any player within ray distance of the CHUNK
-        // CENTER. Never sample candidates here — a sparse-probe miss would
-        // wrongly mark every block hidden for nearby players.
+        // Qualifying player eyes: any player within ray distance of the
+        // CHUNK BOUNDS (nearest-point distance, not center). Center-based
+        // checks orphaned edge blocks: a player 40m from a target near a
+        // chunk corner is ~51m from center — outside ray range — so the
+        // whole chunk computed "no eyes" and never revealed until the next
+        // refresh cycle. Never sample candidates here — a sparse-probe miss
+        // would wrongly mark every block hidden for nearby players.
         List<Vec3> eyes = new ArrayList<>(4);
         double maxDistSq = sq(OsmiumConfig.raytraceMaxRayDistance);
-        double centerX = (chunk.getPos().x() << 4) + 8;
-        double centerZ = (chunk.getPos().z() << 4) + 8;
+        int chunkMinX = chunk.getPos().x() << 4;
+        int chunkMinZ = chunk.getPos().z() << 4;
         for (ServerPlayer p : level.players()) {
             Vec3 eye = p.getEyePosition();
-            double ddx = centerX - eye.x;
-            double ddz = centerZ - eye.z;
+            double nearestX = Math.max(chunkMinX, Math.min(eye.x, chunkMinX + 16));
+            double nearestZ = Math.max(chunkMinZ, Math.min(eye.z, chunkMinZ + 16));
+            double ddx = nearestX - eye.x;
+            double ddz = nearestZ - eye.z;
             // horizontal check + generous vertical margin
             if (ddx * ddx + ddz * ddz <= maxDistSq) {
                 eyes.add(eye);
@@ -462,7 +486,15 @@ public final class OsmiumOcclusion {
 
         for (BlockPos pos : candidates) {
             for (int e = 0; e < eyes.size(); e++) {
-                if (canSee(level, eyes.get(e), pos)) {
+                Vec3 eye = eyes.get(e);
+                // Hard ray-range cap: eye qualification uses chunk bounds, so
+                // without this a corner-qualified eye could cast rays far
+                // beyond the configured distance diagonally across the chunk.
+                double ddx = pos.getX() + 0.5 - eye.x;
+                double ddy = pos.getY() + 0.5 - eye.y;
+                double ddz = pos.getZ() + 0.5 - eye.z;
+                if (ddx * ddx + ddy * ddy + ddz * ddz > maxDistSq) continue;
+                if (canSee(level, eye, pos)) {
                     data.markSeen(pos.getY() >> 4,
                             ((pos.getY() & 15) << 8) | ((pos.getZ() & 15) << 4) | (pos.getX() & 15));
                     break;
@@ -487,7 +519,7 @@ public final class OsmiumOcclusion {
                 case 2 -> new Vec3(target.getX() + 0.06, target.getY() + 0.94, target.getZ() + 0.06);
                 default -> new Vec3(target.getX() + 0.94, target.getY() + 0.94, target.getZ() + 0.94);
             };
-            if (rayClear(level, eye, t)) return true;
+            if (rayClearConfirm(level, eye, t)) return true;
         }
         return false;
     }
@@ -502,6 +534,20 @@ public final class OsmiumOcclusion {
         return traverse(from, to, (x, y, z) -> {
             BlockState state = level.getBlockStateIfLoaded(new BlockPos(x, y, z));
             if (state == null) return false; // unloaded: fail open
+            return state.isSolidRender();
+        });
+    }
+
+    /**
+     * Visibility variant: unloaded regions count as OPAQUE. A ray crossing
+     * the edge of loaded terrain cannot confirm line of sight — treating
+     * the void as transparent let rays "see" through unloaded chunks and
+     * wrongly mark out-of-sight targets as revealed.
+     */
+    static boolean rayClearConfirm(ServerLevel level, Vec3 from, Vec3 to) {
+        return traverse(from, to, (x, y, z) -> {
+            BlockState state = level.getBlockStateIfLoaded(new BlockPos(x, y, z));
+            if (state == null) return true; // unloaded: cannot confirm LOS
             return state.isSolidRender();
         });
     }
@@ -614,6 +660,22 @@ public final class OsmiumOcclusion {
             return beMax <= 0 || distSq > beMax * beMax;
         }
         if (distSq < 9.0) return false;
+
+        // Unified container verdict: when raytrace-hiding is active, the
+        // container BLOCK itself is a target (chests/barrels/etc. are in the
+        // blocks list). If the shared visibility cache says that block is
+        // hidden — no confirmed LOS for any player — its block entity data
+        // must not ship either. Sending inventory contents (or even the BE
+        // entry) for a block the client sees as stone is exactly the leak
+        // StorageESP-style cheats exploit.
+        if (OsmiumConfig.raytraceHidingEnabled) {
+            long ck = ((long) pos.getX() >> 4 & 0xFFFFFFFFL)
+                    | (((long) pos.getZ() >> 4 & 0xFFFFFFFFL) << 32);
+            ensureComputed(level, ck);
+            int sectionY = pos.getY() >> 4;
+            int packed = ((pos.getY() & 15) << 8) | ((pos.getZ() & 15) << 4) | (pos.getX() & 15);
+            if (shouldHideBlock(level, ck, sectionY, packed)) return true;
+        }
 
         return !canSee(level, eye, pos);
     }

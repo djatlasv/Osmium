@@ -41,6 +41,21 @@ index a52f93d..4061384 100644
              this.blockEntitiesData.add(ClientboundLevelChunkPacketData.BlockEntityInfo.create(entry.getValue()));
          }
      }
+diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
+index a1018e9..ada31a1 100644
+--- a/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
+@@ -26,6 +26,10 @@ public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePa
+     }
+ 
+     public void setReady(final boolean ready) {
++        // Osmium - apply blanket hiding AFTER async anti-xray finished its
++        // buffer writes, BEFORE the ready flag publishes the buffer to the
++        // connection thread. No-op unless an EM1 packet is pending.
++        if (ready) org.osmium.anticheat.OsmiumChunkProcessor.onPacketReady(this);
+         this.ready = ready;
+     }
+     // Paper end - Async-Anti-Xray - Ready flag for the connection, add chunk packet info
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
 index d9402a7..94a164d 100644
 --- a/net/minecraft/server/MinecraftServer.java
