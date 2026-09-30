@@ -28,8 +28,15 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class OsmiumYLevelTracker {
 
-    private static final int QUEUED_CHUNKS_PER_TICK = 4;
+    // Full chunk packets are ~MB each: 4/tick saturated player links
+    // (observed 75-92 chunk packets/s -> 3000ms keepalive ping). 2/tick
+    // halves the worst-case burst while keeping reveal latency acceptable.
+    private static final int QUEUED_CHUNKS_PER_TICK = 2;
     private static final int Y_HYSTERESIS = 4;
+    // A revealed chunk only flips back to hidden after the player moved
+    // this many blocks BEYOND the proximity radius — walking along the
+    // boundary no longer oscillates a column of chunks hidden/revealed.
+    private static final int FLIP_HYSTERESIS = 4;
 
     private static final Map<UUID, PlayerState> states = new ConcurrentHashMap<>();
 
@@ -47,6 +54,10 @@ public class OsmiumYLevelTracker {
         // If not, it was sent with hiding applied (or never resent by us).
         final LongOpenHashSet revealedChunks = new LongOpenHashSet();
         final LongArrayFIFOQueue resendQueue = new LongArrayFIFOQueue();
+        // Dedup for queued resends: the queue must NOT be cleared on
+        // movement ticks — a dropped entry leaks real blocks (its flip state
+        // was already committed). Only teleports (fullScan) clear it.
+        final LongOpenHashSet resendPending = new LongOpenHashSet();
     }
 
     public static void onPlayerTick(ServerPlayer player) {
@@ -66,6 +77,8 @@ public class OsmiumYLevelTracker {
         if (state.dimension != null && state.dimension != dim) {
             state.needsFullScan = true;
             state.revealedChunks.clear();
+            state.resendQueue.clear();
+            state.resendPending.clear();
             state.lastResendY = blockY;
             state.chunkX = chunkX;
             state.chunkZ = chunkZ;
@@ -142,10 +155,18 @@ public class OsmiumYLevelTracker {
                                             int chunkX, int chunkZ, int blockY, int oldBlockY,
                                             int proximityRadius, int thresholdSection,
                                             boolean includeOuter, boolean fullScan) {
-        state.resendQueue.clear();
+        // Only teleports invalidate queued resends; normal movement ticks
+        // must keep pending entries (clearing them leaked real blocks — the
+        // flip state was already committed but the resend never happened).
+        if (fullScan) {
+            state.resendQueue.clear();
+            state.resendPending.clear();
+        }
 
         ServerLevel level = player.level();
         int proxSq = proximityRadius * proximityRadius;
+        int hystSq = (proximityRadius + FLIP_HYSTERESIS)
+                   * (proximityRadius + FLIP_HYSTERESIS);
         int playerBlockX = player.blockPosition().getX();
         int playerBlockZ = player.blockPosition().getZ();
 
@@ -180,8 +201,11 @@ public class OsmiumYLevelTracker {
             int distSq = (playerBlockX - nearX) * (playerBlockX - nearX)
                        + (playerBlockZ - nearZ) * (playerBlockZ - nearZ);
 
-            boolean shouldBeRevealed = distSq <= proxSq;
+            // Flip with hysteresis: reveal immediately when entering the radius,
+            // but only re-hide once beyond radius + FLIP_HYSTERESIS.
             boolean wasRevealed = state.revealedChunks.contains(chunkKey);
+            boolean shouldBeRevealed = distSq <= proxSq
+                    || (wasRevealed && distSq <= hystSq);
 
             if (shouldBeRevealed == wasRevealed) continue; // no change, skip
 
@@ -202,7 +226,12 @@ public class OsmiumYLevelTracker {
                 continue;
             }
 
-            state.resendQueue.enqueue(chunkKey);
+            // Dedup: a chunk may flip back while its flip-send is still pending;
+            // the drain ships the CURRENT state at send time, so one entry
+            // always suffices.
+            if (state.resendPending.add(chunkKey)) {
+                state.resendQueue.enqueue(chunkKey);
+            }
         }
 
         // Always resend own chunk if it wasn't in the changed set but we moved
@@ -232,6 +261,7 @@ public class OsmiumYLevelTracker {
             long chunkKey = state.resendQueue.dequeueLong();
             int cx = (int) chunkKey;
             int cz = (int) (chunkKey >> 32);
+            state.resendPending.remove(chunkKey);
             LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
             if (chunk != null) {
                 PlayerChunkSender.sendChunk(player.connection, level, chunk);
