@@ -20,6 +20,7 @@ import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.minecraft.server.MinecraftServer;
 import org.osmium.OsmiumConfig;
+import org.osmium.OsmiumReport;
 
 import java.awt.Color;
 import java.io.File;
@@ -563,6 +564,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     public void onButtonInteraction(ButtonInteractionEvent e) {
         if (!inBoundGuild(e.getGuild())) { e.reply("This bot is bound to another server.").setEphemeral(true).queue(); return; }
         String id = e.getComponentId();
+        if (id.startsWith("report:")) { handleReportButton(e); return; }
         String[] parts = id.split(":", 2);
         if (!parts[0].equals("act")) { e.reply("Expired.").setEphemeral(true).queue(); return; }
         PendingAction pa = PENDING_ACTIONS.remove(parts[1]);
@@ -604,28 +606,111 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
 
     /** Runs on the main thread: resolves name->NameAndId and applies the ban. */
     private void doBan(String playerName, String reason) {
-        MinecraftServer server = MinecraftServer.getServer();
-        server.execute(() -> {
-            try {
-                var resolved = server.services().nameToIdCache().get(playerName);
-                net.minecraft.server.players.NameAndId nameAndId = resolved.orElse(null);
-                if (nameAndId == null) {
-                    // never seen before: ban by exact name via offline profile
-                    nameAndId = new net.minecraft.server.players.NameAndId(
-                            UUID.nameUUIDFromBytes(("OfflinePlayer:" + playerName).getBytes(StandardCharsets.UTF_8)),
-                            playerName);
-                }
-                var entry = new net.minecraft.server.players.UserBanListEntry(nameAndId, null, "Discord", null, reason);
-                server.getPlayerList().getBans().add(entry);
-                var online = server.getPlayerList().getPlayer(nameAndId.id());
-                if (online != null) {
-                    online.connection.disconnect(net.minecraft.network.chat.Component.literal("Banned: " + reason),
-                            org.bukkit.event.player.PlayerKickEvent.Cause.BANNED);
-                }
-            } catch (Exception ex) {
-                LOGGER.error("Discord ban failed for {}", playerName, ex);
+        OsmiumReport.banPlayer(playerName, null, reason, null, "Discord");
+    }
+
+    // ------------------------------------------------------------------
+    // Player reports (/report -> embed + action buttons)
+    // ------------------------------------------------------------------
+
+    private static TextChannel reportChannel(JDA api) {
+        String id = OsmiumConfig.reportChannelId;
+        if (id == null || id.isBlank()) id = OsmiumConfig.discordBotAuditChannelId;
+        if (id == null || id.isBlank()) return null;
+        return api.getTextChannelById(id.trim());
+    }
+
+    /** Called from the /report command (main thread). Queues the embed + action buttons. */
+    public static boolean pushReport(OsmiumReport.Report r) {
+        JDA api = jda;
+        if (api == null) return false;
+        TextChannel ch = reportChannel(api);
+        if (ch == null) return false;
+        ch.sendMessageEmbeds(reportEmbed(r, null))
+                .addActionRow(
+                        Button.secondary("report:dismiss:" + r.id(), "Dismiss"),
+                        Button.danger("report:timeban:" + r.id(), "Time ban (" + OsmiumConfig.reportTimeBanHours + "h)"),
+                        Button.danger("report:permban:" + r.id(), "Ban"))
+                .queue(ok -> {}, err -> LOGGER.error("Failed to push report {}: {}", r.id(), err.getMessage()));
+        return true;
+    }
+
+    private static MessageEmbed reportEmbed(OsmiumReport.Report r, String statusLine) {
+        EmbedBuilder eb = new EmbedBuilder()
+                .setTitle("New player report")
+                .setColor(new Color(0xE67E22))
+                .addField("Reporter", r.reporterName() + " (`" + r.reporterUuid() + "`)", false)
+                .addField("Reported", r.targetName() + " (`" + r.targetUuid() + "`)", false)
+                .addField("Reason", r.reason(), false)
+                .setFooter("Report " + r.id().toString().substring(0, 8)
+                        + " — <t:" + (r.createdAt() / 1000) + ":R>");
+        if (statusLine != null) eb.setDescription(statusLine);
+        return eb.build();
+    }
+
+    private void handleReportButton(ButtonInteractionEvent e) {
+        String[] parts = e.getComponentId().split(":", 3); // report:<action>:<uuid>
+        UUID reportId = null;
+        if (parts.length == 3) {
+            try { reportId = UUID.fromString(parts[2]); } catch (IllegalArgumentException ignored) {}
+        }
+        if (reportId == null) { e.reply("Malformed report id.").setEphemeral(true).queue(); return; }
+
+        // Re-check permission at click time (roles may have changed) — mod tier
+        boolean allowed = isOwner(e);
+        if (!allowed && e.getMember() != null) {
+            Level best = Level.NONE;
+            for (var role : e.getMember().getRoles()) {
+                String lvlName = store.roles.get(role.getId());
+                if (lvlName == null) continue;
+                Level l = Level.of(lvlName);
+                if (l.rank > best.rank) best = l;
             }
-        });
+            allowed = best.rank >= Level.MOD.rank;
+        }
+        if (!allowed) { e.reply("❌ You need the mod role to handle reports.").setEphemeral(true).queue(); return; }
+
+        OsmiumReport.Report r = OsmiumReport.get(reportId);
+        if (r == null) { e.reply("⌛ This report no longer exists (expired or pruned).").setEphemeral(true).queue(); return; }
+        if (!OsmiumReport.isOpen(r)) {
+            e.reply("This report was already handled by **" + r.resolvedBy() + "**.").setEphemeral(true).queue();
+            return;
+        }
+
+        String actor = e.getUser().getName();
+        String statusLine;
+        switch (parts[1]) {
+            case "dismiss" -> {
+                statusLine = "✅ Dismissed by **" + actor + "**";
+                LOGGER.info("[Discord] user {} -> REPORT {} dismiss {}",
+                        e.getUser().getId(), r.id(), r.targetName());
+            }
+            case "timeban" -> {
+                int hours = Math.max(1, OsmiumConfig.reportTimeBanHours);
+                OsmiumReport.banPlayer(r.targetName(), r.targetUuid(), r.reason(),
+                        new Date(System.currentTimeMillis() + hours * 3600_000L),
+                        "Discord report by " + actor);
+                statusLine = "🔨 **" + r.targetName() + "** banned for " + hours + "h by **" + actor
+                        + "** — " + r.reason();
+                LOGGER.info("[Discord] user {} -> REPORT {} timeban {} ({}h)",
+                        e.getUser().getId(), r.id(), r.targetName(), hours);
+            }
+            case "permban" -> {
+                OsmiumReport.banPlayer(r.targetName(), r.targetUuid(), r.reason(), null,
+                        "Discord report by " + actor);
+                statusLine = "🔨 **" + r.targetName() + "** permanently banned by **" + actor
+                        + "** — " + r.reason();
+                LOGGER.info("[Discord] user {} -> REPORT {} permban {}",
+                        e.getUser().getId(), r.id(), r.targetName());
+            }
+            default -> { e.reply("Unknown action.").setEphemeral(true).queue(); return; }
+        }
+
+        OsmiumReport.Report updated = OsmiumReport.resolve(reportId,
+                parts[1].equals("dismiss") ? "dismissed" : "banned", actor);
+        auditChannel(e.getGuild(), "[Discord] " + actor + " (" + e.getUser().getId() + ") -> report "
+                + parts[1] + " " + r.targetName());
+        e.editMessageEmbeds(reportEmbed(updated, statusLine)).setComponents().queue();
     }
 
     private static void auditSynthetic(String userId, String action) {

@@ -1,0 +1,15 @@
+++++ REJECTED HUNK: 1
+@@ -19,7 +19,11 @@
+ 
+ paperCheckstyle {
+     customJavadocTags = projectCustomJavadocTags
+-    directoriesToSkipFile = layout.projectDirectory.file(".checkstyle/ignored_directories.txt")
++    directoriesToSkipFile = layout.projectDirectory.file("../paper-api/.checkstyle/ignored_directories.txt")
++}
++
++tasks.named<io.papermc.paperweight.checkstyle.tasks.MergeCheckstyleConfigs>("mergeCheckstyleConfigs") {
++    overrideConfigFile.set(layout.projectDirectory.file("../paper-api/.checkstyle/checkstyle.xml"))
+ }
+ 
+ val annotationsVersion = "26.0.2"
+++++ END HUNK

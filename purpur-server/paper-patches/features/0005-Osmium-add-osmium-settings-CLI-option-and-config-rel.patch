@@ -6,10 +6,10 @@ Subject: [PATCH] Osmium: add --osmium-settings CLI option and config reload
 
 
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index ec9dd18d380db6e153dfc704a86b578fc0458eb5..e7bc99e5ad2da422742f871dc2ec07d927dda901 100644
+index 2013bbaf3ddd82aa936bf541ab445e673f05c064..48f3cba5767f0f9cd9d64f42730cd53da914f958 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-@@ -1000,6 +1000,7 @@ public final class CraftServer implements Server {
+@@ -1003,6 +1003,7 @@ public final class CraftServer implements Server {
          org.spigotmc.SpigotConfig.init((File) this.console.options.valueOf("spigot-settings")); // Spigot
          this.console.paperConfigurations.reloadConfigs(this.console);
          org.purpurmc.purpur.PurpurConfig.init((File) console.options.valueOf("purpur-settings")); // Purpur - Purpur config files

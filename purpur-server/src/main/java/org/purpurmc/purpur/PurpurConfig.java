@@ -74,8 +74,8 @@ public class PurpurConfig {
         commands = new HashMap<>();
         commands.put("purpur", new PurpurCommand("purpur"));
 
-        version = getInt("config-version", 48);
-        set("config-version", 48);
+        version = getInt("config-version", 49);
+        set("config-version", 49);
 
         readConfig(PurpurConfig.class, null);
 
@@ -330,7 +330,6 @@ public class PurpurConfig {
     public static boolean enderChestSixRows = false;
     public static boolean enderChestPermissionRows = false;
     public static boolean enderChestPersistHiddenRows = true;
-    public static boolean cryingObsidianValidForPortalFrame = false;
     public static int beeInsideBeeHive = 3;
     public static boolean anvilCumulativeCost = true;
     public static int smoothSnowAccumulationStep = 0;
@@ -375,7 +374,6 @@ public class PurpurConfig {
         org.bukkit.event.inventory.InventoryType.ENDER_CHEST.setDefaultSize(enderChestSixRows ? 54 : 27);
         enderChestPermissionRows = getBoolean("settings.blocks.ender_chest.use-permissions-for-rows", enderChestPermissionRows);
         enderChestPersistHiddenRows = getBoolean("settings.blocks.ender_chest.persist-hidden-rows", enderChestPersistHiddenRows);
-        cryingObsidianValidForPortalFrame = getBoolean("settings.blocks.crying_obsidian.valid-for-portal-frame", cryingObsidianValidForPortalFrame);
         beeInsideBeeHive = getInt("settings.blocks.beehive.max-bees-inside", beeInsideBeeHive);
         anvilCumulativeCost = getBoolean("settings.blocks.anvil.cumulative-cost", anvilCumulativeCost);
         smoothSnowAccumulationStep = getInt("settings.blocks.snow.smooth-accumulation-step", smoothSnowAccumulationStep);
@@ -616,5 +614,10 @@ public class PurpurConfig {
             }
             startupCommands.add(command);
         });
+    }
+
+    public static boolean generateEndVoidRings = false;
+    private static void generateEndVoidRings() {
+        generateEndVoidRings = getBoolean("settings.generate-end-void-rings", generateEndVoidRings);
     }
 }

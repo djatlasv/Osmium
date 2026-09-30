@@ -1,13 +1,14 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Djatlasv <djatlasv@users.noreply.github.com>
-Date: Sun, 24 Aug 2026 14:00:00 -0600
+Date: Wed, 30 Sep 2026 12:00:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
+
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index 38bd5b1..d8b79a9 100644
+index cd88ff57b5fefb41a6ce37239f3a362750a059be..e19711a5855426c2fe40b731611f766ef7fc6a34 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -264,6 +264,11 @@ public class Commands {
+@@ -268,6 +268,12 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
@@ -16,14 +17,15 @@ index 38bd5b1..d8b79a9 100644
 +        org.osmium.OsmiumTpa.registerCommand(this.dispatcher); // Osmium - /tpa /tpaccept /tpdeny
 +        org.osmium.OsmiumHomes.registerCommand(this.dispatcher); // Osmium - /sethome /home /homes /spawn
 +        org.osmium.OsmiumRecipes.registerCommand(this.dispatcher); // Osmium - /customrecipes GUI + reload
++        org.osmium.OsmiumReport.registerCommand(this.dispatcher); // Osmium - /report command (always register; enabled check is at execution time)
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
 diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
-index a52f93d..4061384 100644
+index 06f0088b4bdbd86c5942d523889386a81764a240..5e80c0ec0c07cb1e99b01c54b0b1531d38dd33b4 100644
 --- a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
 +++ b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
-@@ -71,6 +71,17 @@ public class ClientboundLevelChunkPacketData {
+@@ -91,6 +91,17 @@ public class ClientboundLevelChunkPacketData {
                  }
              }
              // Paper end - Handle oversized block entities in chunks
@@ -42,10 +44,10 @@ index a52f93d..4061384 100644
          }
      }
 diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
-index a1018e9..ada31a1 100644
+index 1b83d541378c98e3517904973e3ea4e33098a914..25da64946f241536ac5cde1be9d5a19ee3ae9b56 100644
 --- a/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
 +++ b/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
-@@ -26,6 +26,10 @@ public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePa
+@@ -31,6 +31,10 @@ public record ClientboundLevelChunkWithLightPacket(int x, int z, ClientboundLeve
      }
  
      public void setReady(final boolean ready) {
@@ -53,14 +55,14 @@ index a1018e9..ada31a1 100644
 +        // buffer writes, BEFORE the ready flag publishes the buffer to the
 +        // connection thread. No-op unless an EM1 packet is pending.
 +        if (ready) org.osmium.anticheat.OsmiumChunkProcessor.onPacketReady(this);
-         this.ready = ready;
+         this.chunkData.setReady(ready);
      }
      // Paper end - Async-Anti-Xray - Ready flag for the connection, add chunk packet info
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index d9402a7..94a164d 100644
+index 57650ce5b5268df9cd48dc7761ce0506ee73c306..18d2d86e054200b7788f0a693af3d99371663939 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -258,6 +258,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -255,6 +255,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
      protected final Services services;
      private final NotificationManager notificationManager;
      private final ServerActivityMonitor serverActivityMonitor;
@@ -68,7 +70,7 @@ index d9402a7..94a164d 100644
      private long lastServerStatus;
      private final Thread serverThread;
      private long lastTickNanos = Util.getNanos();
-@@ -650,6 +651,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -643,6 +644,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          }
          // Paper end - Configurable player collision; Handle collideRule team for player collision toggle
          this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.POSTWORLD);
@@ -76,7 +78,7 @@ index d9402a7..94a164d 100644
          this.server.spark.registerCommandBeforePlugins(this.server); // Paper - spark
          this.server.spark.enableAfterPlugins(this.server); // Paper - spark
          io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.setValid(); // Paper - reset invalid state for event fire below
-@@ -1299,6 +1301,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1281,6 +1283,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              // tasks are default scheduled at -1 + delay, and first tick will tick at 1
              final long actualDoneTimeMs = System.currentTimeMillis() - org.bukkit.craftbukkit.Main.BOOT_TIME.toEpochMilli(); // Paper - Improve startup message
              LOGGER.info("Done ({})! For help, type \"help\"", String.format(java.util.Locale.ROOT, "%.3fs", actualDoneTimeMs / 1000.00D)); // Paper - Improve startup message
@@ -84,7 +86,7 @@ index d9402a7..94a164d 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1896,6 +1899,29 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1869,6 +1872,29 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
@@ -115,7 +117,7 @@ index d9402a7..94a164d 100644
  
      // Paper start - per world respawn data
 diff --git a/net/minecraft/server/commands/BanPlayerCommands.java b/net/minecraft/server/commands/BanPlayerCommands.java
-index c87bc86..3970f74 100644
+index c87bc86c57fde9d92e3927bdead5cdaf2e935744..3970f74d9bd66cd63b92908a39657b2e8b783473 100644
 --- a/net/minecraft/server/commands/BanPlayerCommands.java
 +++ b/net/minecraft/server/commands/BanPlayerCommands.java
 @@ -45,6 +45,13 @@ public class BanPlayerCommands {
@@ -133,13 +135,21 @@ index c87bc86..3970f74 100644
                  if (online != null) {
                      online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index 9b19888..0821742 100644
+index 582d8d62026876e25cfbe723ead7309da1bb25ab..c97c5d13ed1eaba1dffe20e40c50bb318b1db357 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
-@@ -244,10 +244,20 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -239,6 +239,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
+         this.paperConfigurations.initializeWorldDefaultsConfiguration(this.registryAccess());
+         // Paper end - initialize global and world-defaults configuration
++        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.init(); } // Osmium - GrimAC (auto-install + tuned configs)
+         this.server.spark.enableEarlyIfRequested(); // Paper - spark
+         // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
+         if (this.convertOldUsers()) {
+@@ -260,6 +261,16 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
          }
          org.purpurmc.purpur.PurpurConfig.registerCommands();
-         // Purpur end - Migrate Setting to reintroduce end void rings
+         // Purpur end - Purpur config files
 +        // Osmium start
 +        org.osmium.OsmiumConfig.init((java.io.File) options.valueOf("osmium-settings"));
 +        org.osmium.OsmiumRtp.initPermission();
@@ -148,16 +158,12 @@ index 9b19888..0821742 100644
 +        org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File("."));
 +        org.osmium.OsmiumTeam.init(new java.io.File("."));
 +        org.osmium.OsmiumHomes.init(new java.io.File("."));
++        org.osmium.OsmiumReport.init(new java.io.File("."));
 +        // Osmium end
-         // Paper start - initialize global and world-defaults configuration
-         this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
-         this.paperConfigurations.initializeWorldDefaultsConfiguration(this.registryAccess());
-         // Paper end - initialize global and world-defaults configuration
-+        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.init(); } // Osmium - GrimAC (after Paper config init)
-         this.server.spark.enableEarlyIfRequested(); // Paper - spark
-         // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
-         if (this.convertOldUsers()) {
-@@ -415,6 +425,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         com.destroystokyo.paper.VersionHistoryManager.INSTANCE.getClass(); // Paper - load version history now
+ 
+         // this.worldData.setGameType(properties.gameMode.get()); // CraftBukkit - moved to world loading
+@@ -406,6 +417,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
          this.saveEverything(false, true, true);
          this.notificationManager().serverStarted();
@@ -167,7 +173,7 @@ index 9b19888..0821742 100644
          return true;
      }
  
-@@ -951,6 +964,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -942,6 +956,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
      @Override
      protected void stopServer() {
@@ -175,12 +181,12 @@ index 9b19888..0821742 100644
 +        org.osmium.anticheat.OsmiumAltTracker.flush(); // Osmium - persist alt tracker data before shutdown
 +        org.osmium.OsmiumTeam.flush(); // Osmium - persist teams before shutdown
 +        org.osmium.anticheat.OsmiumDiscordWebhook.sendServerStop(); // Osmium - discord webhook (sync, before shutdown)
-+        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.stop(); } // Osmium - GrimAC
++        if (org.osmium.OsmiumConfig.grimEnabled) { org.osmium.anticheat.grim.OsmiumGrimLoader.stop(); } // Osmium - GrimAC stop
          this.notificationManager().serverShuttingDown();
          super.stopServer();
          //Util.shutdownExecutors(); // Paper - Improved watchdog support; moved into super
 diff --git a/net/minecraft/server/level/ChunkHolder.java b/net/minecraft/server/level/ChunkHolder.java
-index cd5a325..5be7b9c 100644
+index cd5a325d37f617431ceb568a655701601618198f..5be7b9c41a67db331db6c6aa5b355b416b7d6d8d 100644
 --- a/net/minecraft/server/level/ChunkHolder.java
 +++ b/net/minecraft/server/level/ChunkHolder.java
 @@ -278,10 +278,28 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
@@ -217,10 +223,10 @@ index cd5a325..5be7b9c 100644
  
                  this.skyChangedLightSectionFilter.clear();
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index 7e93614..7ab0e30 100644
+index fd0b9f20fbdd523d51550fd6009b5011e6e7e6e6..a3eae41b19cc70190308d86121eb664f6ea72e76 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
-@@ -1406,6 +1406,24 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+@@ -1435,6 +1435,24 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
                      visibleToPlayer = false;
                  }
                  // CraftBukkit end
@@ -246,18 +252,18 @@ index 7e93614..7ab0e30 100644
                      if (this.seenBy.add(player.connection)) {
                          // Paper start - entity tracking events
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index d1dce39..7cfe335 100644
+index dc29ccc1e642f58317714807e1ac2d53e6ed2f19..f6382fb6a10d76f5f08a09bfb2a2762a4c89ca40 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -732,6 +732,7 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+@@ -739,6 +739,7 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
          }
          // CraftBukkit end
          this.connection.tickClientLoadTimeout();
 +        org.osmium.anticheat.OsmiumYLevelTracker.onPlayerTick(this); // Osmium - y-level hiding chunk resend
          this.gameMode.tick();
          this.wardenSpawnTracker.tick();
-         if (this.invulnerableTime > 0) {
-@@ -1150,6 +1151,9 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+         if (this.damageCooldownTime > 0) {
+@@ -1161,6 +1162,9 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
      // Paper end - Expand PlayerDeathEvent API
      @Override
      public void die(final DamageSource source) {
@@ -267,7 +273,7 @@ index d1dce39..7cfe335 100644
          // this.gameEvent(GameEvent.ENTITY_DIE); // Paper - move below event cancellation check
          boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
          // CraftBukkit start - fire PlayerDeathEvent
-@@ -1325,6 +1329,14 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+@@ -1336,6 +1340,14 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
              }
          }
          // Purpur end - Add boat fall damage config
@@ -282,7 +288,7 @@ index d1dce39..7cfe335 100644
          Entity entity = source.getEntity();
          if (!( // Paper - split the if statement. If below statement is false, hurtServer would not have been evaluated. Return false.
              !(entity instanceof Player player && !this.canHarmPlayer(player))
-@@ -1360,6 +1372,14 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
+@@ -1371,6 +1383,14 @@ public class ServerPlayer extends Player implements ca.spottedleaf.moonrise.patc
          final org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason
      ) {
          RespawnResult result = this.findRespawnPositionAndUseSpawnBlock0(consumeSpawnBlock, postTeleportTransition, respawnReason);
@@ -298,7 +304,7 @@ index d1dce39..7cfe335 100644
      }
  
 diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
-index 948a8a2..0d2ed97 100644
+index 948a8a2b38d8ba3a2ea61cb2c85c3039bb938f2d..0d2ed978a30ba461606152ae5a9e1528f801e193 100644
 --- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
 +++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
 @@ -130,9 +130,26 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
@@ -330,7 +336,7 @@ index 948a8a2..0d2ed97 100644
  
                          for (final ServerPlayer player : players) {
 diff --git a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
-index 048bbab..b9d2d45 100644
+index 048bbab91c4614f8935797b389594c1bdd4542b0..b9d2d45bf8cfbf4eb4d26662a11f54020b729e4b 100644
 --- a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
 @@ -199,6 +199,18 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
@@ -353,7 +359,7 @@ index 048bbab..b9d2d45 100644
          } catch (final Exception e) {
              LOGGER.error("Couldn't handle custom payload on channel {}", identifier, e);
 diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
-index 6baa9d2..3cfc132 100644
+index 6baa9d2a8af7901d47964e6d7ad53ea7963ceeef..3cfc1323dd50ab35745e765a01d910024ec29d92 100644
 --- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 @@ -183,6 +183,28 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
@@ -386,10 +392,10 @@ index 6baa9d2..3cfc132 100644
          this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
      }
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 817ec3f..e4ecb4c 100644
+index 0fcb2e422bfa23fcc9e8cf33658f7abc5a53cfd0..4e378e980bea50fc7bb910e6bc202672b54bfc3a 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2349,6 +2349,16 @@ public class ServerGamePacketListenerImpl
+@@ -2405,6 +2405,16 @@ public class ServerGamePacketListenerImpl
  
      @Override
      public void onDisconnect(final DisconnectionDetails details) {
@@ -406,7 +412,7 @@ index 817ec3f..e4ecb4c 100644
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2691,6 +2701,40 @@ public class ServerGamePacketListenerImpl
+@@ -2747,6 +2757,40 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
@@ -447,7 +453,7 @@ index 817ec3f..e4ecb4c 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3128,6 +3172,8 @@ public class ServerGamePacketListenerImpl
+@@ -3185,6 +3229,8 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
@@ -456,7 +462,7 @@ index 817ec3f..e4ecb4c 100644
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3137,6 +3183,13 @@ public class ServerGamePacketListenerImpl
+@@ -3194,6 +3240,13 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
@@ -470,7 +476,7 @@ index 817ec3f..e4ecb4c 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3862,6 +3915,14 @@ public class ServerGamePacketListenerImpl
+@@ -3921,6 +3974,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();
@@ -486,10 +492,10 @@ index 817ec3f..e4ecb4c 100644
          // Paper end - Add PlayerLoadedWorldEvent
          this.clientLoadedTimeoutTimer = 0;
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index 331c781..e07c958 100644
+index 1fb016f472528cf56c4c43a9c32c175cf22783cd..050bf44893055b49c289de3f022e90415ca0dcae 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
-@@ -314,6 +314,77 @@ public abstract class PlayerList {
+@@ -317,6 +317,77 @@ public abstract class PlayerList {
          }
          // Paper end - Configurable player collision
          org.purpurmc.purpur.task.BossBarTask.addToAll(player); // Purpur - Implement TPSBar
@@ -568,10 +574,10 @@ index 331c781..e07c958 100644
          LOGGER.info(
              "{}[{}] logged in with entity id {} at ([{}]{}, {}, {})", // Paper - add world identifier
 diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
-index bad7d3d..8b5dbd2 100644
+index 3f601105f833677b374e7a8ab1a8120194796a7f..7b6019a41f4d81c1aac4d516b2ac1bfc1bddab82 100644
 --- a/net/minecraft/world/level/Level.java
 +++ b/net/minecraft/world/level/Level.java
-@@ -920,7 +920,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
+@@ -918,7 +918,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
          this.palettedContainerFactory = PalettedContainerFactory.create(registryAccess);
          this.damageSources = new DamageSources(registryAccess);
          this.entityLookup = new ca.spottedleaf.moonrise.patches.chunk_system.level.entity.dfl.DefaultEntityLookup(this); // Paper - rewrite chunk system
@@ -584,10 +590,10 @@ index bad7d3d..8b5dbd2 100644
  
      public int getNextEntityId() {
 diff --git a/net/minecraft/world/level/block/NetherPortalBlock.java b/net/minecraft/world/level/block/NetherPortalBlock.java
-index 0e07cdf..7aec212 100644
+index 2082f98c8cb587af3c2c90f8739f30be4128b00b..1154838a22a3035a3ebc4deb4ef2a9fa741d2bff 100644
 --- a/net/minecraft/world/level/block/NetherPortalBlock.java
 +++ b/net/minecraft/world/level/block/NetherPortalBlock.java
-@@ -145,6 +145,13 @@ public class NetherPortalBlock extends Block implements Portal {
+@@ -138,6 +138,13 @@ public class NetherPortalBlock extends Block implements Portal {
  
      @Override
      public @Nullable TeleportTransition getPortalDestination(final ServerLevel currentLevel, final Entity entity, final BlockPos portalEntryPos) {

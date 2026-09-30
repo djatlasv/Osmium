@@ -1,7 +1,5 @@
 package org.osmium.anticheat;
 
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
@@ -779,9 +777,15 @@ public final class OsmiumOcclusion {
     // Entity occlusion
     // ------------------------------------------------------------------
 
-    /** entityId -> (pairKey -> packed verdict: abs(value)-1 = tick, sign = visible/occluded). */
-    private static final Long2ObjectOpenHashMap<Long2LongOpenHashMap> entityVerdicts =
-            new Long2ObjectOpenHashMap<>();
+    /**
+     * entityId -> (pairKey -> packed verdict: abs(value)-1 = tick, sign =
+     * visible/occluded). Concurrent maps REQUIRED: workers publish verdicts
+     * while the main-thread TTL sweep iterates. The previous fastutil maps
+     * corrupted under that race ("wrapped" null NPE) and hard-crashed the
+     * server tick loop.
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.ConcurrentHashMap<Long, Long>> entityVerdicts =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Returns true when the entity must NOT be tracked for this player
@@ -805,10 +809,11 @@ public final class OsmiumOcclusion {
         long pairKey = player.getUUID().getMostSignificantBits() ^ player.getUUID().getLeastSignificantBits();
         long nowTick = player.level().getGameTime();
 
-        Long2LongOpenHashMap perEntity = entityVerdicts.get(entityKey);
+        java.util.concurrent.ConcurrentHashMap<Long, Long> perEntity = entityVerdicts.get(entityKey);
         long previous = 0;
         if (perEntity != null) {
-            previous = perEntity.get(pairKey);
+            Long boxed = perEntity.get(pairKey);
+            previous = boxed == null ? 0L : boxed;
             if (previous != 0 && nowTick - (Math.abs(previous) - 1) < OsmiumConfig.entityOcclusionCheckIntervalTicks) {
                 return previous < 0;
             }
@@ -851,7 +856,7 @@ public final class OsmiumOcclusion {
                         if (rayClear(level, eye, t)) { visible = true; break; }
                     }
                     boolean occluded = !visible;
-                    entityVerdicts.computeIfAbsent(entityKey, k -> new Long2LongOpenHashMap())
+                    entityVerdicts.computeIfAbsent(entityKey, k -> new java.util.concurrent.ConcurrentHashMap<>())
                             .put(pairKey, (occluded ? -1L : 1L) * (nowTick + 1));
                 } catch (Exception ignored) {
                     // any failure: no verdict stored -> entity stays visible
@@ -867,13 +872,14 @@ public final class OsmiumOcclusion {
     private static void sweepEntityVerdicts(long nowTick) {
         if (entityVerdicts.isEmpty()) return;
         long ttl = OsmiumConfig.entityOcclusionCheckIntervalTicks * 4L + 40L;
-        Iterator<Long2ObjectOpenHashMap.Entry<Long2LongOpenHashMap>> outer =
-                entityVerdicts.long2ObjectEntrySet().iterator();
-        while (outer.hasNext()) {
-            Long2LongOpenHashMap perEntity = outer.next().getValue();
-            perEntity.long2LongEntrySet().removeIf(e -> nowTick - (Math.abs(e.getLongValue()) - 1) > ttl);
-            if (perEntity.isEmpty()) outer.remove();
-        }
+        // Weakly-consistent iteration over concurrent maps: safe against
+        // concurrent worker publishes by design.
+        entityVerdicts.entrySet().removeIf(outer -> {
+            var perEntity = outer.getValue();
+            perEntity.entrySet().removeIf(e ->
+                    nowTick - (Math.abs(e.getValue()) - 1) > ttl);
+            return perEntity.isEmpty();
+        });
     }
 
     /**

@@ -118,14 +118,13 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
     }
 
     @Override
-    public ChunkPacketInfo<BlockState> getChunkPacketInfo(
-            ClientboundLevelChunkWithLightPacket chunkPacket, LevelChunk chunk) {
+    public ChunkPacketInfo<BlockState> getChunkPacketInfo(LevelChunk chunk) {
         ServerPlayer player = OsmiumChunkPacketInfo.CURRENT_PLAYER.get();
         OsmiumChunkPacketInfo.CURRENT_PLAYER.remove();
-        if (!enabled || player == null) {            return delegate.getChunkPacketInfo(chunkPacket, chunk);
+        if (!enabled || player == null) {            return delegate.getChunkPacketInfo(chunk);
         }
-        OsmiumChunkPacketInfo osmiumInfo = new OsmiumChunkPacketInfo(chunkPacket, chunk, player);
-        ChunkPacketInfo<BlockState> delegateInfo = delegate.getChunkPacketInfo(chunkPacket, chunk);
+        OsmiumChunkPacketInfo osmiumInfo = new OsmiumChunkPacketInfo(chunk, player);
+        ChunkPacketInfo<BlockState> delegateInfo = delegate.getChunkPacketInfo(chunk);
         osmiumInfo.setDelegateInfo(delegateInfo);
         return osmiumInfo;
     }
@@ -839,7 +838,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                                    OsmiumChunkPacketInfo info) {
         if (!org.osmium.OsmiumConfig.chunkHidingHideLight) return;
 
-        ClientboundLightUpdatePacketData lightData = chunkPacket.getLightData();
+        ClientboundLightUpdatePacketData lightData = chunkPacket.lightData();
         LevelChunk chunk = info.getChunk();
         int minLightSection = chunk.getMinSectionY() - 1;
         int hideBelowSection = hideBelow >> 4;
@@ -857,9 +856,9 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         int proxSq = proximityRadius * proximityRadius;
         boolean xzNear = xzDistSq <= proxSq;
 
-        zeroHiddenLightSections(lightData.getSkyYMask(), lightData.getSkyUpdates(),
+        zeroHiddenLightSections(lightData.skyYMask(), lightData.skyUpdates(),
                 minLightSection, hideBelowSection, xzNear, playerBlockY, xzDistSq, proxSq);
-        zeroHiddenLightSections(lightData.getBlockYMask(), lightData.getBlockUpdates(),
+        zeroHiddenLightSections(lightData.blockYMask(), lightData.blockUpdates(),
                 minLightSection, hideBelowSection, xzNear, playerBlockY, xzDistSq, proxSq);
     }
 

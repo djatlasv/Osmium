@@ -1,0 +1,26 @@
+++++ REJECTED HUNK: 2
+@@ -22,9 +24,21 @@
+     minecraftVersion = providers.gradleProperty("mcVersion")
+     gitFilePatches = false
+ 
+-    updatingMinecraft {
++    // Purpur start - Rebrand
++    val purpur = forks.register("purpur") {
++        upstream.patchDir("paperServer") {
++            upstreamPath = "paper-server"
++            excludes = setOf("src/minecraft", "patches", "build.gradle.kts")
++            patchesDir = rootDirectory.dir("purpur-server/paper-patches")
++            outputDir = rootDirectory.dir("paper-server")
++        }
++    }
++    activeFork = purpur
++    // Purpur end - Rebrand
++
++    /*updatingMinecraft { // Purpur start - TODO - snapshot - we don't need this
+        //oldPaperCommit = "e5fe71723e2ffde7cc9fafc085ac3bb73e63175e"
+-    }
++    }*/ // Purpur end - TODO - snapshot - we don't need this
+ }
+ 
+ tasks.generateDevelopmentBundle {
+++++ END HUNK

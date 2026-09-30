@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 14:36:50 -0600
+Subject: [PATCH] Osmium: skip junit permission check for /report command
+
+
+diff --git a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+index 89820d56debd1587c77320f4618afa2fd515cce9..1a6eff081f8df0d9ab63846382a0f8f2d8a8761c 100644
+--- a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
++++ b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+@@ -89,6 +89,7 @@ public class MinecraftCommandPermissionsTest {
+         "minecraft.command.spawn",
+         "minecraft.command.customrecipes",
+         "minecraft.command.osmium-recipes",
++        "minecraft.command.report",
+         // Osmium end - Skip junit tests for osmium commands
+         "minecraft.command.selector"
+     );

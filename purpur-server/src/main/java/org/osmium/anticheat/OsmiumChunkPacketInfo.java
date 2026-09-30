@@ -13,11 +13,14 @@ public class OsmiumChunkPacketInfo extends ChunkPacketInfo<BlockState> {
     private final ServerPlayer player;
     private ChunkPacketInfo<BlockState> delegateInfo;
 
-    public OsmiumChunkPacketInfo(ClientboundLevelChunkWithLightPacket chunkPacket,
-                                  LevelChunk chunk,
-                                  ServerPlayer player) {
-        super(chunkPacket, chunk);
+    public OsmiumChunkPacketInfo(LevelChunk chunk, ServerPlayer player) {
+        super(chunk);
         this.player = player;
+    }
+
+    @Override
+    public void setChunkPacket(ClientboundLevelChunkWithLightPacket chunkPacket) {
+        super.setChunkPacket(chunkPacket);
     }
 
     public ServerPlayer getPlayer() {

@@ -52,4 +52,4 @@
 +
      @Override
      public Collection<GeneratedStructure> getStructures(int x, int z) {
-         return this.getStructures(x, z, struct -> true);
+         return this.getStructures(x, z, _ -> true);

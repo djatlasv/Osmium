@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.*;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.serialization.JsonOps;
+import net.minecraft.core.Holder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.component.DataComponentPatch;
@@ -95,9 +96,9 @@ public final class OsmiumRecipes {
                     ResourceKey<Recipe<?>> key = ResourceKey.create(Registries.RECIPE,
                             Identifier.fromNamespaceAndPath("osmium", fileName));
                     var ops = server.registryAccess().createSerializationContext(JsonOps.INSTANCE);
-                    Recipe<?> recipe = Recipe.CODEC.parse(ops, json)
+                    Holder<Recipe<?>> recipeHolder = Recipe.CODEC.parse(ops, json)
                             .getOrThrow(s -> new RuntimeException(s));
-                    manager.addRecipe(new RecipeHolder<>(key, recipe));
+                    manager.addRecipe(new RecipeHolder<>(key, recipeHolder.value()));
                     LOADED_CUSTOM.add(key);
                     added++;
                 } catch (Exception ex) {
