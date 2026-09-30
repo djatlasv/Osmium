@@ -210,6 +210,9 @@ public final class OsmiumOcclusion {
         // Cheap per-tick guard: reclaim the controller seat if a plugin
         // (RayTraceAntiXray) stole it via final-field mutation.
         OsmiumChunkProcessor.ensureWrapped(server);
+        // Latency warnings piggyback this per-tick driver (patch-hook
+        // cleanup is a follow-up); runs before the feature gates below.
+        OsmiumLatencyWarn.tick(server);
         boolean blocks = OsmiumConfig.raytraceHidingEnabled && !targets().isEmpty();
         boolean entities = OsmiumConfig.entityOcclusionEnabled;
         if (!blocks && !entities) return;
