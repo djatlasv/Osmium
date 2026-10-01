@@ -131,7 +131,11 @@ public final class OsmiumOcclusion {
         for (BlockPos pos : candidates) {
             cc.blocks.put(pos, Boolean.TRUE);
         }
-        pd.chunks.put(key, cc);
+        ChunkCandidates old = pd.chunks.put(key, cc);
+        if (OsmiumConfig.raytraceDebug && old != null && !old.blocks.isEmpty()) {
+            debugLog("[antixray] re-registered chunk " + cx + "," + cz
+                    + " (old=" + old.blocks.size() + " new=" + cc.blocks.size() + ")");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -285,15 +289,27 @@ public final class OsmiumOcclusion {
         }
     }
 
-    /** Slow cleanup: candidates for chunks the player no longer tracks. */
+    /** Slow cleanup: candidates for chunks the player no longer tracks.
+     *  Distance-based: 26.3's chunk system no longer populates
+     *  ServerPlayer.chunkTrackingView (only ever set to EMPTY), so the old
+     *  tracking-view check pruned EVERY set 1s after registration — targets
+     *  stayed hidden until the next chunk resend. Candidate sets are also
+     *  replaced wholesale on resend, so this only cleans up moved-away
+     *  chunks that stopped being resent. */
     private static void prunePeriodically(MinecraftServer server) {
         if (server.getTickCount() % 20 != 0) return;
+        int maxDist = server.getPlayerList().getViewDistance() + 2;
+        long maxDistSq = (long) maxDist * maxDist;
         for (PlayerData pd : playerData.values()) {
             ServerPlayer p = pd.player;
+            int px = p.blockPosition().getX() >> 4;
+            int pz = p.blockPosition().getZ() >> 4;
             pd.chunks.entrySet().removeIf(e -> {
                 ChunkCandidates cc = e.getValue();
-                return cc.blocks.isEmpty()
-                        || !p.getChunkTrackingView().contains(new net.minecraft.world.level.ChunkPos(cc.chunkX, cc.chunkZ));
+                if (cc.blocks.isEmpty()) return true;
+                int dx = cc.chunkX - px;
+                int dz = cc.chunkZ - pz;
+                return (long) dx * dx + (long) dz * dz > maxDistSq;
             });
         }
     }
@@ -321,6 +337,8 @@ public final class OsmiumOcclusion {
         OcclusionReader reader = new OcclusionReader(level);
         int traced = 0;
         int revealed = 0;
+        int hiddenLogged = 0;
+        int surfaceTraced = 0;
 
         for (ChunkCandidates cc : pd.chunks.values()) {
             if (cc.chunkX < chunkXMin || cc.chunkX > chunkXMax
@@ -340,10 +358,17 @@ public final class OsmiumOcclusion {
                 double distSq = dX * dX + dY * dY + dZ * dZ;
                 if (distSq > traceDistanceSq) continue;
                 traced++;
+                if (y >= 55) surfaceTraced++;
                 if (isVisible(reader, x, y, z, eyeX, eyeY, eyeZ, lookX, lookY, lookZ)) {
                     it.remove();
                     pd.results.add(new Result(cc, pos));
                     revealed++;
+                } else if (y >= 55 && OsmiumConfig.raytraceDebug && hiddenLogged < 8) {
+                    hiddenLogged++;
+                    debugLog("[antixray] hidden-surface " + x + "," + y + "," + z
+                            + " eye=" + Math.round(eyeX) + "," + Math.round(eyeY) + "," + Math.round(eyeZ)
+                            + " look=" + Math.round(lookX * 100) / 100.0 + "," + Math.round(lookY * 100) / 100.0 + "," + Math.round(lookZ * 100) / 100.0
+                            + (debugFrustum ? " FRUSTUM" : " occluder@" + debugOccX + "," + debugOccY + "," + debugOccZ));
                 }
             }
             if (cc.blocks.isEmpty()) {
@@ -353,7 +378,8 @@ public final class OsmiumOcclusion {
 
         if ((traced > 0 || revealed > 0) && OsmiumConfig.raytraceDebug) {
             debugLog("[antixray] traced player " + pd.player.getGameProfile().name()
-                    + ": candidates=" + traced + " revealed=" + revealed);
+                    + ": candidates=" + traced + " surface=" + surfaceTraced
+                    + " revealed=" + revealed);
         }
     }
 
@@ -381,8 +407,10 @@ public final class OsmiumOcclusion {
         // Frustum cull (RTAX): reject if the block is behind the view plane.
         // RTAX note: should really use (diff - sqrt(3)/2 * dir) * dir.
         if ((diffX - lookX) * lookX + (diffY - lookY) * lookY + (diffZ - lookZ) * lookZ > 0.0) {
+            debugFrustum = true;
             return false;
         }
+        debugFrustum = false;
 
         double dist = Math.sqrt(distSq);
         VoxelWalker walker = new VoxelWalker(x, y, z, centerX, centerY, centerZ,
@@ -391,11 +419,18 @@ public final class OsmiumOcclusion {
         while ((ray = walker.calculateNext()) != null) {
             if (reader.isOccluding(ray[0], ray[1], ray[2])
                     && checkNearbyBlocks(x, y, z, ray, diffX, diffY, diffZ, reader)) {
+                debugOccX = ray[0];
+                debugOccY = ray[1];
+                debugOccZ = ray[2];
                 return false;
             }
         }
         return true;
     }
+
+    // Debug-only verdict capture for the trace loop (raytrace-hiding.debug).
+    static boolean debugFrustum;
+    static int debugOccX, debugOccY, debugOccZ;
 
     /**
      * RTAX checkNearbyBlocks port (MIT, © stonar96): for an occluding voxel
@@ -990,6 +1025,9 @@ public final class OsmiumOcclusion {
         int targetX = (int) Math.floor(to.x);
         int targetY = (int) Math.floor(to.y);
         int targetZ = (int) Math.floor(to.z);
+
+        // Start voxel == target voxel: nothing lies between them.
+        if (x == targetX && y == targetY && z == targetZ) return true;
 
         int steps = (int) Math.ceil(dist) + 1;
         BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();

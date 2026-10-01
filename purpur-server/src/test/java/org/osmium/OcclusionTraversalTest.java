@@ -18,6 +18,11 @@ public class OcclusionTraversalTest {
 
     private static final Set<Long> OPAQUE = new HashSet<>();
 
+    @org.junit.jupiter.api.BeforeEach
+    public void clearOpacity() {
+        OPAQUE.clear(); // tests share the static set — isolation per test
+    }
+
     private static void wall(int x, int y, int z) { OPAQUE.add(key(x, y, z)); }
     private static long key(int x, int y, int z) {
         return ((long) x & 0xFFFFF) << 42 | ((long) z & 0xFFFFF) << 21 | (long) y & 0x1FFFFF;

@@ -21,6 +21,11 @@ public class OsmiumChunkPacketInfo extends ChunkPacketInfo<BlockState> {
     @Override
     public void setChunkPacket(ClientboundLevelChunkWithLightPacket chunkPacket) {
         super.setChunkPacket(chunkPacket);
+        // 26.3: the packet is attached AFTER getChunkPacketInfo(); the
+        // delegate's ChunkPacketInfoAntiXray would otherwise never see it
+        // and its async obfuscate() NPEs on getChunkPacket().setReady(true).
+        ChunkPacketInfo<BlockState> delegate = getDelegateInfo();
+        if (delegate != null) delegate.setChunkPacket(chunkPacket);
     }
 
     public ServerPlayer getPlayer() {
