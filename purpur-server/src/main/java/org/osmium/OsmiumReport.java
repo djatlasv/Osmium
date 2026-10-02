@@ -106,20 +106,20 @@ public class OsmiumReport {
                                 .then(Commands.argument("reason", StringArgumentType.greedyString())
                                         .executes(ctx -> {
                                             ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                            if (!enabled()) return 0;
+                                            if (!gate(player)) return 0;
                                             submit(player, StringArgumentType.getString(ctx, "player"),
                                                     StringArgumentType.getString(ctx, "reason"));
                                             return 1;
                                         }))
                                 .executes(ctx -> {
                                     ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                    if (!enabled()) return 0;
+                                    if (!gate(player)) return 0;
                                     usage(player);
                                     return 1;
                                 }))
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
-                            if (!enabled()) return 0;
+                            if (!gate(player)) return 0;
                             usage(player);
                             return 1;
                         })
@@ -128,6 +128,16 @@ public class OsmiumReport {
 
     private static boolean enabled() {
         return OsmiumConfig.reportEnabled;
+    }
+
+    /** Config gate with visible feedback — silent no-ops make reports look broken. */
+    private static boolean gate(ServerPlayer player) {
+        if (!enabled()) {
+            player.sendSystemMessage(Component.literal(
+                    "\u00a7cReports are disabled on this server."));
+            return false;
+        }
+        return true;
     }
 
     private static void usage(ServerPlayer player) {
@@ -174,7 +184,7 @@ public class OsmiumReport {
         REPORTS.put(report.id(), report);
         save();
 
-        boolean sent = OsmiumDiscordBot.pushReport(report);
+boolean sent = OsmiumDiscordBot.pushReport(report);
         if (sent) {
             from.sendSystemMessage(Component.literal("\u00a7aReport sent to the staff. Thanks!"));
             LOGGER.info("[Report] {} reported {}: {}",
@@ -184,7 +194,7 @@ public class OsmiumReport {
             REPORTS.remove(report.id());
             save();
             from.sendSystemMessage(Component.literal(
-                    "\u00a7cReports are currently unavailable — try again later."));
+                    "\u00a7cReports are currently unavailable (no Discord report channel configured) \u2014 try again later."));
         }
     }
 

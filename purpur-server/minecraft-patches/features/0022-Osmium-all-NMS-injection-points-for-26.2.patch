@@ -3,12 +3,11 @@ From: Djatlasv <djatlasv@users.noreply.github.com>
 Date: Wed, 30 Sep 2026 12:00:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
-
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index cd88ff57b5fefb41a6ce37239f3a362750a059be..e19711a5855426c2fe40b731611f766ef7fc6a34 100644
+index cd88ff57b5fefb41a6ce37239f3a362750a059be..d4a8e69cfe6eb2f07f41f82c75d5d1240280e66a 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -268,6 +268,12 @@ public class Commands {
+@@ -268,6 +268,13 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
@@ -18,9 +17,19 @@ index cd88ff57b5fefb41a6ce37239f3a362750a059be..e19711a5855426c2fe40b731611f766e
 +        org.osmium.OsmiumHomes.registerCommand(this.dispatcher); // Osmium - /sethome /home /homes /spawn
 +        org.osmium.OsmiumRecipes.registerCommand(this.dispatcher); // Osmium - /customrecipes GUI + reload
 +        org.osmium.OsmiumReport.registerCommand(this.dispatcher); // Osmium - /report command (always register; enabled check is at execution time)
++        org.osmium.OsmiumStaffLog.registerCommand(this.dispatcher); // Osmium - /link /unlink staff Discord linking
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
+@@ -382,6 +389,7 @@ public class Commands {
+         org.spigotmc.AsyncCatcher.catchOp("Cannot perform command async");
+         // Paper end
+         CommandSourceStack sender = command.getContext().getSource();
++        org.osmium.OsmiumStaffLog.onCommandDispatch(sender, commandString); // Osmium - staff action log
+         Profiler.get().push(() -> "/" + commandString);
+         ContextChain<CommandSourceStack> commandChain = finishParsing(command, commandString, sender);
+ 
+
 diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
 index 06f0088b4bdbd86c5942d523889386a81764a240..5e80c0ec0c07cb1e99b01c54b0b1531d38dd33b4 100644
 --- a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
