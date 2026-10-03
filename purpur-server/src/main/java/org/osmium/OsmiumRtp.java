@@ -466,6 +466,8 @@ public class OsmiumRtp {
     /**
      * Main-thread safety evaluation of one candidate coordinate.
      * All world access here is main thread — safe by construction.
+     * Shared with the spawn-dimension portal exit (OsmiumSpawnDim.exitSearch).
+     * Implementation is further down, in the Location finding section.
      */
 
     /**
@@ -578,7 +580,12 @@ public class OsmiumRtp {
     // Location finding
     // ------------------------------------------------------------------
 
-    private static BlockPos evaluateCandidate(ServerLevel level, int x, int z, int attempt) {
+    /**
+     * Main-thread safety evaluation of one candidate coordinate.
+     * All world access here is main thread — safe by construction.
+     * Shared with the spawn-dimension portal exit (OsmiumSpawnDim.exitSearch).
+     */
+    public static BlockPos evaluateCandidate(ServerLevel level, int x, int z, int attempt) {
         // Get the highest block
         int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
 

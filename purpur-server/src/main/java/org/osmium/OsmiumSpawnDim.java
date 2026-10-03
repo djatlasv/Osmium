@@ -1,5 +1,6 @@
 package org.osmium;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
@@ -52,8 +53,10 @@ public final class OsmiumSpawnDim {
     // ------------------------------------------------------------------
 
     public static ResourceKey<Level> spawnKey() {
+        // The bundled datapack registers the dimension under the "osmium"
+        // namespace (data/osmium/dimension/<name>.json) — NOT the default one.
         return ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
-                Identifier.withDefaultNamespace(OsmiumConfig.spawnDimensionName));
+                Identifier.fromNamespaceAndPath("osmium", OsmiumConfig.spawnDimensionName));
     }
 
     public static boolean isSpawnDimension(Level level) {
@@ -69,7 +72,7 @@ public final class OsmiumSpawnDim {
     // ------------------------------------------------------------------
 
     /** Bump when the bundled templates change so existing installs get refreshed. */
-    private static final int TEMPLATE_VERSION = 2;
+    private static final int TEMPLATE_VERSION = 3;
 
     private static void extractDatapack(MinecraftServer server) {
         try {
@@ -94,8 +97,9 @@ public final class OsmiumSpawnDim {
                     + ",\"description\":\"Osmium spawn dimension\"}}";
             Files.writeString(new File(target, "pack.mcmeta").toPath(), mcmeta, StandardCharsets.UTF_8);
 
-            writeResource(target, "data/osmium/dimension_type/spawn.json", DIMENSION_TYPE_JSON);
-            writeResource(target, "data/osmium/dimension/spawn.json", DIMENSION_JSON);
+            writeResource(target, "data/osmium/dimension_type/" + OsmiumConfig.spawnDimensionName + ".json", DIMENSION_TYPE_JSON);
+            writeResource(target, "data/osmium/dimension/" + OsmiumConfig.spawnDimensionName + ".json",
+                    DIMENSION_JSON.replace("osmium:spawn", "osmium:" + OsmiumConfig.spawnDimensionName));
             Files.writeString(marker.toPath(), markerContent, StandardCharsets.UTF_8);
 
             extracted = true;
@@ -179,7 +183,12 @@ public final class OsmiumSpawnDim {
 
     /**
      * Nether portal redirect: inside the spawn dimension, a nether portal
-     * exits into the OVERWORLD at the same X/Z (surface height), 1:1 scale.
+     * exits into the OVERWORLD. By default the landing spot is chosen
+     * portal-exit-rtp style: the player lands at the same X/Z (a staging
+     * point that is safe to arrive at), then an async uniform-area random
+     * search (same model as /rtp, no cooldown/countdown/cost) moves them to
+     * a random safe spot. Falls back to staying at the staging point if no
+     * safe spot is found.
      */
     public static TeleportTransition portalRedirect(ServerLevel currentLevel, Entity entity) {
         MinecraftServer server = currentLevel.getServer();
@@ -193,8 +202,67 @@ public final class OsmiumSpawnDim {
 
         return new TeleportTransition(
                 overworld, pos, Vec3.ZERO, entity.getYRot(), entity.getXRot(),
-                false, false, Set.of(), TeleportTransition.DO_NOTHING
+                false, false, Set.of(), arrived -> {
+                    if (OsmiumConfig.spawnPortalExitRtp && arrived instanceof ServerPlayer player) {
+                        exitSearch(player, overworld, 0);
+                    }
+                }
         ).withCause(org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.NETHER_PORTAL);
+    }
+
+    private static final int MAX_EXIT_ATTEMPTS = 50;
+
+    /** RTP-style search for the hub portal exit. Async chunk loads only; world reads on the main thread. */
+    private static void exitSearch(ServerPlayer player, ServerLevel overworld, int attempt) {
+        MinecraftServer server = overworld.getServer();
+        if (attempt >= MAX_EXIT_ATTEMPTS) {
+            if (player.connection != null && player.connection.isAcceptingMessages()) {
+                player.sendSystemMessage(Component.literal(
+                        "\u00a7cCouldn't find a safe spot — staying where you are."));
+            }
+            return;
+        }
+        if (player.connection == null || !player.connection.isAcceptingMessages()) return;
+
+        var border = overworld.getWorldBorder();
+        int minDist = OsmiumConfig.rtpMinDistance;
+        int maxDist = OsmiumConfig.rtpMaxDistance;
+        double borderRadius = border.getSize() / 2.0;
+        if (maxDist > borderRadius - 1) maxDist = (int) (borderRadius - 1);
+        if (minDist > maxDist) minDist = maxDist / 2;
+        if (maxDist <= 0) return;
+
+        var random = java.util.concurrent.ThreadLocalRandom.current();
+        // Uniform-area distribution (same model as /rtp): sample the square
+        // root of the radius range so every spot is equally likely.
+        double distance = Math.sqrt(minDist * (double) minDist
+                + random.nextDouble() * ((maxDist * (double) maxDist) - (minDist * (double) minDist)));
+        double angle = random.nextDouble() * Math.PI * 2;
+        int x = (int) (border.getCenterX() + distance * Math.cos(angle));
+        int z = (int) (border.getCenterZ() + distance * Math.sin(angle));
+
+        if (attempt == 0) {
+            player.sendSystemMessage(Component.literal("\u00a7eFinding a safe spot in the overworld..."));
+        }
+
+        final int fx = x;
+        final int fz = z;
+        overworld.getWorld().getChunkAtAsync(fx >> 4, fz >> 4, chunk ->
+                server.execute(() -> {
+                    if (server.getPlayerList().getPlayer(player.getUUID()) == null) return;
+                    if (player.connection == null || !player.connection.isAcceptingMessages()) return;
+
+                    BlockPos target = OsmiumRtp.evaluateCandidate(overworld, fx, fz, attempt);
+                    if (target == null) {
+                        exitSearch(player, overworld, attempt + 1);
+                        return;
+                    }
+                    player.teleportTo(overworld,
+                            target.getX() + 0.5, target.getY(), target.getZ() + 0.5,
+                            Set.of(), player.getYRot(), player.getXRot(), true,
+                            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.NETHER_PORTAL);
+                    player.sendSystemMessage(Component.literal("\u00a7aWelcome to the overworld!"));
+                }));
     }
 
     /** Default death respawn inside the spawn dimension. Null when not applicable. */
