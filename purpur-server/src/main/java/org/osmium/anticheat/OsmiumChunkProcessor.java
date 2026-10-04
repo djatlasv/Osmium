@@ -685,18 +685,21 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             if (!ownerNear && ownSectionY < hideBelowSectionOwn) continue;
 
             int bits = info.getBits(sectionIndex);
-            if (bits <= 0) continue;
-            if (!info.isWritten(sectionIndex)) continue;
+            if (bits <= 0) { if (debug) skipDebug(chunk, ownSectionY, "bits<=0", null); continue; }
+            if (!info.isWritten(sectionIndex)) { if (debug) skipDebug(chunk, ownSectionY, "not-written", null); continue; }
             Palette<BlockState> palette = info.getPalette(sectionIndex);
             // GlobalPalette (registry-id sections) are skipped: blanket owns
             // their hiding path, and per-entry classification there would
             // mean registry lookups for an essentially unreachable case.
-            if (palette == null || palette instanceof GlobalPalette || palette.getSize() < 2) continue;
+            if (palette == null) { if (debug) skipDebug(chunk, ownSectionY, "palette-null", null); continue; }
+            if (palette instanceof GlobalPalette) { if (debug) skipDebug(chunk, ownSectionY, "global-palette", palette); continue; }
+            if (palette.getSize() < 2) { if (debug) skipDebug(chunk, ownSectionY, "single-entry", palette); continue; }
 
             // Classification FIRST (cached): sections without any target
             // block never pay for the 4096-entry id read.
             SectionClassif classif = classify(chunkKey, sectionIndex, palette);
-            if (!classif.anyTarget()) continue;
+            if (!classif.anyTarget()) { if (debug) skipDebug(chunk, ownSectionY, "no-target", palette); continue; }
+            if (debug) skipDebug(chunk, ownSectionY, "PROCESS", palette);
 
             boolean[] solid = classif.solid();
             boolean[] target = classif.target();
@@ -706,7 +709,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             for (int p = 0; p < 4096; p++) ids[p] = reader.read();
 
             int replacementPaletteId = classif.replacementId();
-            if (replacementPaletteId < 0) continue;
+            if (replacementPaletteId < 0) { if (debug) skipDebug(chunk, ownSectionY, "no-replacement", palette); continue; }
 
             writer.setBits(bits);
             writer.setIndex(info.getIndex(sectionIndex));
@@ -777,6 +780,25 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
                     "[antixray] packet chunk " + chunk.getPos().x() + "," + chunk.getPos().z()
                             + ": replaced=" + replaced + " candidates=" + candidates.size());
         }
+    }
+
+    /** Reads one section's palette ids into the scratch half at the given offset. */
+    private static void skipDebug(LevelChunk chunk, int sectionY, String reason, Palette<BlockState> palette) {
+        StringBuilder sb = new StringBuilder("[antixray] skip ").append(chunk.getPos().x())
+                .append(',').append(chunk.getPos().z()).append(" section y=").append(sectionY)
+                .append(": ").append(reason);
+        if (palette != null) {
+            sb.append(" size=").append(palette.getSize()).append(" [");
+            for (int i = 0; i < Math.min(palette.getSize(), 24); i++) {
+                try {
+                    BlockState st = palette.valueFor(i);
+                    if (st != null) sb.append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath())
+                            .append(i < palette.getSize() - 1 ? ", " : "");
+                } catch (Exception ignored) {}
+            }
+            sb.append(']');
+        }
+        org.osmium.anticheat.OsmiumOcclusion.debugLogPublic(sb.toString());
     }
 
     /** Reads one section's palette ids into the scratch half at the given offset. */

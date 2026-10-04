@@ -275,9 +275,22 @@ public final class OsmiumOcclusion {
                 ChunkCandidates cc = result.chunk();
                 // Freshness: a resent chunk packet replaced this candidate
                 // set — stale reveals would fight the fresh packet.
-                if (pd.chunks.get(cc.chunkKey) != cc) continue;
-                if (cc.level.getChunkSource().getChunkNow(cc.chunkX, cc.chunkZ) == null) continue;
+                if (pd.chunks.get(cc.chunkKey) != cc) {
+                    if (OsmiumConfig.raytraceDebug) debugLog("[antixray] reveal DROPPED (stale candidate set) "
+                            + result.pos().toShortString());
+                    continue;
+                }
+                if (cc.level.getChunkSource().getChunkNow(cc.chunkX, cc.chunkZ) == null) {
+                    if (OsmiumConfig.raytraceDebug) debugLog("[antixray] reveal DROPPED (chunk unloaded) "
+                            + result.pos().toShortString());
+                    continue;
+                }
                 BlockState real = cc.level.getBlockState(result.pos());
+                if (OsmiumConfig.raytraceDebug) {
+                    debugLog("[antixray] revealed " + result.pos().toShortString() + " -> "
+                            + BuiltInRegistries.BLOCK.getKey(real.getBlock()) + " for "
+                            + pd.player.getGameProfile().name());
+                }
                 pd.player.connection.send(new ClientboundBlockUpdatePacket(result.pos(), real));
                 if (real.hasBlockEntity()) {
                     var be = cc.level.getBlockEntity(result.pos());
@@ -306,6 +319,10 @@ public final class OsmiumOcclusion {
             int pz = p.blockPosition().getZ() >> 4;
             pd.chunks.entrySet().removeIf(e -> {
                 ChunkCandidates cc = e.getValue();
+                // Empty sets stay while reveal results are still pending:
+                // drainResults' freshness check requires the map entry to
+                // survive until those results are processed.
+                if (cc.blocks.isEmpty() && !pd.results.isEmpty()) return false;
                 if (cc.blocks.isEmpty()) return true;
                 int dx = cc.chunkX - px;
                 int dz = cc.chunkZ - pz;
@@ -363,17 +380,20 @@ public final class OsmiumOcclusion {
                     it.remove();
                     pd.results.add(new Result(cc, pos));
                     revealed++;
-                } else if (y >= 55 && OsmiumConfig.raytraceDebug && hiddenLogged < 8) {
+                } else if (OsmiumConfig.raytraceDebug && hiddenLogged < 8) {
                     hiddenLogged++;
-                    debugLog("[antixray] hidden-surface " + x + "," + y + "," + z
+                    debugLog("[antixray] hidden-candidate " + x + "," + y + "," + z
                             + " eye=" + Math.round(eyeX) + "," + Math.round(eyeY) + "," + Math.round(eyeZ)
                             + " look=" + Math.round(lookX * 100) / 100.0 + "," + Math.round(lookY * 100) / 100.0 + "," + Math.round(lookZ * 100) / 100.0
-                            + (debugFrustum ? " FRUSTUM" : " occluder@" + debugOccX + "," + debugOccY + "," + debugOccZ));
+                            + " -> " + debugVerdict.get());
                 }
             }
-            if (cc.blocks.isEmpty()) {
-                pd.chunks.remove(cc.chunkKey, cc);
-            }
+            // NOTE: do NOT remove emptied sets from pd.chunks here. The
+            // reveals just queued in pd.results reference this cc; dropping
+            // the map entry now makes drainResults' freshness check see
+            // null != cc and discard every reveal — a fully-visible cluster
+            // (chest + hopper) would stay hidden until a neighbor update.
+            // prunePeriodically cleans up empty sets after results drain.
         }
 
         if ((traced > 0 || revealed > 0) && OsmiumConfig.raytraceDebug) {
@@ -407,10 +427,9 @@ public final class OsmiumOcclusion {
         // Frustum cull (RTAX): reject if the block is behind the view plane.
         // RTAX note: should really use (diff - sqrt(3)/2 * dir) * dir.
         if ((diffX - lookX) * lookX + (diffY - lookY) * lookY + (diffZ - lookZ) * lookZ > 0.0) {
-            debugFrustum = true;
+            if (OsmiumConfig.raytraceDebug) debugVerdict.set("FRUSTUM");
             return false;
         }
-        debugFrustum = false;
 
         double dist = Math.sqrt(distSq);
         VoxelWalker walker = new VoxelWalker(x, y, z, centerX, centerY, centerZ,
@@ -419,18 +438,23 @@ public final class OsmiumOcclusion {
         while ((ray = walker.calculateNext()) != null) {
             if (reader.isOccluding(ray[0], ray[1], ray[2])
                     && checkNearbyBlocks(x, y, z, ray, diffX, diffY, diffZ, reader)) {
-                debugOccX = ray[0];
-                debugOccY = ray[1];
-                debugOccZ = ray[2];
+                if (OsmiumConfig.raytraceDebug) {
+                    // Per-call capture, NOT statics — concurrent player traces
+                    // on separate worker threads clobber shared statics.
+                    debugVerdict.set("occluder@" + ray[0] + "," + ray[1] + "," + ray[2]
+                            + " (" + reader.blockName(ray[0], ray[1], ray[2]) + ")");
+                }
                 return false;
             }
         }
+        if (OsmiumConfig.raytraceDebug) debugVerdict.set("clear");
         return true;
     }
 
-    // Debug-only verdict capture for the trace loop (raytrace-hiding.debug).
-    static boolean debugFrustum;
-    static int debugOccX, debugOccY, debugOccZ;
+    /** Per-thread verdict of the last isVisible call (debug only). */
+    private static final ThreadLocal<String> debugVerdict = ThreadLocal.withInitial(() -> "?");
+
+    // (debug verdicts are per-thread via debugVerdict — no shared statics)
 
     /**
      * RTAX checkNearbyBlocks port (MIT, © stonar96): for an occluding voxel
@@ -685,6 +709,26 @@ public final class OsmiumOcclusion {
                 return section.getBlockState(x & 15, y & 15, z & 15).isSolidRender();
             } catch (MissingPaletteEntryException e) {
                 return false; // chunk mutating concurrently: fail open (RTAX returns AIR)
+            }
+        }
+
+        /** Debug-only: block id at a voxel (empty string when unavailable). */
+        String blockName(int x, int y, int z) {
+            try {
+                int chunkX = x >> 4;
+                int chunkZ = z >> 4;
+                LevelChunk c = chunk != null && lastChunkX == chunkX && lastChunkZ == chunkZ
+                        ? chunk : level.getChunkSource().getChunkNow(chunkX, chunkZ);
+                if (c == null) return "unloaded";
+                int min = c.getMinSectionY();
+                int sectionY = y >> 4;
+                if (sectionY < min || sectionY >= min + c.getSectionsCount()) return "out-of-range";
+                LevelChunkSection s = c.getSections()[sectionY - min];
+                if (s == null || s.hasOnlyAir()) return "air-section";
+                BlockState st = s.getBlockState(x & 15, y & 15, z & 15);
+                return BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+            } catch (Exception e) {
+                return "?";
             }
         }
     }
