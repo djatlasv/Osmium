@@ -161,45 +161,66 @@ public class OsmiumDiscordWebhook {
             .append("\"timestamp\":\"").append(timestamp).append("\"")
             .append("}]}");
 
-        try {
-            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
+        // Bounded retry: at most one re-attempt after a rate limit. The
+        // single-thread executor backs this — unbounded recursion used to
+        // stall the queue for 10s+ per message and overflow it silently.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
 
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(json.toString().getBytes(StandardCharsets.UTF_8));
-            }
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(json.toString().getBytes(StandardCharsets.UTF_8));
+                }
 
-            int code = conn.getResponseCode();
-            if (code == 429) {
-                // Rate limited — wait and retry once
-                String retryAfter = conn.getHeaderField("Retry-After");
-                long waitMs = retryAfter != null ? (long) (Double.parseDouble(retryAfter) * 1000) : 1000;
-                Thread.sleep(Math.min(waitMs, 10000));
+                int code = conn.getResponseCode();
+                if (code == 429 && attempt == 0) {
+                    String retryAfter = conn.getHeaderField("Retry-After");
+                    long waitMs = retryAfter != null
+                            ? Math.min((long) (Double.parseDouble(retryAfter) * 1000), 10000)
+                            : 1000;
+                    conn.disconnect();
+                    Thread.sleep(waitMs);
+                    continue;
+                }
+                if (code < 200 || code >= 300) {
+                    Bukkit.getLogger().warning("[Osmium] Discord webhook returned HTTP " + code);
+                }
                 conn.disconnect();
-                doSend(title, description, color, content);
+                return;
+            } catch (IOException e) {
+                Bukkit.getLogger().log(Level.WARNING, "[Osmium] Failed to send Discord webhook", e);
+                return;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 return;
             }
-            if (code < 200 || code >= 300) {
-                Bukkit.getLogger().warning("[Osmium] Discord webhook returned HTTP " + code);
-            }
-            conn.disconnect();
-        } catch (IOException e) {
-            Bukkit.getLogger().log(Level.WARNING, "[Osmium] Failed to send Discord webhook", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 
     private static String escapeJson(String s) {
         if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    // Raw control chars make the payload invalid JSON and
+                    // the notification is silently dropped by Discord.
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+                }
+            }
+        }
+        return sb.toString();
     }
 }

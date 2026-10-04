@@ -140,41 +140,52 @@ public class OsmiumChatFilter {
             if (!strippedBuilder.isEmpty()) strippedBuilder.append(' ');
             strippedBuilder.append(word.replaceAll("[^a-zA-Z0-9]", ""));
         }
-        String stripped = strippedBuilder.toString();
-
-        // Check if every word in the message is whitelisted — if so, skip filtering
+        String stripped = strippedBuilder.toString().toLowerCase(Locale.ROOT);
         String lowerMessage = message.toLowerCase(Locale.ROOT);
 
         for (int i = 0; i < compiledPatterns.size(); i++) {
             Pattern pattern = compiledPatterns.get(i);
-            java.util.regex.Matcher matcher = pattern.matcher(lowerMessage);
-            if (matcher.find()) {
-                // Check if the matched text is a whitelisted word
-                String matched = matcher.group().trim().toLowerCase(Locale.ROOT);
-                if (!WHITELIST.contains(matched) && !isAllWhitelisted(lowerMessage)) {
-                    return rawPatterns.get(i);
-                }
+            if (hasForbiddenMatch(pattern, lowerMessage)) {
+                return rawPatterns.get(i);
             }
-            // Also check stripped version
-            java.util.regex.Matcher strippedMatcher = pattern.matcher(stripped.toLowerCase(Locale.ROOT));
-            if (strippedMatcher.find()) {
-                String matched = strippedMatcher.group().trim().toLowerCase(Locale.ROOT);
-                if (!WHITELIST.contains(matched) && !isAllWhitelisted(stripped.toLowerCase(Locale.ROOT))) {
-                    return rawPatterns.get(i);
-                }
+            if (hasForbiddenMatch(pattern, stripped)) {
+                return rawPatterns.get(i);
             }
         }
         return null;
     }
 
     /**
-     * Checks if every individual word in the text is in the whitelist.
+     * True when the pattern matches and the match is NOT confined to a
+     * whitelisted word. The whitelist exemption is span-scoped to the match
+     * itself: a whitelisted word elsewhere in the message must not exempt
+     * the whole text (the old all-words check let "fuck night" bypass every
+     * pattern because "night" was whitelisted).
      */
-    private static boolean isAllWhitelisted(String text) {
-        for (String word : text.split("\\s+")) {
-            String clean = word.replaceAll("[^a-zA-Z]", "").toLowerCase(Locale.ROOT);
-            if (!clean.isEmpty() && WHITELIST.contains(clean)) {
-                return true; // at least one whitelisted word triggered the match
+    private static boolean hasForbiddenMatch(Pattern pattern, String text) {
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            if (!coveredByWhitelist(text, matcher.start(), matcher.end())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when a single whitespace-delimited token covers [start, end)
+     *  AND that token is whitelisted (handles custom non-anchored regex
+     *  entries matching inside words like "scunthorpe"). Multi-word spans
+     *  ("kill yourself") are never exempt. */
+    private static boolean coveredByWhitelist(String text, int start, int end) {
+        int len = text.length();
+        int i = 0;
+        while (i < len) {
+            while (i < len && text.charAt(i) == ' ') i++;
+            int wordStart = i;
+            while (i < len && text.charAt(i) != ' ') i++;
+            if (wordStart < i && wordStart <= start && i >= end
+                    && WHITELIST.contains(text.substring(wordStart, i))) {
+                return true;
             }
         }
         return false;

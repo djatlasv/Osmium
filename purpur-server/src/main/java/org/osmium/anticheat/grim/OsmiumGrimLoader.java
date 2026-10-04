@@ -86,14 +86,18 @@ public class OsmiumGrimLoader {
         String versionName = latest.get("version_number").getAsString();
         JsonArray files = latest.getAsJsonArray("files");
 
-        // Find the primary file
+        // Find the primary file. Filenames come from a remote API response:
+        // reject anything with path separators/relative segments so a
+        // tampered response can't write outside plugins/.
         String downloadUrl = null;
         String fileName = null;
+        String expectedSha1 = null;
         for (JsonElement fileEl : files) {
             JsonObject file = fileEl.getAsJsonObject();
             if (file.has("primary") && file.get("primary").getAsBoolean()) {
                 downloadUrl = file.get("url").getAsString();
                 fileName = file.get("filename").getAsString();
+                expectedSha1 = extractSha1(file);
                 break;
             }
         }
@@ -102,10 +106,14 @@ public class OsmiumGrimLoader {
             JsonObject file = files.get(0).getAsJsonObject();
             downloadUrl = file.get("url").getAsString();
             fileName = file.get("filename").getAsString();
+            expectedSha1 = extractSha1(file);
         }
 
         if (downloadUrl == null) {
             throw new RuntimeException("No downloadable file found for GrimAC " + versionName);
+        }
+        if (!isSafeFileName(fileName)) {
+            throw new RuntimeException("Unsafe GrimAC filename from Modrinth: " + fileName);
         }
 
         LOGGER.info("Downloading GrimAC " + versionName + " (" + fileName + ")...");
@@ -123,7 +131,14 @@ public class OsmiumGrimLoader {
         }
 
         File target = new File(pluginsDir, fileName);
-        try (InputStream in = dlResp.body();
+        java.security.MessageDigest sha1;
+        try {
+            sha1 = java.security.MessageDigest.getInstance("SHA-1");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-1 not available", e);
+        }
+        try (InputStream rawIn = dlResp.body();
+             java.security.DigestInputStream in = new java.security.DigestInputStream(rawIn, sha1);
              FileOutputStream out = new FileOutputStream(target)) {
             byte[] buf = new byte[8192];
             int len;
@@ -135,11 +150,41 @@ public class OsmiumGrimLoader {
             LOGGER.info("Downloaded " + (total / 1024) + " KB to plugins/" + fileName);
         }
 
+        // Integrity: verify against Modrinth's published sha1 before the
+        // jar is ever loaded. Tampered/corrupt downloads are deleted.
+        String actualSha1 = hex(sha1.digest());
+        if (expectedSha1 != null && !expectedSha1.equalsIgnoreCase(actualSha1)) {
+            target.delete();
+            throw new RuntimeException("GrimAC download failed sha1 verification (expected "
+                    + expectedSha1 + ", got " + actualSha1 + ")");
+        }
+
         LOGGER.info("GrimAC " + versionName + " installed. Restart the server to load it.");
 
         // Extract optimized default configs and sync webhook URL
         extractDefaultConfigs();
         syncWebhookUrl();
+    }
+
+    private static String extractSha1(JsonObject file) {
+        if (file.has("hashes") && file.getAsJsonObject("hashes").has("sha1")) {
+            return file.getAsJsonObject("hashes").get("sha1").getAsString();
+        }
+        return null;
+    }
+
+    private static boolean isSafeFileName(String name) {
+        if (name == null || name.isEmpty()) return false;
+        return !name.contains("/") && !name.contains("\\") && !name.contains("..")
+                && !name.startsWith(".");
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 
     /**
@@ -156,10 +201,16 @@ public class OsmiumGrimLoader {
 
             String content = new String(java.nio.file.Files.readAllBytes(discordYml.toPath()));
 
-            // Replace the webhook line with Osmium's URL and enable it
+            // Top-level keys only, single occurrence each: a global multiline
+            // replaceAll would clobber other "enabled:" flags elsewhere in
+            // the file. Replacement strings are quoteReplacement-escaped so
+            // $ and \ in the URL can't be interpreted as regex groups.
+            String yamlUrl = osmiumUrl.replace("\\", "\\\\").replace("\"", "\\\"");
             String updated = content
-                    .replaceAll("(?m)^webhook:.*$", "webhook: \"" + osmiumUrl.replace("\"", "\\\"") + "\"")
-                    .replaceAll("(?m)^enabled:.*$", "enabled: " + org.osmium.OsmiumConfig.discordWebhookEnabled);
+                    .replaceFirst("(?m)^webhook:.*$",
+                            java.util.regex.Matcher.quoteReplacement("webhook: \"" + yamlUrl + "\""))
+                    .replaceFirst("(?m)^enabled:.*$",
+                            java.util.regex.Matcher.quoteReplacement("enabled: " + org.osmium.OsmiumConfig.discordWebhookEnabled));
 
             if (!updated.equals(content)) {
                 java.nio.file.Files.write(discordYml.toPath(), updated.getBytes());

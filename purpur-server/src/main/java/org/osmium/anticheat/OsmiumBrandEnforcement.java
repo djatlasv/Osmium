@@ -40,6 +40,14 @@ public class OsmiumBrandEnforcement {
     public static void handleModsPayload(UUID playerUuid, String playerName, byte[] data) {
         if (!OsmiumConfig.brandEnforcementEnabled) return;
 
+        // First payload wins. Later payloads are ignored: a client could
+        // otherwise flip its mod list around the scheduled check tick to
+        // dodge the blacklist, or flood osmium-fingerprints.json with
+        // random fingerprints (unbounded map + disk growth).
+        if (pendingClients.containsKey(playerUuid) || handshakeCompleted.contains(playerUuid)) {
+            return;
+        }
+
         try {
             String modsString = decodeVarIntString(data, 0);
             if (modsString == null) {
@@ -47,15 +55,19 @@ public class OsmiumBrandEnforcement {
                 return;
             }
 
-            // Decode and verify hash
+            // The Osmium HandShaker always sends 4 length-prefixed fields
+            // (mods, sha256, nonce, fingerprint). A missing hash field is a
+            // red flag, not a skip-verification path — reject the payload.
             int offset = varIntStringOffset(data, 0);
             String receivedHash = decodeVarIntString(data, offset);
-            if (receivedHash != null) {
-                String calculatedHash = sha256(modsString);
-                if (!calculatedHash.equals(receivedHash)) {
-                    Bukkit.getLogger().warning("[Osmium] Mod list hash mismatch from " + playerName + ", rejecting");
-                    return;
-                }
+            if (receivedHash == null) {
+                Bukkit.getLogger().warning("[Osmium] Mod list payload missing hash from " + playerName + ", rejecting");
+                return;
+            }
+            String calculatedHash = sha256(modsString);
+            if (!calculatedHash.equals(receivedHash)) {
+                Bukkit.getLogger().warning("[Osmium] Mod list hash mismatch from " + playerName + ", rejecting");
+                return;
             }
 
             // Skip nonce (3rd field) to get fingerprint (4th field)
@@ -77,11 +89,14 @@ public class OsmiumBrandEnforcement {
             pendingClients.put(playerUuid, mods);
             handshakeCompleted.add(playerUuid);
 
-            // Record fingerprint for alt detection if present
-            if (fingerprint != null && !fingerprint.isEmpty() && !"unknown".equals(fingerprint)) {
+            // Record fingerprint for alt detection if present. Only
+            // well-formed fingerprints (64-char hex, as the HandShaker mod
+            // sends) are stored — anything else is client-controlled junk
+            // and would pollute the fingerprint store.
+            if (isValidFingerprint(fingerprint)) {
                 OsmiumAltTracker.recordFingerprint(fingerprint, playerUuid);
                 playerFingerprints.put(playerUuid, fingerprint);
-                Bukkit.getLogger().info("[Osmium] Received mod list from " + playerName + ": " + mods + " (fp: " + fingerprint.substring(0, Math.min(8, fingerprint.length())) + "...)");
+                Bukkit.getLogger().info("[Osmium] Received mod list from " + playerName + ": " + mods + " (fp: " + fingerprint.substring(0, 8) + "...)");
 
                 // Check if this device has a banned alt (fingerprint-based alt detection)
                 if (OsmiumConfig.altBanEnabled) {
@@ -277,6 +292,17 @@ public class OsmiumBrandEnforcement {
         } catch (Exception e) {
             return data.length;
         }
+    }
+
+    /** The HandShaker mod sends a sha256 digest: exactly 64 hex chars. */
+    private static boolean isValidFingerprint(String fingerprint) {
+        if (fingerprint == null || fingerprint.length() != 64) return false;
+        for (int i = 0; i < fingerprint.length(); i++) {
+            char c = fingerprint.charAt(i);
+            boolean hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            if (!hex) return false;
+        }
+        return true;
     }
 
     private static String sha256(String input) {

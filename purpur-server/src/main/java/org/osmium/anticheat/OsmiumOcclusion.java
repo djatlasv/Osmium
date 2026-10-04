@@ -212,6 +212,7 @@ public final class OsmiumOcclusion {
         // Cheap per-tick guard: reclaim the controller seat if a plugin
         // (RayTraceAntiXray) stole it via final-field mutation.
         OsmiumChunkProcessor.ensureWrapped(server);
+        OsmiumChunkProcessor.sweepEm1Pending(); // Osmium - TTL-drop EM1 packets that never flushed
         // Latency warnings piggyback this per-tick driver (patch-hook
         // cleanup is a follow-up); runs before the feature gates below.
         OsmiumLatencyWarn.tick(server);

@@ -156,7 +156,7 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
             if (antiXrayActive) {
                 delegate.modifyBlocks(chunkPacket, delegateInfo != null ? delegateInfo : chunkPacketInfo);
                 if (EM1_PENDING.size() > 2048) EM1_PENDING.clear();
-                EM1_PENDING.put(chunkPacket, new Em1Pending(this, osmiumInfo));
+                EM1_PENDING.put(chunkPacket, new Em1Pending(this, osmiumInfo, System.currentTimeMillis()));
                 applyLightHiding(chunkPacket, osmiumInfo);
                 return;
             }
@@ -554,11 +554,22 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
 
     // --- Post-antixray composition (EM1 async pipeline) ---
 
-    private record Em1Pending(OsmiumChunkProcessor processor, OsmiumChunkPacketInfo info) {}
+    private record Em1Pending(OsmiumChunkProcessor processor, OsmiumChunkPacketInfo info, long queuedAtMillis) {}
     /** packet -> pending post-EM1 fill. Entries live only until the packet flushes. */
     private static final java.util.concurrent.ConcurrentHashMap<
             ClientboundLevelChunkWithLightPacket, Em1Pending> EM1_PENDING =
             new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Packets normally flush within a tick of queueing; anything older
+     *  belonged to a player who disconnected before the flush. */
+    private static final long EM1_PENDING_TTL_MS = 30_000;
+
+    /** Drops stale EM1_PENDING entries (called from OsmiumOcclusion.tick). */
+    public static void sweepEm1Pending() {
+        if (EM1_PENDING.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        EM1_PENDING.values().removeIf(p -> now - p.queuedAtMillis() > EM1_PENDING_TTL_MS);
+    }
 
     /**
      * Re-assert our wrapping when a plugin reflectively replaces the level
