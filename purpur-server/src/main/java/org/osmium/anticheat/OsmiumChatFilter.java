@@ -26,8 +26,8 @@ public class OsmiumChatFilter {
     private static final Type DATA_TYPE = new TypeToken<List<String>>() {}.getType();
 
     private static File dataFile;
-    private static final List<String> rawPatterns = new ArrayList<>();
-    private static final List<Pattern> compiledPatterns = new ArrayList<>();
+    static final List<String> rawPatterns = new ArrayList<>();
+    static final List<Pattern> compiledPatterns = new ArrayList<>();
     // Words that should never be filtered even if they match a pattern
     private static final Set<String> WHITELIST = Set.of(
             "night", "knight", "nights", "knights", "nighttime",
@@ -44,6 +44,8 @@ public class OsmiumChatFilter {
     private static void load() {
         if (dataFile == null || !dataFile.exists()) {
             // Create default file with common filter patterns
+            rawPatterns.clear();
+            compiledPatterns.clear();
             rawPatterns.addAll(List.of(
                 "regex:\\bn+[i!1|l]+[gq9]{2,}[e3]*[ra@]*s?\\b",
                 "regex:\\bf+[ua@]+[gq9]{2,}[o0]*[t+]*s?\\b",
@@ -67,8 +69,12 @@ public class OsmiumChatFilter {
                 "regex:\\bn+[e3]+g+r+[o0]+s?\\b"
             ));
             save();
-            rawPatterns.clear();
+            // Keep the defaults active in memory too — clearing the lists
+            // here left the filter dead until the next config reload.
             compiledPatterns.clear();
+            for (String entry : rawPatterns) {
+                compiledPatterns.add(compileEntry(entry));
+            }
             return;
         }
 
@@ -107,6 +113,43 @@ public class OsmiumChatFilter {
     }
 
     /**
+     * Cheat clients evade pattern matching with lookalike characters that a
+     * human reads as ASCII but the word-stripper deletes ("nіgger" with a
+     * Cyrillic і, "ｆｕｃｋ" fullwidth). Normalize before matching: NFKC folds
+     * fullwidth/compatibility forms, the map folds the common
+     * Cyrillic/Greek lookalikes onto their ASCII letters. Anything else
+     * non-ASCII still gets stripped downstream, as before.
+     */
+    static String normalize(String message) {
+        String lowered = message.toLowerCase(Locale.ROOT);
+        String nfkc = java.text.Normalizer.normalize(lowered, java.text.Normalizer.Form.NFKC);
+        StringBuilder sb = new StringBuilder(nfkc.length());
+        for (int i = 0; i < nfkc.length(); i++) {
+            char c = nfkc.charAt(i);
+            Character replacement = LOOKALIKES.get(c);
+            sb.append(replacement != null ? replacement.charValue() : c);
+        }
+        return sb.toString();
+    }
+
+    private static final Map<Character, Character> LOOKALIKES = buildLookalikes();
+
+    private static Map<Character, Character> buildLookalikes() {
+        Map<Character, Character> map = new HashMap<>();
+        // input is already lowercased, so only lowercase lookalikes matter
+        map.put('а', 'a'); map.put('е', 'e'); map.put('о', 'o'); map.put('р', 'p');
+        map.put('с', 'c'); map.put('у', 'y'); map.put('х', 'x'); map.put('і', 'i');
+        map.put('ѕ', 's'); map.put('һ', 'h'); map.put('к', 'k'); map.put('м', 'm');
+        map.put('т', 't'); map.put('в', 'b'); map.put('н', 'h'); map.put('ј', 'j');
+        map.put('ɡ', 'g'); map.put('ԛ', 'q'); map.put('ԝ', 'w'); map.put('ԁ', 'd');
+        map.put('ο', 'o'); map.put('α', 'a'); map.put('ε', 'e'); map.put('ι', 'i');
+        map.put('κ', 'k'); map.put('ν', 'v'); map.put('ρ', 'p'); map.put('τ', 't');
+        map.put('υ', 'u'); map.put('χ', 'x'); map.put('ς', 's'); map.put('β', 'b');
+        map.put('μ', 'm');
+        return map;
+    }
+
+    /**
      * Compiles a word list entry into a regex Pattern.
      * Entries prefixed with "regex:" are treated as raw regex.
      * Plain entries are matched as case-insensitive word boundaries.
@@ -129,6 +172,7 @@ public class OsmiumChatFilter {
      */
     public static String check(String message) {
         if (!OsmiumConfig.chatFilterEnabled) return null;
+        message = normalize(message);
 
         // Strip bypass separators WITHIN words but keep spaces between words.
         // Split on whitespace, strip non-alpha from each word, rejoin.

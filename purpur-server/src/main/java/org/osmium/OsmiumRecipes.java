@@ -164,6 +164,7 @@ public final class OsmiumRecipes {
     private static final Set<UUID> BUILDER_OPEN = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, SimpleContainer> BUILDERS = new ConcurrentHashMap<>();
     private static final Map<UUID, Boolean> SHAPELESS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> GUI_CONTAINER_ID = new ConcurrentHashMap<>();
 
     public static void openBuilder(ServerPlayer player) {
         UUID uuid = player.getUUID();
@@ -220,6 +221,7 @@ public final class OsmiumRecipes {
         container.setItem(45, book);
 
         int containerId = player.nextContainerCounter();
+        GUI_CONTAINER_ID.put(uuid, containerId);
         // 54-slot container needs the 9x6 menu — threeRows only maps 27 slots,
         // which ghosted every control below row 3 (toggle/save/cancel/grid).
         ChestMenu menu = ChestMenu.sixRows(containerId, player.getInventory(), container);
@@ -246,9 +248,15 @@ public final class OsmiumRecipes {
     }
 
     /** Returns true when the click was inside the recipe builder GUI. */
-    public static boolean handleClick(ServerPlayer player, int slot) {
+    public static boolean handleClick(ServerPlayer player, int containerId, int slot) {
         UUID uuid = player.getUUID();
         if (!BUILDER_OPEN.contains(uuid)) return false;
+
+        // Same stale-flag guard as RTP/team GUIs (shared click-spoof guard).
+        if (!org.osmium.OsmiumRtp.clickMatchesOpenGui(GUI_CONTAINER_ID.get(uuid), containerId,
+                player.containerMenu == null ? null : player.containerMenu.containerId)) {
+            return false;
+        }
 
         SimpleContainer container = BUILDERS.get(uuid);
         if (container == null) return true;
@@ -271,20 +279,28 @@ public final class OsmiumRecipes {
             return true;
         }
 
-        // Grid + result slots are editable by design; everything else consumed
+        // Grid + result slots fall through to vanilla ChestMenu handling so
+        // items can actually be placed/taken there; frame and button slots
+        // are consumed (the buttons themselves are handled above).
         boolean editable = slot == RESULT_SLOT;
         for (int s : GRID_SLOTS) if (s == slot) editable = true;
-        return !editable || true; // all clicks consumed while builder open
+        return !editable;
     }
 
     public static void handleClose(ServerPlayer player) {
         clearState(player.getUUID());
     }
 
+    /** Disconnect cleanup — keeps builder state from leaking per session. */
+    public static void cancel(UUID uuid) {
+        clearState(uuid);
+    }
+
     private static void clearState(UUID uuid) {
         BUILDER_OPEN.remove(uuid);
         BUILDERS.remove(uuid);
         SHAPELESS.remove(uuid);
+        GUI_CONTAINER_ID.remove(uuid);
     }
 
     // ------------------------------------------------------------------

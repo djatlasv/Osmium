@@ -30,7 +30,7 @@ public class OsmiumHomes {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type TYPE = new TypeToken<Map<String, Map<String, HomePos>>>() {}.getType();
 
-    private static final Map<UUID, Map<String, HomePos>> HOMES = new HashMap<>();
+    private static final Map<UUID, Map<String, HomePos>> HOMES = new java.util.concurrent.ConcurrentHashMap<>();
 
     private record PendingHome(UUID playerUuid, HomePos target, int teleportAtTick,
                                double startX, double startY, double startZ) {}
@@ -108,7 +108,24 @@ public class OsmiumHomes {
         return Math.max(1, OsmiumConfig.homesMaxPerPlayer);
     }
 
+    /** Home names are client-controlled word args: printable, bounded, and
+     *  safe to echo back in /homes output. */
+    static boolean isValidHomeName(String name) {
+        return !name.isEmpty() && name.length() <= 32 && name.chars().allMatch(
+                c -> (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                        || (c >= '0' && c <= '9') || c == '_' || c == '-');
+    }
+
     private static void setHome(ServerPlayer player, String name) {
+        // Client-controlled word argument: cap length and reject formatting/
+        // control characters so the /homes list (which echoes the name) and
+        // osmium-homes.json can't be abused from the command line.
+        if (!isValidHomeName(name)) {
+            player.sendSystemMessage(Component.literal(ChatFormatting.RED
+                    + "Invalid home name — max 32 characters, letters/numbers/_/- only."));
+            return;
+        }
+
         var pos = player.position();
         HomePos home = new HomePos(
                 player.level().dimension().identifier().toString(),
@@ -288,7 +305,31 @@ public class OsmiumHomes {
         }
     }
 
+    // Debounced saving — /sethome only marks dirty; one background task
+    // writes the file. No main-thread disk I/O per home save.
+    private static final java.util.concurrent.atomic.AtomicBoolean FLUSH_SCHEDULED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.ScheduledExecutorService SAVER =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "Osmium-Homes-Saver");
+                t.setDaemon(true);
+                return t;
+            });
+
     private static void save() {
+        if (FLUSH_SCHEDULED.compareAndSet(false, true)) {
+            SAVER.schedule(() -> {
+                try { saveNow(); }
+                catch (Exception e) {
+                    org.apache.logging.log4j.LogManager.getLogger("Osmium-Homes")
+                            .error("Homes flush failed: {}", e.getMessage());
+                }
+                finally { FLUSH_SCHEDULED.set(false); }
+            }, 3, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
+    private static void saveNow() {
         if (dataFile == null) return;
         try (var writer = new java.io.OutputStreamWriter(new java.io.FileOutputStream(dataFile), StandardCharsets.UTF_8)) {
             GSON.toJson(HOMES, writer);

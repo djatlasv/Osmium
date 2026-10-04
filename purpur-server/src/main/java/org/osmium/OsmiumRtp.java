@@ -48,6 +48,13 @@ public class OsmiumRtp {
     // Track which players have the confirm GUI open + their chosen dimension
     private static final Map<UUID, ResourceKey<Level>> CONFIRM_OPEN = new ConcurrentHashMap<>();
 
+    // Container id each GUI was opened with. Click packets are validated
+    // against BOTH this and the live player.containerMenu id — GUI flags can
+    // go stale (server-side closes never send a close packet: death,
+    // teleports), and unvalidated slot numbers would let ordinary inventory
+    // clicks after a respawn fire confirm/kick/invite actions.
+    private static final Map<UUID, Integer> GUI_CONTAINER_ID = new ConcurrentHashMap<>();
+
     // Pending teleports: player UUID -> PendingRtp
     private static final Map<UUID, PendingRtp> PENDING = new ConcurrentHashMap<>();
 
@@ -60,8 +67,11 @@ public class OsmiumRtp {
     private static java.lang.reflect.Method balanceMethod = null;
     private static boolean economyChecked = false;
 
+    // chargedCost rides with the pending teleport: every cancel path
+    // (move-cancel, combat-tag, disconnect) refunds it — money was charged
+    // up front and must never silently vanish.
     private record PendingRtp(UUID playerUuid, ResourceKey<Level> dimension, int teleportAtTick, BlockPos target,
-                              double startX, double startY, double startZ) {}
+                              double startX, double startY, double startZ, double chargedCost) {}
 
     private static void debug(String msg) {
         if (OsmiumConfig.rtpDebug) {
@@ -159,6 +169,7 @@ public class OsmiumRtp {
         }
 
         int containerId = player.nextContainerCounter();
+        GUI_CONTAINER_ID.put(player.getUUID(), containerId);
         ChestMenu menu = ChestMenu.threeRows(containerId, player.getInventory(), container);
         menu.setTitle(Component.literal("\u00a78\u00a7lRandom Teleport"));
 
@@ -171,12 +182,33 @@ public class OsmiumRtp {
     }
 
     /**
+     * Shared click-spoof guard (RTP + team + recipe GUIs): the packet's
+     * container id must match BOTH the id the GUI was opened with and the
+     * player's live active menu. GUI flags can go stale (server-side closes
+     * never send a close packet: death, teleports), and unvalidated slot
+     * numbers would let ordinary inventory clicks after a respawn fire
+     * confirm/kick/invite actions.
+     */
+    static boolean clickMatchesOpenGui(Integer recordedId, int packetContainerId, Integer liveMenuId) {
+        return recordedId != null && recordedId == packetContainerId
+                && liveMenuId != null && liveMenuId == packetContainerId;
+    }
+
+    /**
      * Called when a player clicks a slot in any container.
      * Returns true if the click was consumed (was in an RTP GUI).
+     * The click must target the container id this GUI was opened with AND
+     * the player's live active menu — stale flags (death/teleport closes)
+     * must never turn ordinary inventory clicks into GUI actions.
      */
-    public static boolean handleClick(ServerPlayer player, int slotNum) {
+    public static boolean handleClick(ServerPlayer player, int containerId, int slotNum) {
         UUID uuid = player.getUUID();
         String name = player.getGameProfile().name();
+
+        if (!clickMatchesOpenGui(GUI_CONTAINER_ID.get(uuid), containerId,
+                player.containerMenu == null ? null : player.containerMenu.containerId)) {
+            return false;
+        }
 
         // --- Confirmation GUI ---
         if (CONFIRM_OPEN.containsKey(uuid)) {
@@ -269,6 +301,7 @@ public class OsmiumRtp {
         }
 
         int containerId = player.nextContainerCounter();
+        GUI_CONTAINER_ID.put(player.getUUID(), containerId);
         ChestMenu menu = ChestMenu.threeRows(containerId, player.getInventory(), container);
         menu.setTitle(Component.literal("\u00a78\u00a7lConfirm RTP"));
 
@@ -444,7 +477,7 @@ public class OsmiumRtp {
                     int teleportAt = server.getTickCount() + delayTicks;
 
                     PENDING.put(player.getUUID(), new PendingRtp(player.getUUID(), dimension, teleportAt, target,
-                        player.getX(), player.getY(), player.getZ()));
+                        player.getX(), player.getY(), player.getZ(), chargedCost));
                     debug(name + " pending teleport created (teleportAt tick=" + teleportAt
                             + " current=" + server.getTickCount() + " delay=" + delayTicks + " ticks)");
 
@@ -476,7 +509,8 @@ public class OsmiumRtp {
     public static void handleClose(ServerPlayer player) {
         boolean wasGui = GUI_OPEN.remove(player.getUUID());
         boolean wasConfirm = CONFIRM_OPEN.remove(player.getUUID()) != null;
-        if (wasGui || wasConfirm) {
+        boolean wasId = GUI_CONTAINER_ID.remove(player.getUUID()) != null;
+        if (wasGui || wasConfirm || wasId) {
             debug(player.getGameProfile().name() + " closed RTP GUI (wasPickerOpen=" + wasGui + " wasConfirmOpen=" + wasConfirm + ")");
         }
     }
@@ -499,9 +533,10 @@ public class OsmiumRtp {
             PendingRtp pending = entry.getValue();
             ServerPlayer player = server.getPlayerList().getPlayer(pending.playerUuid);
 
-            // Player disconnected
+            // Player disconnected — refund the charged cost
             if (player == null) {
                 debug("Player " + pending.playerUuid + " disconnected, removing pending RTP");
+                deposit(pending.playerUuid, pending.chargedCost());
                 it.remove();
                 continue;
             }
@@ -513,6 +548,11 @@ public class OsmiumRtp {
             if (mdx * mdx + mdy * mdy + mdz * mdz > 4.0) {
                 it.remove();
                 player.sendSystemMessage(Component.literal("\u00a7cTeleport cancelled — you moved!"));
+                if (pending.chargedCost() > 0) {
+                    deposit(player, pending.chargedCost());
+                    player.sendSystemMessage(Component.literal(
+                            "\u00a7e$" + String.format("%.2f", pending.chargedCost()) + "\u00a7a refunded."));
+                }
                 debug(player.getGameProfile().name() + " moved during RTP countdown — cancelled");
                 continue;
             }
@@ -558,20 +598,33 @@ public class OsmiumRtp {
         }
     }
 
-    /** Combat-tag support: cancels only the pending countdown teleport. */
+    /** Combat-tag support: cancels the pending countdown teleport and refunds. */
     public static void cancelPendingTeleport(UUID playerUuid) {
-        PENDING.remove(playerUuid);
+        PendingRtp pending = PENDING.remove(playerUuid);
+        if (pending == null || pending.chargedCost() <= 0) return;
+        MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
+        ServerPlayer p = server.getPlayerList().getPlayer(playerUuid);
+        deposit(playerUuid, pending.chargedCost());
+        if (p != null) {
+            p.sendSystemMessage(Component.literal("\u00a7cTeleport cancelled — you are in combat!"));
+            p.sendSystemMessage(Component.literal(
+                    "\u00a7e$" + String.format("%.2f", pending.chargedCost()) + "\u00a7a refunded."));
+        }
     }
 
     /**
      * Cancel a pending RTP (e.g. on disconnect).
      */
     public static void cancel(UUID playerUuid) {
-        boolean hadPending = PENDING.remove(playerUuid) != null;
+        PendingRtp pending = PENDING.remove(playerUuid);
+        if (pending != null && pending.chargedCost() > 0) {
+            deposit(playerUuid, pending.chargedCost()); // offline-safe refund
+        }
         boolean hadGui = GUI_OPEN.remove(playerUuid);
         boolean hadConfirm = CONFIRM_OPEN.remove(playerUuid) != null;
-        if (hadPending || hadGui || hadConfirm) {
-            debug("Cancelled RTP state for " + playerUuid + " (pending=" + hadPending
+        boolean hadId = GUI_CONTAINER_ID.remove(playerUuid) != null;
+        if (pending != null || hadGui || hadConfirm || hadId) {
+            debug("Cancelled RTP state for " + playerUuid + " (pending=" + (pending != null)
                     + " gui=" + hadGui + " confirm=" + hadConfirm + ")");
         }
     }
@@ -709,12 +762,18 @@ public class OsmiumRtp {
     }
 
     private static void deposit(ServerPlayer player, double amount) {
-        if (economy == null) return;
+        deposit(player.getUUID(), amount);
+    }
+
+    /** Offline-safe refund: works for players who already disconnected. */
+    private static void deposit(UUID playerUuid, double amount) {
+        if (economy == null || amount <= 0) return;
         try {
+            org.bukkit.OfflinePlayer op = org.bukkit.Bukkit.getOfflinePlayer(playerUuid);
             java.lang.reflect.Method depositMethod = economy.getClass().getMethod("depositPlayer",
                     org.bukkit.OfflinePlayer.class, double.class);
-            depositMethod.invoke(economy, (org.bukkit.OfflinePlayer) player.getBukkitEntity(), amount);
-            debug(player.getGameProfile().name() + " refunded $" + amount);
+            depositMethod.invoke(economy, op, amount);
+            debug("Refunded $" + amount + " to " + playerUuid);
         } catch (Exception e) {
             debug("deposit error: " + e.getMessage());
         }

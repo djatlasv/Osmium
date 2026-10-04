@@ -30,13 +30,15 @@ public class OsmiumAltTracker {
     private static File ipDataFile;
     private static File fpDataFile;
     // IP -> Set of UUID strings
-    // Insertion-order maps with a hard cap: every rotating/mobile IP a
+    // Insertion/access-order maps with a hard cap: every rotating/mobile IP a
     // player ever used would otherwise be kept (and persisted) forever.
-    // All access is synchronized — recording happens on joins only, so the
-    // lock is uncontended in practice.
-    private static final int MAX_TRACKED_ENTRIES = 20_000;
-    private static final Map<String, Set<String>> ipToUuids = new LinkedHashMap<>();
-    private static final Map<String, Set<String>> fpToUuids = new LinkedHashMap<>();
+    // LRU (accessOrder): an established player's history survives a botnet
+    // flood of new fingerprints; one-shot junk evicts first. All access is
+    // synchronized — recording happens on joins only, so the lock is
+    // uncontended in practice.
+    static final int MAX_TRACKED_ENTRIES = 20_000;
+    static final Map<String, Set<String>> ipToUuids = new LinkedHashMap<>(16, 0.75f, true);
+    static final Map<String, Set<String>> fpToUuids = new LinkedHashMap<>(16, 0.75f, true);
 
     // Debounced saving: joins/fingerprint events only mark dirty; a single
     // background task flushes both files every few seconds. Prevents
@@ -137,9 +139,15 @@ public class OsmiumAltTracker {
      * Adds a key -> uuid association, evicting oldest entries (insertion
      * order) once the map exceeds the hard cap.
      */
-    private static void recordAssociation(Map<String, Set<String>> map, String key, String uuidStr) {
+    static void recordAssociation(Map<String, Set<String>> map, String key, String uuidStr) {
         synchronized (map) {
-            map.computeIfAbsent(key, k -> new HashSet<>()).add(uuidStr);
+            // get-then-put refreshes the LRU access order on every record
+            Set<String> uuids = map.get(key);
+            if (uuids == null) {
+                uuids = new HashSet<>();
+            }
+            uuids.add(uuidStr);
+            map.put(key, uuids);
             while (map.size() > MAX_TRACKED_ENTRIES) {
                 Iterator<String> it = map.keySet().iterator();
                 if (!it.hasNext()) break;

@@ -50,8 +50,20 @@ public class OsmiumReport {
                          String status, String resolvedBy, long resolvedAt) {}
 
     private static volatile File storeFile;
-    private static final Map<UUID, Report> REPORTS = new ConcurrentHashMap<>();
+    static final Map<UUID, Report> REPORTS = new ConcurrentHashMap<>();
+    static final int MAX_STORED_REPORTS = 500;
     private static final Map<UUID, Long> LAST_USE = new ConcurrentHashMap<>();
+
+    // Debounced saving — /report and button resolution only mark dirty; one
+    // background task writes the file. No main-thread disk I/O per report.
+    private static final java.util.concurrent.atomic.AtomicBoolean FLUSH_SCHEDULED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.ScheduledExecutorService SAVER =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "Osmium-Report-Saver");
+                t.setDaemon(true);
+                return t;
+            });
 
     // ------------------------------------------------------------------
     // Lifecycle
@@ -78,6 +90,16 @@ public class OsmiumReport {
     }
 
     private static void save() {
+        if (FLUSH_SCHEDULED.compareAndSet(false, true)) {
+            SAVER.schedule(() -> {
+                try { saveNow(); }
+                catch (Exception e) { LOGGER.error("Report store flush failed", e); }
+                finally { FLUSH_SCHEDULED.set(false); }
+            }, 3, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
+    private static void saveNow() {
         File file = storeFile;
         if (file == null) return;
         try {
@@ -90,6 +112,19 @@ public class OsmiumReport {
             }
         } catch (Exception e) {
             LOGGER.error("Failed to save osmium-reports.json", e);
+        }
+    }
+
+    /** Evicts the oldest reports once the store exceeds the hard cap.
+     *  Breaks out if an entry's map key doesn't match its id (corrupted
+     *  store) instead of spinning forever. */
+    static void evictOldest() {
+        while (REPORTS.size() > MAX_STORED_REPORTS) {
+            Report oldest = null;
+            for (Report r : REPORTS.values()) {
+                if (oldest == null || r.createdAt() < oldest.createdAt()) oldest = r;
+            }
+            if (oldest == null || !REPORTS.remove(oldest.id(), oldest)) break;
         }
     }
 
@@ -182,6 +217,7 @@ public class OsmiumReport {
                 target.getGameProfile().name(), target.getUUID(),
                 reason, System.currentTimeMillis(), "open", "", 0);
         REPORTS.put(report.id(), report);
+        evictOldest();
         save();
 
 boolean sent = OsmiumDiscordBot.pushReport(report);

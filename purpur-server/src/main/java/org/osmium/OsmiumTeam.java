@@ -81,9 +81,15 @@ public class OsmiumTeam {
     private static final Set<UUID> GUI_MEMBERS = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, Integer> GUI_INVITE_LIST = new ConcurrentHashMap<>();      // player -> page
     private static final Map<UUID, List<UUID>> GUI_INVITE_SLOTS = new ConcurrentHashMap<>();  // player -> ordered UUIDs in slots
+    private static final Map<UUID, Integer> GUI_INVITE_TOTAL = new ConcurrentHashMap<>();     // player -> total candidate count (page bound)
     private static final Map<UUID, UUID> GUI_CONFIRM_INVITE = new ConcurrentHashMap<>();      // player -> target
     private static final Map<UUID, UUID> GUI_MANAGE = new ConcurrentHashMap<>();              // player -> target member
     private static final Map<UUID, List<UUID>> GUI_MEMBERS_SLOTS = new ConcurrentHashMap<>(); // player -> ordered member UUIDs
+    /** Container id the current team GUI was opened with. Click packets must
+     *  match it AND the player's live menu — GUI flags go stale on
+     *  server-side closes (death etc.) and must not turn inventory clicks
+     *  into kick/promote/invite actions. */
+    private static final Map<UUID, Integer> GUI_CONTAINER_ID = new ConcurrentHashMap<>();
     /** Players who clicked Rename and must type the new team name in chat. */
     private static final Set<UUID> CHAT_RENAME = ConcurrentHashMap.newKeySet();
 
@@ -115,6 +121,19 @@ public class OsmiumTeam {
         if (!trimmed.matches("[A-Za-z0-9_\\-]{3,16}")) {
             player.sendSystemMessage(Component.literal(
                     "\u00a7cInvalid team name — 3-16 characters, letters/numbers/_/- only. Try again or type 'cancel'."));
+            CHAT_RENAME.add(player.getUUID()); // keep waiting for valid input
+            return true;
+        }
+
+        // Rename input is consumed BEFORE the chat filter in the pipeline —
+        // run the filter here or profanity becomes a permanent [tag] on
+        // every team member's chat.
+        String filterMatch = org.osmium.anticheat.OsmiumChatFilter.check(trimmed);
+        if (filterMatch != null) {
+            player.sendSystemMessage(Component.literal(
+                    "\u00a7cThat team name is not allowed. Try again or type 'cancel'."));
+            org.osmium.anticheat.OsmiumDiscordWebhook.sendChatFiltered(
+                    player.getGameProfile().name(), trimmed, filterMatch, "blocked");
             CHAT_RENAME.add(player.getUUID()); // keep waiting for valid input
             return true;
         }
@@ -518,6 +537,7 @@ public class OsmiumTeam {
         int end = Math.min(start + perPage, candidates.size());
         List<UUID> pageItems = (start < candidates.size()) ? candidates.subList(start, end) : List.of();
         GUI_INVITE_SLOTS.put(uuid, new ArrayList<>(pageItems));
+        GUI_INVITE_TOTAL.put(uuid, candidates.size());
 
         SimpleContainer container = new SimpleContainer(27);
 
@@ -630,8 +650,14 @@ public class OsmiumTeam {
     // Click handling
     // ------------------------------------------------------------------
 
-    public static boolean handleClick(ServerPlayer player, int slot) {
+    public static boolean handleClick(ServerPlayer player, int containerId, int slot) {
         UUID uuid = player.getUUID();
+
+        // See OsmiumRtp.clickMatchesOpenGui — shared click-spoof guard.
+        if (!org.osmium.OsmiumRtp.clickMatchesOpenGui(GUI_CONTAINER_ID.get(uuid), containerId,
+                player.containerMenu == null ? null : player.containerMenu.containerId)) {
+            return false;
+        }
 
         // Confirm invite GUI
         if (GUI_CONFIRM_INVITE.containsKey(uuid)) {
@@ -702,9 +728,13 @@ public class OsmiumTeam {
                 player.closeContainer();
                 openInviteListGui(player, page - 1);
             } else if (slot == 26) {
-                // Next page
-                player.closeContainer();
-                openInviteListGui(player, page + 1);
+                // Next page — bounded: page beyond the last one must not be
+                // reachable (integer overflow -> subList throws mid-packet).
+                int total = GUI_INVITE_TOTAL.getOrDefault(uuid, 0);
+                if ((page + 1) * 18 < total) {
+                    player.closeContainer();
+                    openInviteListGui(player, page + 1);
+                }
             } else if (slot >= 0 && slot <= 17) {
                 // Player head click
                 List<UUID> slotList = GUI_INVITE_SLOTS.get(uuid);
@@ -788,7 +818,9 @@ public class OsmiumTeam {
                 | GUI_MANAGE.remove(uuid) != null;
         GUI_INVITE_SLOTS.remove(uuid);
         GUI_MEMBERS_SLOTS.remove(uuid);
-        if (had) {
+        GUI_INVITE_TOTAL.remove(uuid);
+        boolean hadId = GUI_CONTAINER_ID.remove(uuid) != null;
+        if (had || hadId) {
             debug(player.getGameProfile().name() + " closed team GUI");
         }
     }
@@ -1087,9 +1119,11 @@ public class OsmiumTeam {
         GUI_MEMBERS.remove(uuid);
         GUI_INVITE_LIST.remove(uuid);
         GUI_INVITE_SLOTS.remove(uuid);
+        GUI_INVITE_TOTAL.remove(uuid);
         GUI_CONFIRM_INVITE.remove(uuid);
         GUI_MANAGE.remove(uuid);
         GUI_MEMBERS_SLOTS.remove(uuid);
+        GUI_CONTAINER_ID.remove(uuid);
     }
 
     private static void fillEmpty(SimpleContainer container, int size) {
@@ -1104,6 +1138,7 @@ public class OsmiumTeam {
 
     private static void openScreen(ServerPlayer player, SimpleContainer container, String title) {
         int containerId = player.nextContainerCounter();
+        GUI_CONTAINER_ID.put(player.getUUID(), containerId);
         ChestMenu menu = ChestMenu.threeRows(containerId, player.getInventory(), container);
         menu.setTitle(Component.literal(title));
         player.connection.send(new ClientboundOpenScreenPacket(

@@ -24,14 +24,21 @@ public class OsmiumBrandEnforcement {
     public static final String MODS_CHANNEL = "hand-shaker:mods";
 
     // UUID -> set of mod IDs received from the client
-    private static final Map<UUID, Set<String>> pendingClients = new ConcurrentHashMap<>();
+    // package-private: the cheat-client simulation suite inspects them
+    static final Map<UUID, Set<String>> pendingClients = new ConcurrentHashMap<>();
     // UUIDs that have completed the handshake (sent mod list)
-    private static final Set<UUID> handshakeCompleted = ConcurrentHashMap.newKeySet();
+    static final Set<UUID> handshakeCompleted = ConcurrentHashMap.newKeySet();
     // UUID -> tick at which to run the check
     private static final Map<UUID, Integer> scheduledChecks = new ConcurrentHashMap<>();
 
     // Fingerprint -> UUID for delayed alt check (fingerprint arrives after join)
     private static final Map<UUID, String> playerFingerprints = new ConcurrentHashMap<>();
+
+    // UUIDs that have delivered a hand-shaker payload — accepted OR
+    // rejected. Rejected payloads must also count: otherwise a flood of
+    // malformed payloads (decode + sha256 + log spam per packet) is never
+    // rate-limited by the first-payload guard.
+    static final Set<UUID> payloadSeen = ConcurrentHashMap.newKeySet();
 
     /**
      * Called from ServerCommonPacketListenerImpl.handleCustomPayload() when
@@ -40,13 +47,14 @@ public class OsmiumBrandEnforcement {
     public static void handleModsPayload(UUID playerUuid, String playerName, byte[] data) {
         if (!OsmiumConfig.brandEnforcementEnabled) return;
 
-        // First payload wins. Later payloads are ignored: a client could
-        // otherwise flip its mod list around the scheduled check tick to
-        // dodge the blacklist, or flood osmium-fingerprints.json with
-        // random fingerprints (unbounded map + disk growth).
-        if (pendingClients.containsKey(playerUuid) || handshakeCompleted.contains(playerUuid)) {
+        // First payload wins — accepted or not. Later payloads are ignored:
+        // a client could otherwise flip its mod list around the scheduled
+        // check tick to dodge the blacklist, or flood osmium-fingerprints.json
+        // with random fingerprints (unbounded map + disk growth).
+        if (!isFirstPayload(playerUuid)) {
             return;
         }
+        payloadSeen.add(playerUuid);
 
         try {
             String modsString = decodeVarIntString(data, 0);
@@ -58,15 +66,12 @@ public class OsmiumBrandEnforcement {
             // The Osmium HandShaker always sends 4 length-prefixed fields
             // (mods, sha256, nonce, fingerprint). A missing hash field is a
             // red flag, not a skip-verification path — reject the payload.
+            // (Only one payload per player reaches this point — the
+            // first-payload guard above — so floods can't spam the log.)
             int offset = varIntStringOffset(data, 0);
             String receivedHash = decodeVarIntString(data, offset);
-            if (receivedHash == null) {
-                Bukkit.getLogger().warning("[Osmium] Mod list payload missing hash from " + playerName + ", rejecting");
-                return;
-            }
-            String calculatedHash = sha256(modsString);
-            if (!calculatedHash.equals(receivedHash)) {
-                Bukkit.getLogger().warning("[Osmium] Mod list hash mismatch from " + playerName + ", rejecting");
+            if (!verifyHash(modsString, receivedHash)) {
+                Bukkit.getLogger().warning("[Osmium] Mod list payload missing/mismatched hash from " + playerName + ", rejecting");
                 return;
             }
 
@@ -245,6 +250,7 @@ public class OsmiumBrandEnforcement {
         handshakeCompleted.remove(playerUuid);
         scheduledChecks.remove(playerUuid);
         playerFingerprints.remove(playerUuid);
+        payloadSeen.remove(playerUuid);
     }
 
     // -- VarInt string decoding (Minecraft protocol format) --
@@ -294,8 +300,26 @@ public class OsmiumBrandEnforcement {
         }
     }
 
+    /** True until the client has delivered its one hand-shaker payload
+     *  (accepted or rejected — see payloadSeen). */
+    static boolean isFirstPayload(UUID playerUuid) {
+        return !pendingClients.containsKey(playerUuid) && !handshakeCompleted.contains(playerUuid)
+                && !payloadSeen.contains(playerUuid);
+    }
+
+    /** sha256(modsString) must equal the client-claimed hash; a missing
+     *  hash never passes. */
+    static boolean verifyHash(String modsString, String receivedHash) {
+        return receivedHash != null && sha256(modsString).equals(receivedHash);
+    }
+
+    /** Test hook for the cheat-client simulation suite. */
+    static String sha256ForTest(String input) {
+        return sha256(input);
+    }
+
     /** The HandShaker mod sends a sha256 digest: exactly 64 hex chars. */
-    private static boolean isValidFingerprint(String fingerprint) {
+    static boolean isValidFingerprint(String fingerprint) {
         if (fingerprint == null || fingerprint.length() != 64) return false;
         for (int i = 0; i < fingerprint.length(); i++) {
             char c = fingerprint.charAt(i);
