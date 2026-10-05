@@ -1,0 +1,64 @@
+# Osmium
+
+> Osmium is a custom Purpur fork (Minecraft server software) for semi-vanilla SMPs. It implements anticheat, security, and quality-of-life features natively at the NMS level instead of as plugins. Current version 2.7.0, based on Minecraft/Purpur 26.3, requires Java 25+, licensed MIT.
+
+Osmium sits at the top of the Paper → Purpur → Osmium patch stack. All features are config-gated (mostly OFF by default) and controlled by a single `osmium.yml` generated in the server root on first start.
+
+## Key facts
+
+- Latest release: v2.7.0
+- Minecraft / Purpur base: 26.3
+- Java: 25 or newer
+- Build tool: Gradle wrapper 9.7.1 (paperweight patcher)
+- License: MIT
+- Runnable jar: `purpur-server/createPaperclipJar` → `purpur-paperclip-<version>.jar`
+- Launch: `java -jar purpur-paperclip-<version>.jar --nogui` (Aikar's G1GC flags recommended)
+
+## Features
+
+### Anticheat & security
+- Chunk hiding: fake-block replacement below a configurable Y level, proximity-based reveal, optional entity hiding
+- Raytrace hiding: RayTraceAntiXray-model occlusion engine (per-player candidates, crack-detection DDA, frustum culling, per-block reveal packets)
+- Entity occlusion: entities hidden behind terrain are not sent until visible
+- Alt detection & ban: IP + hardware-fingerprint associations (osmium-ips.json, osmium-fingerprints.json)
+- Brand enforcement: HandShaker mod protocol (`hand-shaker:mods` channel), SHA-256 verification, required/blacklisted mod lists, strict or vanilla mode
+- Latency warning: warns players with sustained high ping about potential false anticheat bans
+- GrimAC auto-install from Modrinth with bundled tuned configs
+- Native chat filter: word list + regex, block/kick/mute actions
+
+### Utility & moderation
+- Discord bot: slash commands with permission tiers, chat bridge, console capture, /tempban, reports
+- Staff log & Minecraft↔Discord account linking (/link, one-time codes)
+- Discord webhooks for server events, bans, alt detections, filter triggers
+- /setop in-game op level management, /report, interval world backups
+
+### Gameplay & QoL
+- /rtp (GUI, cooldowns), /tpa (clickable accept/deny), /home /sethome /homes /spawn
+- /team system with GUIs, invites, friendly-fire toggle
+- PvP combat tag with action-bar countdown and teleport blocking
+- Chat tags (role prefixes, team names) and packet-based scoreboard
+- Optional dedicated spawn dimension with portal-exit RTP
+
+## Links
+
+- [HandShaker client mod](https://github.com/djatlasv/Hand-shaker): Fabric & NeoForge mod required for brand enforcement and fingerprint-based alt detection; sends the `hand-shaker:mods` payload (mod list, SHA-256 hash, nonce, hardware fingerprint)
+- [Purpur](https://github.com/PurpurMC/Purpur) and [Paper](https://github.com/PaperMC/Paper): upstream server software
+- [RayTraceAntiXray](https://github.com/stonar96/RayTraceAntiXray): reference model for the occlusion engine (MIT)
+- [GrimAC](https://github.com/GrimAnticheat/Grim): optional external anticheat, auto-installed from Modrinth
+- [Releases](https://github.com/djatlasv/Osmium/releases): prebuilt paperclip and bundler jars
+
+## Repository layout
+
+- `purpur-server/minecraft-patches/`, `purpur-server/paper-patches/`, `purpur-api/paper-patches/`: patch files for the NMS/API layers
+- `purpur-server/src/main/java/org/osmium/`: Osmium feature code (directly compiled)
+- `purpur-server/src/main/java/org/purpurmc/purpur/`: Purpur-owned directly-compiled config classes
+- `paper-server/`: nested git repo (CraftBukkit layer, committed before patch rebuilds)
+
+## Building from source
+
+```
+./gradlew applyAllPatches                  # required first, before build
+./gradlew build -x test
+./gradlew :purpur-server:test              # ~9k tests
+./gradlew purpur-server:createPaperclipJar # runnable jar in purpur-server/build/libs
+```
