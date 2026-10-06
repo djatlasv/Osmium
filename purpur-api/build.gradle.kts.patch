@@ -45,6 +45,20 @@
          }
      }
  }
+@@ -176,7 +_,12 @@
+ }
+ 
+ val generateApiVersioningFile = tasks.register<GenerateApiVersioningFile>("generateApiVersioningFile") {
+     outputFile.set(layout.buildDirectory.file("apiVersioning.json"))
+-    projectVersion.set(project.version.toString())
++    // "version" is the Bukkit API version string plugins/anticheats parse
++    // for the Minecraft version (e.g. "26.3-R0.1-SNAPSHOT"). Upstream Paper
++    // achieves this because paper-api's project.version IS that string; our
++    // release-version override makes project.version the Osmium version
++    // (e.g. "2.7.0"), which broke packetevents/Grim version detection.
++    projectVersion.set(rootProject.providers.gradleProperty("apiVersion").map { "$it-R0.1-SNAPSHOT" })
+     apiVersion.set(rootProject.providers.gradleProperty("apiVersion"))
+ }
 @@ -199,8 +_,9 @@
  val services = objects.newInstance<Services>()
  

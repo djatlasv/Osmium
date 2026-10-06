@@ -24,8 +24,6 @@ public class OsmiumGrimLoader {
 
     private static final Logger LOGGER = Logger.getLogger("Osmium-GrimAC");
     private static final String MODRINTH_PROJECT = "LJNGWSvH"; // GrimAC project ID
-    private static final String MODRINTH_VERSIONS_URL =
-            "https://api.modrinth.com/v2/project/" + MODRINTH_PROJECT + "/version?loaders=%5B%22paper%22%5D";
 
     /**
      * Called during server init if grim.enabled is true.
@@ -53,6 +51,10 @@ public class OsmiumGrimLoader {
 
     /** Sync webhook URL on every startup so GrimAC always uses Osmium's URL. */
     public static void start() {
+        // Safety net for installs where the jar exists but configs were never
+        // extracted (or GrimAC was disabled before writing its own defaults).
+        // Only-if-absent, so it never clobbers a live GrimAC config.
+        extractDefaultConfigs();
         syncWebhookUrl();
     }
 
@@ -64,14 +66,28 @@ public class OsmiumGrimLoader {
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .build();
 
-        // Query Modrinth for latest Paper-compatible version
-        HttpRequest versionReq = HttpRequest.newBuilder()
-                .uri(URI.create(MODRINTH_VERSIONS_URL))
-                .header("User-Agent", "Osmium/1.0 (github.com/djatlasv/Osmium)")
-                .GET()
-                .build();
+        // Prefer a build whose Modrinth metadata declares THIS Minecraft version,
+        // so an MC upgrade can't silently pull a Grim that can't run on it.
+        // Fall back to the unfiltered latest if metadata lags upstream
+        // (GrimAC 2.3.74 shades packetevents with 26.3 support but its
+        // Modrinth game_versions metadata only lists up to 26.2).
+        String mcVersion = net.minecraft.SharedConstants.getCurrentVersion().id();
+        String encodedVersions = java.net.URLEncoder.encode("[\"" + mcVersion + "\"]", java.nio.charset.StandardCharsets.UTF_8);
+        String baseVersionsUrl = "https://api.modrinth.com/v2/project/" + MODRINTH_PROJECT + "/version?loaders=%5B%22paper%22%5D";
 
-        HttpResponse<String> versionResp = client.send(versionReq, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> versionResp = queryModrinth(client, baseVersionsUrl + "&game_versions=" + encodedVersions);
+        if (versionResp.statusCode() == 200) {
+            JsonArray matching = JsonParser.parseString(versionResp.body()).getAsJsonArray();
+            if (!matching.isEmpty()) {
+                LOGGER.info("Found GrimAC build declaring support for Minecraft " + mcVersion);
+            } else {
+                LOGGER.warning("No GrimAC Modrinth build declares Minecraft " + mcVersion
+                        + " yet; falling back to latest (may not support this version)");
+                versionResp = queryModrinth(client, baseVersionsUrl);
+            }
+        } else {
+            versionResp = queryModrinth(client, baseVersionsUrl);
+        }
         if (versionResp.statusCode() != 200) {
             throw new RuntimeException("Modrinth API returned HTTP " + versionResp.statusCode());
         }
@@ -164,6 +180,15 @@ public class OsmiumGrimLoader {
         // Extract optimized default configs and sync webhook URL
         extractDefaultConfigs();
         syncWebhookUrl();
+    }
+
+    private static HttpResponse<String> queryModrinth(HttpClient client, String url) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("User-Agent", "Osmium/1.0 (github.com/djatlasv/Osmium)")
+                .GET()
+                .build();
+        return client.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
     private static String extractSha1(JsonObject file) {
