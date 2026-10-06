@@ -111,6 +111,14 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         return dx * dx + dz * dz <= r * r;
     }
 
+    /**
+     * ChunkPos overload of {@link #withinProximityReveal(ServerPlayer, BlockPos)}.
+     * Used by the light-update broadcast paths (ChunkHolder / relight packets).
+     */
+    public static boolean withinProximityReveal(ServerPlayer player, ChunkPos pos) {
+        return withinProximityReveal(player, new BlockPos(pos.x() << 4, 0, pos.z() << 4));
+    }
+
     @Override
     public boolean shouldModify(ServerPlayer player, LevelChunk chunk) {
         OsmiumChunkPacketInfo.CURRENT_PLAYER.set(player);
@@ -876,45 +884,29 @@ public class OsmiumChunkProcessor extends ChunkPacketBlockController {
         int minLightSection = chunk.getMinSectionY() - 1;
         int hideBelowSection = hideBelow >> 4;
 
+        // Reveal must match block hiding exactly (XZ proximity): the player
+        // already receives the real blocks for this chunk when xzNear, so the
+        // real light for the same sections leaks nothing extra. The old 3D
+        // section-distance check almost never fired, leaving chunks sent with
+        // real blocks but permanently zeroed light below the threshold.
         ServerPlayer player = info.getPlayer();
-        int playerBlockX = player.blockPosition().getX();
-        int playerBlockY = player.blockPosition().getY();
-        int playerBlockZ = player.blockPosition().getZ();
-        int chunkBlockX = chunk.getPos().x() << 4;
-        int chunkBlockZ = chunk.getPos().z() << 4;
-        int nearestX = Math.max(chunkBlockX, Math.min(playerBlockX, chunkBlockX + 15));
-        int nearestZ = Math.max(chunkBlockZ, Math.min(playerBlockZ, chunkBlockZ + 15));
-        int xzDistSq = (playerBlockX - nearestX) * (playerBlockX - nearestX)
-                      + (playerBlockZ - nearestZ) * (playerBlockZ - nearestZ);
-        int proxSq = proximityRadius * proximityRadius;
-        boolean xzNear = xzDistSq <= proxSq;
+        boolean reveal = withinProximityReveal(player, chunk.getPos());
 
         zeroHiddenLightSections(lightData.skyYMask(), lightData.skyUpdates(),
-                minLightSection, hideBelowSection, xzNear, playerBlockY, xzDistSq, proxSq);
+                minLightSection, hideBelowSection, reveal);
         zeroHiddenLightSections(lightData.blockYMask(), lightData.blockUpdates(),
-                minLightSection, hideBelowSection, xzNear, playerBlockY, xzDistSq, proxSq);
+                minLightSection, hideBelowSection, reveal);
     }
 
     private void zeroHiddenLightSections(BitSet mask, List<byte[]> updates,
                                           int minLightSection, int hideBelowSection,
-                                          boolean xzNear, int playerBlockY,
-                                          int xzDistSq, int proxSq) {
+                                          boolean reveal) {
+        if (reveal) return;
         int listIndex = 0;
         for (int i = mask.nextSetBit(0); i >= 0; i = mask.nextSetBit(i + 1)) {
             int sectionY = minLightSection + i;
             if (sectionY < hideBelowSection) {
-                boolean reveal = false;
-                if (xzNear) {
-                    int sectionMinY = sectionY << 4;
-                    int sectionMaxY = sectionMinY + 15;
-                    int yDist = playerBlockY < sectionMinY ? sectionMinY - playerBlockY
-                              : playerBlockY > sectionMaxY ? playerBlockY - sectionMaxY
-                              : 0;
-                    if (yDist * yDist + xzDistSq <= proxSq) reveal = true;
-                }
-                if (!reveal) {
-                    Arrays.fill(updates.get(listIndex), (byte) 0);
-                }
+                Arrays.fill(updates.get(listIndex), (byte) 0);
             }
             listIndex++;
         }

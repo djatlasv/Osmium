@@ -96,13 +96,14 @@ index 57650ce..18d2d86 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1869,6 +1872,29 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1869,6 +1872,30 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
 +
 +    // Osmium start - tick processing
 +        org.osmium.anticheat.OsmiumBrandEnforcement.tick(this.tickCount, this); // Osmium - brand enforcement
++        org.osmium.anticheat.OsmiumSignedChat.tick(this.tickCount, this); // Osmium - deferred signed chat session check
 +        org.osmium.anticheat.OsmiumOcclusion.tick(this); // Osmium - raytrace visibility + entity occlusion drivers
 +        org.osmium.OsmiumRtp.tick(this);
 +        if (org.osmium.OsmiumConfig.scoreboardEnabled && this.tickCount % org.osmium.OsmiumConfig.scoreboardUpdateTicks == 0) { org.osmium.OsmiumScoreboard.tick(this); }
@@ -199,7 +200,7 @@ diff --git a/net/minecraft/server/level/ChunkHolder.java b/net/minecraft/server/
 index cd5a325..5be7b9c 100644
 --- a/net/minecraft/server/level/ChunkHolder.java
 +++ b/net/minecraft/server/level/ChunkHolder.java
-@@ -278,10 +278,28 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
+@@ -278,10 +278,55 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
              if (!this.skyChangedLightSectionFilter.isEmpty() || !this.blockChangedLightSectionFilter.isEmpty()) {
                  List<ServerPlayer> borderPlayers = this.moonrise$getPlayers(true); // Paper - rewrite chunk system
                  if (!borderPlayers.isEmpty()) {
@@ -207,24 +208,51 @@ index cd5a325..5be7b9c 100644
 -                        chunk.getPos(), this.lightEngine, this.skyChangedLightSectionFilter, this.blockChangedLightSectionFilter
 -                    );
 -                    this.broadcast(borderPlayers, lightPacket);
-+                    // Osmium start - filter light updates for hidden sections (defeats Light Finder)
-+                    BitSet skyFilter = this.skyChangedLightSectionFilter;
-+                    BitSet blockFilter = this.blockChangedLightSectionFilter;
++                    // Osmium start - per-player light hiding (defeats Light Finder)
++                    // Near players (proximity reveal) get real light updates; far
++                    // players get below-threshold sections stripped so hidden
++                    // light can never reach a Light Finder scanning chunk edges.
 +                    if (org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideLight) {
-+                        skyFilter = (BitSet) skyFilter.clone();
-+                        blockFilter = (BitSet) blockFilter.clone();
 +                        int minLightSection = this.levelHeightAccessor.getMinSectionY() - 1;
 +                        int hideBelowSection = org.osmium.OsmiumConfig.chunkHidingYThreshold >> 4;
-+                        for (int i = skyFilter.nextSetBit(0); i >= 0; i = skyFilter.nextSetBit(i + 1)) {
-+                            if (minLightSection + i < hideBelowSection) skyFilter.clear(i);
++                        java.util.List<ServerPlayer> nearPlayers = new java.util.ArrayList<>();
++                        java.util.List<ServerPlayer> farPlayers = new java.util.ArrayList<>();
++                        for (ServerPlayer borderPlayer : borderPlayers) {
++                            if (org.osmium.anticheat.OsmiumChunkProcessor.withinProximityReveal(borderPlayer, chunk.getPos())) {
++                                nearPlayers.add(borderPlayer);
++                            } else {
++                                farPlayers.add(borderPlayer);
++                            }
 +                        }
-+                        for (int i = blockFilter.nextSetBit(0); i >= 0; i = blockFilter.nextSetBit(i + 1)) {
-+                            if (minLightSection + i < hideBelowSection) blockFilter.clear(i);
++                        if (!farPlayers.isEmpty()) {
++                            BitSet farSky = (BitSet) this.skyChangedLightSectionFilter.clone();
++                            BitSet farBlock = (BitSet) this.blockChangedLightSectionFilter.clone();
++                            for (int i = farSky.nextSetBit(0); i >= 0; i = farSky.nextSetBit(i + 1)) {
++                                if (minLightSection + i < hideBelowSection) farSky.clear(i);
++                            }
++                            for (int i = farBlock.nextSetBit(0); i >= 0; i = farBlock.nextSetBit(i + 1)) {
++                                if (minLightSection + i < hideBelowSection) farBlock.clear(i);
++                            }
++                            if (!farSky.isEmpty() || !farBlock.isEmpty()) {
++                                ClientboundLightUpdatePacket farPacket = new ClientboundLightUpdatePacket(
++                                    chunk.getPos(), this.lightEngine, farSky, farBlock
++                                );
++                                for (ServerPlayer farPlayer : farPlayers) {
++                                    farPlayer.connection.send(farPacket);
++                                }
++                            }
 +                        }
-+                    }
-+                    if (!skyFilter.isEmpty() || !blockFilter.isEmpty()) {
++                        if (!nearPlayers.isEmpty()) {
++                            ClientboundLightUpdatePacket nearPacket = new ClientboundLightUpdatePacket(
++                                chunk.getPos(), this.lightEngine, this.skyChangedLightSectionFilter, this.blockChangedLightSectionFilter
++                            );
++                            for (ServerPlayer nearPlayer : nearPlayers) {
++                                nearPlayer.connection.send(nearPacket);
++                            }
++                        }
++                    } else {
 +                        ClientboundLightUpdatePacket lightPacket = new ClientboundLightUpdatePacket(
-+                            chunk.getPos(), this.lightEngine, skyFilter, blockFilter
++                            chunk.getPos(), this.lightEngine, this.skyChangedLightSectionFilter, this.blockChangedLightSectionFilter
 +                        );
 +                        this.broadcast(borderPlayers, lightPacket);
 +                    }
@@ -317,11 +345,15 @@ diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/mine
 index 948a8a2..0d2ed97 100644
 --- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
 +++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
-@@ -130,9 +130,26 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+@@ -130,9 +130,40 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
                              return;
                          }
  
-+                        // Osmium start - filter light updates for hidden sections
++                        // Osmium start - per-player light hiding for relight packets
++                        // Proximity-revealed players get the full unfiltered relight
++                        // snapshot below; the shared filtered packet afterwards only
++                        // repeats identical above-threshold data for them and never
++                        // touches below-threshold sections on the client.
 +                        java.util.BitSet skyFilter = null;
 +                        java.util.BitSet blockFilter = null;
 +                        if (org.osmium.OsmiumConfig.chunkHidingEnabled && org.osmium.OsmiumConfig.chunkHidingHideLight) {
@@ -334,6 +366,16 @@ index 948a8a2..0d2ed97 100644
 +                                if (minLightSection + li >= hideBelowSection) {
 +                                    skyFilter.set(li);
 +                                    blockFilter.set(li);
++                                }
++                            }
++                            for (final ServerPlayer nearRelight : players) {
++                                if (org.osmium.anticheat.OsmiumChunkProcessor.withinProximityReveal(nearRelight, pos)) {
++                                    final net.minecraft.network.protocol.Packet<?> nearPacket = new net.minecraft.network.protocol.game.ClientboundLightUpdatePacket(
++                                        pos, (ThreadedLevelLightEngine)(Object)ThreadedLevelLightEngine.this, null, null
++                                    );
++                                    if (nearRelight.connection != null) {
++                                        nearRelight.connection.send(nearPacket);
++                                    }
 +                                }
 +                            }
 +                        }
@@ -405,7 +447,7 @@ diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/ne
 index 0fcb2e4..4d88990 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2405,6 +2405,17 @@ public class ServerGamePacketListenerImpl
+@@ -2405,6 +2405,18 @@ public class ServerGamePacketListenerImpl
  
      @Override
      public void onDisconnect(final DisconnectionDetails details) {
@@ -419,6 +461,7 @@ index 0fcb2e4..4d88990 100644
 +        org.osmium.OsmiumRecipes.cancel(this.player.getUUID()); // Osmium - drop recipe builder state
 +        org.osmium.discord.OsmiumDiscordBot.onPlayerEvent("\u00a7c\u274c " + this.player.getPlainTextName() + " left the game"); // Osmium - discord bridge
 +        org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
++        org.osmium.anticheat.OsmiumSignedChat.cancel(this.player.getUUID()); // Osmium - cancel deferred signed chat check
 +        // Osmium end
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
@@ -508,23 +551,22 @@ diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server
 index 1fb016f..050bf44 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
-@@ -317,6 +317,77 @@ public abstract class PlayerList {
+@@ -317,6 +317,76 @@ public abstract class PlayerList {
          }
          // Paper end - Configurable player collision
          org.purpurmc.purpur.task.BossBarTask.addToAll(player); // Purpur - Implement TPSBar
-+        // Osmium start - signed chat identity check
-+        // A vanilla client with secure profiles ALWAYS establishes a chat
-+        // session during login. Privacy mods that strip key exchange leave no
-+        // session while everything else looks vanilla — detectable here.
-+        if (org.osmium.OsmiumConfig.signedChatKick
-+                && this.server.enforceSecureProfile()
-+                && player.getChatSession() == null) {
-+            LOGGER.info("[Osmium] {} joined without a chat signing session — kicking", player.getPlainTextName());
-+            connection.disconnect(net.minecraft.network.chat.Component.literal(
-+                    org.osmium.OsmiumConfig.signedChatKickMessage));
-+            return;
++        // Osmium start - signed chat identity check (deferred)
++        // The chat session arrives as a play-phase packet right after join, so
++        // getChatSession() is ALWAYS null here — checking immediately kicks
++        // every client, vanilla included. Privacy mods that strip key exchange
++        // never establish a session at all, so defer the check past a grace
++        // window and kick only if the session never arrives (OsmiumSignedChat).
++        if (org.osmium.OsmiumConfig.signedChatKick && this.server.enforceSecureProfile()) {
++            org.osmium.anticheat.OsmiumSignedChat.scheduleCheck(
++                    player.getUUID(),
++                    this.server.getTickCount() + org.osmium.OsmiumConfig.signedChatCheckDelayTicks);
 +        }
-+        // Osmium end - signed chat identity check
++        // Osmium end - signed chat identity check (deferred)
 +
 +        // Osmium start - known packs version validation (play phase, Via-aware)
 +        if (org.osmium.OsmiumConfig.rejectModdedKnownPacks) {
