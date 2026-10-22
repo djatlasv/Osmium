@@ -287,6 +287,8 @@ public final class OsmiumSpawnDim {
     // Tick driver
     // ------------------------------------------------------------------
 
+    private static volatile boolean spawningRulesApplied = false;
+
     public static void tick(MinecraftServer server) {
         if (!enabled()) { PENDING_JOIN.clear(); return; }
 
@@ -295,9 +297,28 @@ public final class OsmiumSpawnDim {
             return; // wait until installed; dimension appears next restart
         }
 
-        if (PENDING_JOIN.isEmpty()) return;
         ServerLevel dim = level(server);
         if (dim == null) return; // restart still pending
+
+        // Osmium - spawn dimension: the hub must stay pristine — no mobs
+        // (hostile or passive) and no structure generation can happen here.
+        if (!spawningRulesApplied) {
+            spawningRulesApplied = true;
+            try {
+                var world = dim.getWorld();
+                if (world != null) {
+                    // Structures are already disabled by the bundled datapack
+                    // generator ("features": false in the flat settings).
+                    world.setGameRule(org.bukkit.GameRule.DO_MOB_SPAWNING, false);
+                    LOG.info("[Osmium] Spawn dimension: mob spawning disabled (structures already off via generator)");
+                }
+            } catch (Exception e) {
+                spawningRulesApplied = false; // retry next tick if it fails
+                LOG.warn("[Osmium] Could not apply spawn-dimension spawning rules", e);
+            }
+        }
+
+        if (PENDING_JOIN.isEmpty()) return;
 
         for (UUID uuid : PENDING_JOIN) {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);

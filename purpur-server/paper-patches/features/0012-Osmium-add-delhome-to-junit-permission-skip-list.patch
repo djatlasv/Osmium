@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 09:24:49 -0600
+Subject: [PATCH] Osmium: add /delhome to junit permission skip list
+
+
+diff --git a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+index 9dd99d3871e9255152d32e1d725a5a6540930e0b..23e11ff5132ca2d90f3dac881ccddfee91b5107d 100644
+--- a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
++++ b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+@@ -94,6 +94,7 @@ public class MinecraftCommandPermissionsTest {
+         "minecraft.command.unlink",
+         "minecraft.command.setop",
+         "minecraft.command.tpahere",
++        "minecraft.command.delhome",
+         // Osmium end - Skip junit tests for osmium commands
+         "minecraft.command.selector"
+     );
