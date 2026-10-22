@@ -35,6 +35,24 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class OsmiumReport {
 
+    /**
+     * Paper's syncCommands generates minecraft.command.<name> permissions for
+     * every Brigadier root node and defaults them to OP. Pre-register ours as
+     * TRUE so non-op players can use /report.
+     */
+    public static void initPermission() {
+        try {
+            org.bukkit.permissions.Permission perm = new org.bukkit.permissions.Permission(
+                    "minecraft.command.report",
+                    "Allows use of the /report command",
+                    org.bukkit.permissions.PermissionDefault.TRUE);
+            org.bukkit.Bukkit.getPluginManager().addPermission(perm);
+            LOGGER.info("[Osmium-Report] Registered Bukkit permission minecraft.command.report");
+        } catch (Exception e) {
+            LOGGER.warn("Could not register Bukkit permission minecraft.command.report: {}", e.getMessage());
+        }
+    }
+
     private static final org.apache.logging.log4j.Logger LOGGER =
             org.apache.logging.log4j.LogManager.getLogger("Osmium-Report");
     private static final com.google.gson.Gson GSON =

@@ -46,6 +46,8 @@ public class OsmiumTeam {
         String name;
         // When true, teammates can damage each other. Default: protected.
         boolean friendlyFire = false;
+        /** Allied teams (mutual). Allied teams can never PvP each other. */
+        final Set<UUID> allies = new LinkedHashSet<>();
         final Set<UUID> memberUuids = new LinkedHashSet<>();
         final Map<UUID, String> memberNames = new ConcurrentHashMap<>();
 
@@ -60,6 +62,8 @@ public class OsmiumTeam {
 
     private record PendingInvite(UUID inviterUuid, UUID inviteeUuid, UUID teamId, int expiresAtTick) {}
 
+    private record AllianceInvite(UUID fromTeamId, UUID fromLeaderUuid, String fromLeaderName, int expiresAtTick) {}
+
     // --- Persistence format ---
 
     private static class TeamJson {
@@ -67,6 +71,7 @@ public class OsmiumTeam {
         String leader;
         String name;
         boolean friendlyFire = false;
+        List<String> allies;
         Map<String, String> members; // uuid -> name
     }
 
@@ -75,6 +80,7 @@ public class OsmiumTeam {
     private static final Map<UUID, TeamData> teams = new ConcurrentHashMap<>();           // teamId -> team
     private static final Map<UUID, UUID> playerToTeam = new ConcurrentHashMap<>();        // playerUuid -> teamId
     private static final Map<UUID, PendingInvite> pendingInvites = new ConcurrentHashMap<>(); // inviteeUuid -> invite
+    private static final Map<UUID, AllianceInvite> allianceInvites = new ConcurrentHashMap<>(); // inviteeTeamId -> invite
 
     // GUI tracking
     private static final Set<UUID> GUI_MAIN = ConcurrentHashMap.newKeySet();
@@ -92,6 +98,14 @@ public class OsmiumTeam {
     private static final Map<UUID, Integer> GUI_CONTAINER_ID = new ConcurrentHashMap<>();
     /** Players who clicked Rename and must type the new team name in chat. */
     private static final Set<UUID> CHAT_RENAME = ConcurrentHashMap.newKeySet();
+
+    // Alliance GUI tracking
+    private static final Set<UUID> GUI_ALLY = ConcurrentHashMap.newKeySet();                  // alliance menu
+    private static final Map<UUID, Integer> GUI_ALLY_REQUEST = new ConcurrentHashMap<>();     // player -> page
+    private static final Map<UUID, List<UUID>> GUI_ALLY_SLOTS = new ConcurrentHashMap<>();    // player -> ordered team ids in slots
+    private static final Map<UUID, Integer> GUI_ALLY_TOTAL = new ConcurrentHashMap<>();       // player -> total candidate count (page bound)
+    private static final Map<UUID, UUID> GUI_ALLY_CONFIRM = new ConcurrentHashMap<>();        // player -> target team (send request)
+    private static final Map<UUID, UUID> GUI_ALLY_BREAK = new ConcurrentHashMap<>();          // player -> allied team (break)
 
     /**
      * Chat tag API: the display name of this player's team, or null when the
@@ -211,8 +225,8 @@ public class OsmiumTeam {
         if (!OsmiumConfig.teamEnabled) return;
         try {
             org.bukkit.permissions.Permission perm = new org.bukkit.permissions.Permission(
-                    "minecraft.command.party",
-                    "Allows use of the /party command",
+                    "minecraft.command.team",
+                    "Allows use of the /team command",
                     org.bukkit.permissions.PermissionDefault.TRUE
             );
             org.bukkit.Bukkit.getPluginManager().addPermission(perm);
@@ -237,6 +251,11 @@ public class OsmiumTeam {
                 TeamData team = new TeamData(teamId, leaderId, leaderName);
                 team.friendlyFire = tj.friendlyFire;
                 team.name = tj.name;
+                if (tj.allies != null) {
+                    for (String allyId : tj.allies) {
+                        team.allies.add(UUID.fromString(allyId));
+                    }
+                }
                 if (tj.members != null) {
                     for (Map.Entry<String, String> entry : tj.members.entrySet()) {
                         UUID memberUuid = UUID.fromString(entry.getKey());
@@ -246,6 +265,10 @@ public class OsmiumTeam {
                     }
                 }
                 teams.put(teamId, team);
+            }
+            // Drop alliance entries pointing at teams that no longer exist
+            for (TeamData team : teams.values()) {
+                team.allies.removeIf(allyId -> !teams.containsKey(allyId));
             }
         } catch (Exception e) {
             LOGGER.warning("Failed to load osmium-teams.json: " + e.getMessage());
@@ -263,12 +286,17 @@ public class OsmiumTeam {
     }
 
     private static void scheduleFlush() {
+        // Immediate background write, no debounce window: every save() call is
+        // a discrete user action (toggle/kick/leave/rename/alliance), and a
+        // hard kill inside a debounce window used to silently revert the last
+        // change (the "friendly fire doesn't work" report — the OFF state was
+        // lost and the server restarted with friendlyFire=true).
         if (FLUSH_SCHEDULED.compareAndSet(false, true)) {
-            SAVER.schedule(() -> {
+            SAVER.execute(() -> {
                 try { saveNow(); }
                 catch (Exception e) { LOGGER.warning("Team flush failed: " + e.getMessage()); }
                 finally { FLUSH_SCHEDULED.set(false); }
-            }, 3, TimeUnit.SECONDS);
+            });
         }
     }
 
@@ -281,6 +309,12 @@ public class OsmiumTeam {
             tj.leader = team.leaderUuid.toString();
             tj.name = team.name;
             tj.friendlyFire = team.friendlyFire;
+            if (!team.allies.isEmpty()) {
+                tj.allies = new ArrayList<>();
+                for (UUID allyId : team.allies) {
+                    tj.allies.add(allyId.toString());
+                }
+            }
             tj.members = new LinkedHashMap<>();
             for (UUID memberUuid : team.memberUuids) {
                 tj.members.put(memberUuid.toString(), team.memberNames.getOrDefault(memberUuid, "Unknown"));
@@ -327,6 +361,20 @@ public class OsmiumTeam {
                                     declineInvite(player);
                                     return 1;
                                 }))
+                        .then(Commands.literal("allyaccept")
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    if (!OsmiumConfig.teamEnabled) return 0;
+                                    respondAllianceInvite(player, true);
+                                    return 1;
+                                }))
+                        .then(Commands.literal("allydeny")
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    if (!OsmiumConfig.teamEnabled) return 0;
+                                    respondAllianceInvite(player, false);
+                                    return 1;
+                                }))
         );
     }
 
@@ -347,14 +395,34 @@ public class OsmiumTeam {
 
     /**
      * Returns true when the attack must be cancelled: victim and attacker are
-     * on the same team AND the team leader has friendly fire disabled.
+     * on the same team AND the team leader has friendly fire disabled, OR
+     * their teams are allied (alliances always protect, regardless of the
+     * friendly fire toggle — break the alliance to fight).
      */
     public static boolean isFriendlyFireBlocked(ServerPlayer victim, ServerPlayer attacker) {
         if (!OsmiumConfig.teamEnabled) return false;
-        UUID teamId = playerToTeam.get(victim.getUUID());
-        if (teamId == null || !teamId.equals(playerToTeam.get(attacker.getUUID()))) return false;
-        TeamData team = teams.get(teamId);
-        return team != null && !team.friendlyFire;
+        UUID victimTeamId = playerToTeam.get(victim.getUUID());
+        UUID attackerTeamId = playerToTeam.get(attacker.getUUID());
+        if (victimTeamId == null || attackerTeamId == null) return false;
+        if (victimTeamId.equals(attackerTeamId)) {
+            TeamData team = teams.get(victimTeamId);
+            boolean blocked = team != null && !team.friendlyFire;
+            debugPvp(victim, attacker, "same team", blocked);
+            return blocked;
+        }
+        TeamData victimTeam = teams.get(victimTeamId);
+        if (victimTeam != null && victimTeam.allies.contains(attackerTeamId)) {
+            debugPvp(victim, attacker, "allied teams", true);
+            return true;
+        }
+        return false;
+    }
+
+    private static void debugPvp(ServerPlayer victim, ServerPlayer attacker, String relation, boolean blocked) {
+        if (!OsmiumConfig.teamDebug) return;
+        LOGGER.info("[DEBUG] PvP " + relation
+                + ": " + attacker.getGameProfile().name() + " -> " + victim.getGameProfile().name()
+                + " blocked=" + blocked);
     }
 
     // ------------------------------------------------------------------
@@ -414,7 +482,18 @@ public class OsmiumTeam {
                             + "/" + OsmiumConfig.teamMaxSize + ")" + titleSuffix));
             container.setItem(10, members);
 
-            if (team.leaderUuid.equals(uuid)) {
+            boolean leader = team.leaderUuid.equals(uuid);
+            ItemStack alliances = new ItemStack(Items.NETHER_STAR);
+            alliances.set(DataComponents.CUSTOM_NAME,
+                    Component.literal("\u00a7e\u00a7lAlliances \u00a77(" + team.allies.size()
+                            + "/" + OsmiumConfig.teamMaxAlliances + ")"));
+            alliances.set(DataComponents.LORE, new ItemLore(List.of(
+                    Component.literal("\u00a77Allied teams can't PvP each other"),
+                    leader ? Component.literal("\u00a77Click to manage")
+                           : Component.literal("\u00a7cOnly the leader can manage alliances"))));
+            container.setItem(14, alliances);
+
+            if (leader) {
                 // Friendly fire toggle
                 ItemStack ff = new ItemStack(team.friendlyFire ? Items.WOOL.red() : Items.WOOL.lime());
                 ff.set(DataComponents.CUSTOM_NAME,
@@ -502,6 +581,167 @@ public class OsmiumTeam {
 
         fillEmpty(container, 27);
         openScreen(player, container, "\u00a78\u00a7lTeam Members");
+    }
+
+    // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // GUI: Alliances Menu
+    // ------------------------------------------------------------------
+
+    private static void openAllianceGui(ServerPlayer player) {
+        UUID uuid = player.getUUID();
+        debug(player.getGameProfile().name() + " opening alliances GUI");
+        clearGuiState(uuid);
+        GUI_ALLY.add(uuid);
+
+        UUID teamId = playerToTeam.get(uuid);
+        if (teamId == null) return;
+        TeamData team = teams.get(teamId);
+        if (team == null) return;
+
+        MinecraftServer server = player.level().getServer();
+        SimpleContainer container = new SimpleContainer(27);
+
+        // Allied teams in slots 0-17; click = break (confirm GUI)
+        int slot = 0;
+        for (UUID allyId : team.allies) {
+            if (slot > 17) break;
+            TeamData ally = teams.get(allyId);
+            if (ally == null) continue;
+            ItemStack head = new ItemStack(Items.NETHER_STAR);
+            head.set(DataComponents.CUSTOM_NAME,
+                    Component.literal("\u00a7f\u00a7l" + teamDisplayName(ally)));
+            head.set(DataComponents.LORE, new ItemLore(List.of(
+                    Component.literal("\u00a7aAllied"),
+                    team.leaderUuid.equals(uuid)
+                            ? Component.literal("\u00a7cClick to break alliance")
+                            : Component.literal("\u00a7cOnly the leader can break alliances"))));
+            container.setItem(slot++, head);
+        }
+
+        if (team.leaderUuid.equals(uuid)) {
+            boolean canRequest = team.allies.size() < OsmiumConfig.teamMaxAlliances;
+            ItemStack request = new ItemStack(canRequest ? Items.EMERALD : Items.BARRIER);
+            request.set(DataComponents.CUSTOM_NAME,
+                    Component.literal(canRequest
+                            ? "\u00a7a\u00a7lRequest Alliance"
+                            : "\u00a7c\u00a7lMax Alliances Reached (" + OsmiumConfig.teamMaxAlliances + ")"));
+            if (canRequest) {
+                request.set(DataComponents.LORE, new ItemLore(List.of(
+                        Component.literal("\u00a77Pick a team to request an alliance with"))));
+            }
+            container.setItem(22, request);
+        }
+
+        ItemStack back = new ItemStack(Items.ARROW);
+        back.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7lBack"));
+        container.setItem(18, back);
+
+        fillEmpty(container, 27);
+        openScreen(player, container, "\u00a78\u00a7lTeam Alliances");
+    }
+
+    // ------------------------------------------------------------------
+    // GUI: Alliance Request Team List
+    // ------------------------------------------------------------------
+
+    private static void openAllianceRequestListGui(ServerPlayer player, int page) {
+        UUID uuid = player.getUUID();
+        debug(player.getGameProfile().name() + " opening alliance request list GUI (page=" + page + ")");
+        clearGuiState(uuid);
+        GUI_ALLY_REQUEST.put(uuid, page);
+
+        UUID teamId = playerToTeam.get(uuid);
+        if (teamId == null) return;
+        TeamData team = teams.get(teamId);
+        if (team == null) return;
+
+        // Candidates: every team except our own and our current allies
+        List<UUID> candidates = new ArrayList<>();
+        for (TeamData other : teams.values()) {
+            if (other.teamId.equals(teamId)) continue;
+            if (team.allies.contains(other.teamId)) continue;
+            candidates.add(other.teamId);
+        }
+        candidates.sort(Comparator.comparing(t -> teamDisplayName(teams.get(t)).toLowerCase()));
+
+        int perPage = 18; // top 2 rows
+        int start = page * perPage;
+        int end = Math.min(start + perPage, candidates.size());
+        List<UUID> pageItems = (start < candidates.size()) ? candidates.subList(start, end) : List.of();
+        GUI_ALLY_SLOTS.put(uuid, new ArrayList<>(pageItems));
+        GUI_ALLY_TOTAL.put(uuid, candidates.size());
+
+        MinecraftServer server = player.level().getServer();
+        SimpleContainer container = new SimpleContainer(27);
+
+        for (int i = 0; i < pageItems.size(); i++) {
+            TeamData other = teams.get(pageItems.get(i));
+            if (other == null) continue;
+            boolean hasPending = allianceInvites.containsKey(other.teamId);
+            ItemStack star = new ItemStack(hasPending ? Items.DYE.gray() : Items.NETHER_STAR);
+            star.set(DataComponents.CUSTOM_NAME,
+                    Component.literal("\u00a7f\u00a7l" + teamDisplayName(other)));
+            star.set(DataComponents.LORE, new ItemLore(List.of(
+                    hasPending ? Component.literal("\u00a78Request pending")
+                               : Component.literal("\u00a7aClick to request alliance"))));
+            container.setItem(i, star);
+        }
+
+        ItemStack back = new ItemStack(Items.ARROW);
+        back.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7lBack"));
+        container.setItem(18, back);
+
+        if (page > 0) {
+            ItemStack prev = new ItemStack(Items.ARROW);
+            prev.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7lPrevious Page"));
+            container.setItem(19, prev);
+        }
+
+        if (end < candidates.size()) {
+            ItemStack next = new ItemStack(Items.ARROW);
+            next.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7lNext Page"));
+            container.setItem(26, next);
+        }
+
+        fillEmpty(container, 27);
+        openScreen(player, container, "\u00a78\u00a7lRequest Alliance");
+    }
+
+    // ------------------------------------------------------------------
+    // GUI: Alliance Confirm (send request / break)
+    // ------------------------------------------------------------------
+
+    private static void openAllianceConfirmGui(ServerPlayer player, UUID targetTeamId, boolean breaking) {
+        UUID uuid = player.getUUID();
+        clearGuiState(uuid);
+        (breaking ? GUI_ALLY_BREAK : GUI_ALLY_CONFIRM).put(uuid, targetTeamId);
+
+        UUID teamId = playerToTeam.get(uuid);
+        TeamData targetTeam = teams.get(targetTeamId);
+        String targetName = targetTeam != null ? teamDisplayName(targetTeam) : "Unknown";
+        debug(player.getGameProfile().name() + " opening alliance "
+                + (breaking ? "break" : "request") + " confirm GUI for " + targetName);
+
+        SimpleContainer container = new SimpleContainer(27);
+
+        ItemStack confirm = new ItemStack(Items.WOOL.lime());
+        confirm.set(DataComponents.CUSTOM_NAME,
+                breaking
+                        ? Component.literal("\u00a7c\u00a7lBreak Alliance with " + targetName)
+                        : Component.literal("\u00a7a\u00a7lRequest Alliance with " + targetName));
+        container.setItem(11, confirm);
+
+        ItemStack star = new ItemStack(Items.NETHER_STAR);
+        star.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7f\u00a7l" + targetName));
+        container.setItem(13, star);
+
+        ItemStack cancel = new ItemStack(Items.WOOL.red());
+        cancel.set(DataComponents.CUSTOM_NAME, Component.literal("\u00a7c\u00a7lCancel"));
+        container.setItem(15, cancel);
+
+        fillEmpty(container, 27);
+        openScreen(player, container, breaking ? "\u00a78\u00a7lBreak Alliance" : "\u00a78\u00a7lRequest Alliance");
     }
 
     // ------------------------------------------------------------------
@@ -747,6 +987,81 @@ public class OsmiumTeam {
             return true;
         }
 
+        // Alliance menu
+        if (GUI_ALLY.contains(uuid)) {
+            UUID teamId = playerToTeam.get(uuid);
+            TeamData team = teamId != null ? teams.get(teamId) : null;
+            boolean leader = team != null && team.leaderUuid.equals(uuid);
+            if (slot >= 0 && slot <= 17) {
+                List<UUID> allyList = team != null ? List.copyOf(team.allies) : List.of();
+                if (slot < allyList.size() && leader) {
+                    player.closeContainer();
+                    openAllianceConfirmGui(player, allyList.get(slot), true);
+                }
+            } else if (slot == 18) {
+                player.closeContainer();
+                openMainGui(player);
+            } else if (slot == 22 && leader
+                    && team.allies.size() < OsmiumConfig.teamMaxAlliances) {
+                player.closeContainer();
+                openAllianceRequestListGui(player, 0);
+            }
+            return true;
+        }
+
+        // Alliance request team list
+        if (GUI_ALLY_REQUEST.containsKey(uuid)) {
+            int page = GUI_ALLY_REQUEST.get(uuid);
+            if (slot == 18) {
+                player.closeContainer();
+                openAllianceGui(player);
+            } else if (slot == 19 && page > 0) {
+                player.closeContainer();
+                openAllianceRequestListGui(player, page - 1);
+            } else if (slot == 26) {
+                int total = GUI_ALLY_TOTAL.getOrDefault(uuid, 0);
+                if ((page + 1) * 18 < total) {
+                    player.closeContainer();
+                    openAllianceRequestListGui(player, page + 1);
+                }
+            } else if (slot >= 0 && slot <= 17) {
+                List<UUID> slotList = GUI_ALLY_SLOTS.get(uuid);
+                if (slotList != null && slot < slotList.size()) {
+                    player.closeContainer();
+                    openAllianceConfirmGui(player, slotList.get(slot), false);
+                }
+            }
+            return true;
+        }
+
+        // Alliance confirm (send request)
+        if (GUI_ALLY_CONFIRM.containsKey(uuid)) {
+            UUID targetTeamId = GUI_ALLY_CONFIRM.get(uuid);
+            if (slot == 11) {
+                sendAllianceRequest(player, targetTeamId);
+                player.closeContainer();
+                openAllianceGui(player);
+            } else if (slot == 15) {
+                player.closeContainer();
+                openAllianceRequestListGui(player, 0);
+            }
+            return true;
+        }
+
+        // Alliance confirm (break)
+        if (GUI_ALLY_BREAK.containsKey(uuid)) {
+            UUID allyTeamId = GUI_ALLY_BREAK.get(uuid);
+            if (slot == 11) {
+                breakAlliance(player, allyTeamId);
+                player.closeContainer();
+                openAllianceGui(player);
+            } else if (slot == 15) {
+                player.closeContainer();
+                openAllianceGui(player);
+            }
+            return true;
+        }
+
         // Main menu GUI
         if (GUI_MAIN.contains(uuid)) {
             UUID teamId = playerToTeam.get(uuid);
@@ -790,6 +1105,10 @@ public class OsmiumTeam {
                     CHAT_RENAME.add(uuid);
                     player.sendSystemMessage(Component.literal(
                             "\u00a7eType the new team name in chat \u00a77(3-16 chars, letters/numbers/_/-)\u00a7e, or type 'cancel'."));
+                } else if (slot == 14) {
+                    // Alliances
+                    player.closeContainer();
+                    openAllianceGui(player);
                 } else if (slot == 15) {
                     // Leave or Disband
                     if (team != null && team.leaderUuid.equals(uuid)) {
@@ -815,10 +1134,15 @@ public class OsmiumTeam {
         UUID uuid = player.getUUID();
         boolean had = GUI_MAIN.remove(uuid) | GUI_MEMBERS.remove(uuid)
                 | GUI_INVITE_LIST.remove(uuid) != null | GUI_CONFIRM_INVITE.remove(uuid) != null
-                | GUI_MANAGE.remove(uuid) != null;
+                | GUI_MANAGE.remove(uuid) != null
+                | GUI_ALLY.remove(uuid) | GUI_ALLY_CONFIRM.remove(uuid) != null
+                | GUI_ALLY_BREAK.remove(uuid) != null;
         GUI_INVITE_SLOTS.remove(uuid);
         GUI_MEMBERS_SLOTS.remove(uuid);
         GUI_INVITE_TOTAL.remove(uuid);
+        GUI_ALLY_REQUEST.remove(uuid);
+        GUI_ALLY_SLOTS.remove(uuid);
+        GUI_ALLY_TOTAL.remove(uuid);
         boolean hadId = GUI_CONTAINER_ID.remove(uuid) != null;
         if (had || hadId) {
             debug(player.getGameProfile().name() + " closed team GUI");
@@ -836,7 +1160,7 @@ public class OsmiumTeam {
     // ------------------------------------------------------------------
 
     public static void tick(MinecraftServer server) {
-        if (pendingInvites.isEmpty()) return;
+        if (pendingInvites.isEmpty() && allianceInvites.isEmpty()) return;
         int currentTick = server.getTickCount();
         Iterator<Map.Entry<UUID, PendingInvite>> it = pendingInvites.entrySet().iterator();
         while (it.hasNext()) {
@@ -850,6 +1174,26 @@ public class OsmiumTeam {
                 debug("Invite for " + invite.inviteeUuid() + " expired");
             }
         }
+        Iterator<Map.Entry<UUID, AllianceInvite>> allyIt = allianceInvites.entrySet().iterator();
+        while (allyIt.hasNext()) {
+            Map.Entry<UUID, AllianceInvite> entry = allyIt.next();
+            AllianceInvite invite = entry.getValue();
+            if (currentTick >= invite.expiresAtTick()) {
+                UUID inviteeTeamId = entry.getKey();
+                allyIt.remove();
+                notifyTeamLeaders(server, inviteeTeamId, Component.literal("\u00a7cAlliance request expired."));
+                notifyTeamLeaders(server, invite.fromTeamId(), Component.literal("\u00a7cYour alliance request expired."));
+                debug("Alliance invite for team " + inviteeTeamId + " expired");
+            }
+        }
+    }
+
+    /** Sends a message to every online member of a team who is its leader. */
+    private static void notifyTeamLeaders(MinecraftServer server, UUID teamId, Component message) {
+        TeamData team = teams.get(teamId);
+        if (team == null) return;
+        ServerPlayer leader = server.getPlayerList().getPlayer(team.leaderUuid);
+        if (leader != null) leader.sendSystemMessage(message);
     }
 
     // ------------------------------------------------------------------
@@ -1104,10 +1448,185 @@ public class OsmiumTeam {
         }
 
         teams.remove(teamId);
+        allianceInvites.remove(teamId);
+        cleanupAlliances(server, teamId, leaderName + "'s team was disbanded.");
         save();
 
         leader.sendSystemMessage(Component.literal("\u00a7cTeam disbanded."));
         org.osmium.OsmiumChatTags.apply(leader);
+    }
+
+    // ------------------------------------------------------------------
+    // Alliances
+    // ------------------------------------------------------------------
+
+    /** Display name for GUIs/logs: [tag] when named, otherwise "<leader>'s Team". */
+    private static String teamDisplayName(TeamData team) {
+        if (team.name != null) return team.name;
+        String leaderName = team.memberNames.getOrDefault(team.leaderUuid, team.leaderName);
+        return leaderName + "'s Team";
+    }
+
+    /** Removes every alliance of the given team (both directions) and notifies the former allies. */
+    private static void cleanupAlliances(MinecraftServer server, UUID teamId, String reason) {
+        TeamData team = teams.get(teamId);
+        if (team == null) return;
+        for (UUID allyId : List.copyOf(team.allies)) {
+            TeamData ally = teams.get(allyId);
+            if (ally != null) {
+                ally.allies.remove(teamId);
+                notifyTeam(server, ally, Component.literal("\u00a7cAlliance broken: " + reason));
+            }
+            team.allies.remove(allyId);
+        }
+    }
+
+    /**
+     * Leader accepts/denies an alliance invite via chat buttons
+     * (/team allyaccept /team allydeny).
+     */
+    private static void respondAllianceInvite(ServerPlayer player, boolean accept) {
+        UUID myTeamId = playerToTeam.get(player.getUUID());
+        if (myTeamId == null) {
+            player.sendSystemMessage(Component.literal("\u00a7cYou are not in a team!"));
+            return;
+        }
+        TeamData myTeam = teams.get(myTeamId);
+        if (myTeam == null) return;
+        if (!myTeam.leaderUuid.equals(player.getUUID())) {
+            player.sendSystemMessage(Component.literal("\u00a7cOnly the team leader can respond to alliance requests."));
+            return;
+        }
+
+        AllianceInvite invite = allianceInvites.remove(myTeamId);
+        if (invite == null) {
+            player.sendSystemMessage(Component.literal("\u00a7cYou have no pending alliance requests."));
+            return;
+        }
+
+        TeamData fromTeam = teams.get(invite.fromTeamId());
+        if (!accept) {
+            debug(player.getGameProfile().name() + " denied alliance request from team " + invite.fromTeamId());
+            player.sendSystemMessage(Component.literal("\u00a7cAlliance request denied."));
+            notifyTeamLeaders(server(), invite.fromTeamId(), Component.literal(
+                    "\u00a7c[" + teamDisplayName(myTeam) + "] denied your alliance request."));
+            return;
+        }
+
+        if (fromTeam == null) {
+            player.sendSystemMessage(Component.literal("\u00a7cThat team no longer exists."));
+            return;
+        }
+
+        MinecraftServer server = player.level().getServer();
+        if (myTeam.allies.size() >= OsmiumConfig.teamMaxAlliances
+                || fromTeam.allies.size() >= OsmiumConfig.teamMaxAlliances) {
+            player.sendSystemMessage(Component.literal(
+                    "\u00a7cAlliance failed — max \u00a7e" + OsmiumConfig.teamMaxAlliances
+                            + "\u00a7c alliances per team."));
+            notifyTeamLeaders(server, invite.fromTeamId(), Component.literal(
+                    "\u00a7cAlliance with [" + teamDisplayName(myTeam)
+                            + "] failed — max " + OsmiumConfig.teamMaxAlliances + " alliances per team."));
+            return;
+        }
+
+        myTeam.allies.add(fromTeam.teamId);
+        fromTeam.allies.add(myTeam.teamId);
+        save();
+
+        String fromName = teamDisplayName(fromTeam);
+        String myName = teamDisplayName(myTeam);
+        debug("Alliance formed: " + myName + " <-> " + fromName);
+        notifyTeam(server, myTeam, Component.literal(
+                "\u00a7aAlliance formed with \u00a7f[" + fromName + "]\u00a7a! You can no longer PvP them."));
+        notifyTeam(server, fromTeam, Component.literal(
+                "\u00a7aAlliance formed with \u00a7f[" + myName + "]\u00a7a! You can no longer PvP them."));
+    }
+
+    /**
+     * Leader requests an alliance with another team. The other team's leader
+     * gets clickable chat buttons. Max-alliances checked on both sides.
+     */
+    private static void sendAllianceRequest(ServerPlayer leader, UUID targetTeamId) {
+        UUID myTeamId = playerToTeam.get(leader.getUUID());
+        TeamData myTeam = myTeamId != null ? teams.get(myTeamId) : null;
+        if (myTeam == null || !myTeam.leaderUuid.equals(leader.getUUID())) {
+            leader.sendSystemMessage(Component.literal("\u00a7cYou are not a team leader!"));
+            return;
+        }
+        TeamData targetTeam = teams.get(targetTeamId);
+        if (targetTeam == null || targetTeam.teamId.equals(myTeam.teamId)) return;
+
+        if (myTeam.allies.contains(targetTeamId)) {
+            leader.sendSystemMessage(Component.literal("\u00a7cYou are already allied with that team."));
+            return;
+        }
+        if (allianceInvites.containsKey(targetTeamId)) {
+            leader.sendSystemMessage(Component.literal("\u00a7cThat team already has a pending alliance request."));
+            return;
+        }
+        if (myTeam.allies.size() >= OsmiumConfig.teamMaxAlliances) {
+            leader.sendSystemMessage(Component.literal(
+                    "\u00a7cYou already have the maximum of \u00a7e" + OsmiumConfig.teamMaxAlliances + "\u00a7c alliances."));
+            return;
+        }
+        if (targetTeam.allies.size() >= OsmiumConfig.teamMaxAlliances) {
+            leader.sendSystemMessage(Component.literal(
+                    "\u00a7c[" + teamDisplayName(targetTeam) + "] already has the maximum of \u00a7e"
+                            + OsmiumConfig.teamMaxAlliances + "\u00a7c alliances."));
+            return;
+        }
+
+        MinecraftServer server = leader.level().getServer();
+        ServerPlayer targetLeader = server.getPlayerList().getPlayer(targetTeam.leaderUuid);
+        if (targetLeader == null) {
+            leader.sendSystemMessage(Component.literal(
+                    "\u00a7c[" + teamDisplayName(targetTeam) + "]'s leader is not online."));
+            return;
+        }
+
+        int expiresAt = server.getTickCount() + (OsmiumConfig.teamInviteTimeoutSeconds * 20);
+        allianceInvites.put(targetTeamId, new AllianceInvite(
+                myTeam.teamId, leader.getUUID(), leader.getGameProfile().name(), expiresAt));
+
+        String myName = teamDisplayName(myTeam);
+        debug(leader.getGameProfile().name() + " requested alliance with team " + targetTeamId);
+        leader.sendSystemMessage(Component.literal(
+                "\u00a7aAlliance request sent to \u00a7f[" + teamDisplayName(targetTeam) + "]\u00a7a!"));
+        targetLeader.sendSystemMessage(Component.literal(
+                "\u00a7e" + leader.getGameProfile().name() + " of [" + myName + "] wants to form an alliance!"));
+        targetLeader.sendSystemMessage(Component.empty()
+                .append(chatButton("[ACCEPT]", "/team allyaccept", ChatFormatting.GREEN))
+                .append(Component.literal("  "))
+                .append(chatButton("[DENY]", "/team allydeny", ChatFormatting.RED)));
+    }
+
+    /** Leader breaks an alliance with another team (both directions, both teams notified). */
+    private static void breakAlliance(ServerPlayer leader, UUID allyTeamId) {
+        UUID myTeamId = playerToTeam.get(leader.getUUID());
+        TeamData myTeam = myTeamId != null ? teams.get(myTeamId) : null;
+        if (myTeam == null || !myTeam.leaderUuid.equals(leader.getUUID())) {
+            leader.sendSystemMessage(Component.literal("\u00a7cYou are not a team leader!"));
+            return;
+        }
+        TeamData allyTeam = teams.get(allyTeamId);
+        if (allyTeam == null || !myTeam.allies.contains(allyTeamId)) {
+            leader.sendSystemMessage(Component.literal("\u00a7cYou are not allied with that team."));
+            return;
+        }
+
+        String myName = teamDisplayName(myTeam);
+        String allyName = teamDisplayName(allyTeam);
+        myTeam.allies.remove(allyTeamId);
+        allyTeam.allies.remove(myTeam.teamId);
+        allianceInvites.remove(allyTeamId);
+        save();
+
+        debug(leader.getGameProfile().name() + " broke alliance: " + myName + " <-> " + allyName);
+        notifyTeam(server(), myTeam, Component.literal(
+                "\u00a7cAlliance broken with \u00a7f[" + allyName + "]\u00a7c."));
+        notifyTeam(server(), allyTeam, Component.literal(
+                "\u00a7cAlliance broken with \u00a7f[" + myName + "]\u00a7c."));
     }
 
     // ------------------------------------------------------------------
@@ -1124,6 +1643,12 @@ public class OsmiumTeam {
         GUI_MANAGE.remove(uuid);
         GUI_MEMBERS_SLOTS.remove(uuid);
         GUI_CONTAINER_ID.remove(uuid);
+        GUI_ALLY.remove(uuid);
+        GUI_ALLY_REQUEST.remove(uuid);
+        GUI_ALLY_SLOTS.remove(uuid);
+        GUI_ALLY_TOTAL.remove(uuid);
+        GUI_ALLY_CONFIRM.remove(uuid);
+        GUI_ALLY_BREAK.remove(uuid);
     }
 
     private static void fillEmpty(SimpleContainer container, int size) {

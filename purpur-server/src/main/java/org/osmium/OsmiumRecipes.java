@@ -52,6 +52,26 @@ public final class OsmiumRecipes {
 
     private OsmiumRecipes() {}
 
+    /**
+     * Paper's syncCommands generates minecraft.command.<name> permissions for
+     * every Brigadier root node and defaults them to OP. Pre-register ours as
+     * TRUE so non-op players can use /customrecipes and /osmium-recipes.
+     */
+    public static void initPermission() {
+        for (String name : new String[]{"customrecipes", "osmium-recipes"}) {
+            try {
+                org.bukkit.permissions.Permission perm = new org.bukkit.permissions.Permission(
+                        "minecraft.command." + name,
+                        "Allows use of the /" + name + " command",
+                        org.bukkit.permissions.PermissionDefault.TRUE);
+                org.bukkit.Bukkit.getPluginManager().addPermission(perm);
+                LOGGER.info("[Osmium-Recipes] Registered Bukkit permission minecraft.command." + name);
+            } catch (Exception e) {
+                LOGGER.warn("Could not register Bukkit permission minecraft.command." + name + ": {}", e.getMessage());
+            }
+        }
+    }
+
     private static final org.apache.logging.log4j.Logger LOGGER =
             org.apache.logging.log4j.LogManager.getLogger("Osmium-Recipes");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

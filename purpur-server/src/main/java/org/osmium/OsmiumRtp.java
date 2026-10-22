@@ -140,28 +140,41 @@ public class OsmiumRtp {
 
         SimpleContainer container = new SimpleContainer(27);
 
-        // Overworld — Grass Block
-        ItemStack overworld = new ItemStack(Items.GRASS_BLOCK);
-        overworld.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                Component.literal("\u00a7a\u00a7lOverworld"));
-        container.setItem(SLOT_OVERWORLD, overworld);
-
-        // Nether — Netherrack
-        ItemStack nether = new ItemStack(Items.NETHERRACK);
-        nether.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                Component.literal("\u00a7c\u00a7lThe Nether"));
-        container.setItem(SLOT_NETHER, nether);
-
-        // End — End Stone
-        ItemStack end = new ItemStack(Items.END_STONE);
-        end.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                Component.literal("\u00a75\u00a7lThe End"));
-        container.setItem(SLOT_END, end);
-
-        // Fill empty slots with gray stained glass panes
         ItemStack filler = new ItemStack(Items.STAINED_GLASS_PANE.gray());
         filler.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                 Component.literal(" "));
+
+        // Overworld — Grass Block (hidden when disabled)
+        if (!isDimensionDisabled(Level.OVERWORLD)) {
+            ItemStack overworld = new ItemStack(Items.GRASS_BLOCK);
+            overworld.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    Component.literal("\u00a7a\u00a7lOverworld"));
+            container.setItem(SLOT_OVERWORLD, overworld);
+        } else {
+            debug("Overworld RTP disabled by config, slot hidden");
+        }
+
+        // Nether — Netherrack
+        if (!isDimensionDisabled(Level.NETHER)) {
+            ItemStack nether = new ItemStack(Items.NETHERRACK);
+            nether.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    Component.literal("\u00a7c\u00a7lThe Nether"));
+            container.setItem(SLOT_NETHER, nether);
+        } else {
+            debug("Nether RTP disabled by config, slot hidden");
+        }
+
+        // End — End Stone
+        if (!isDimensionDisabled(Level.END)) {
+            ItemStack end = new ItemStack(Items.END_STONE);
+            end.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    Component.literal("\u00a75\u00a7lThe End"));
+            container.setItem(SLOT_END, end);
+        } else {
+            debug("End RTP disabled by config, slot hidden");
+        }
+
+        // Fill empty slots with gray stained glass panes
         for (int i = 0; i < 27; i++) {
             if (container.getItem(i).isEmpty()) {
                 container.setItem(i, filler.copy());
@@ -246,6 +259,15 @@ public class OsmiumRtp {
             }
         }
 
+        // Disabled dimensions never get a slot, but a crafted click packet
+        // could still target the (filler) slot — reject here too.
+        if (isDimensionDisabled(dimension)) {
+            debug(name + " clicked DISABLED dimension " + getDimensionName(dimension) + ", ignoring");
+            player.sendSystemMessage(Component.literal(
+                    "\u00a7cRTP to " + getDimensionName(dimension) + " is disabled."));
+            return true;
+        }
+
         debug(name + " selected " + getDimensionName(dimension) + ", opening confirm GUI");
         GUI_OPEN.remove(uuid);
         player.closeContainer();
@@ -319,6 +341,15 @@ public class OsmiumRtp {
     private static void executeRtp(ServerPlayer player, ResourceKey<Level> dimension) {
         String name = player.getGameProfile().name();
         debug(name + " executeRtp called (dimension=" + getDimensionName(dimension) + ")");
+
+        // Defense in depth: the GUI already blocks disabled dimensions, this
+        // also covers any future entry point (portal-exit-rtp reuse, etc.)
+        if (isDimensionDisabled(dimension)) {
+            debug(name + " executeRtp blocked: dimension disabled");
+            player.sendSystemMessage(Component.literal(
+                    "\u00a7cRTP to " + getDimensionName(dimension) + " is disabled."));
+            return;
+        }
 
         if (PENDING.containsKey(player.getUUID())) {
             debug(name + " already has a pending teleport, aborting");
@@ -788,5 +819,18 @@ public class OsmiumRtp {
         if (dim == Level.NETHER) return "The Nether";
         if (dim == Level.END) return "The End";
         return dim.identifier().toString();
+    }
+
+    /**
+     * Config key per dimension: overworld, nether, the_end (also accepts
+     * "end"). Unknown keys are ignored so typos never silently break the GUI.
+     */
+    private static boolean isDimensionDisabled(ResourceKey<Level> dim) {
+        if (OsmiumConfig.rtpDisabledDimensions.isEmpty()) return false;
+        if (dim == Level.OVERWORLD) return OsmiumConfig.rtpDisabledDimensions.contains("overworld");
+        if (dim == Level.NETHER) return OsmiumConfig.rtpDisabledDimensions.contains("nether");
+        if (dim == Level.END) return OsmiumConfig.rtpDisabledDimensions.contains("the_end")
+                || OsmiumConfig.rtpDisabledDimensions.contains("end");
+        return false;
     }
 }

@@ -83,6 +83,21 @@ public class OsmiumHomes {
                     return 1;
                 }));
 
+        dispatcher.register(Commands.literal("delhome")
+                .executes(ctx -> {
+                    ServerPlayer p = ctx.getSource().getPlayerOrException();
+                    if (!enabled()) return 0;
+                    deleteHome(p, "home");
+                    return 1;
+                })
+                .then(Commands.argument("name", com.mojang.brigadier.arguments.StringArgumentType.word())
+                        .executes(ctx -> {
+                            ServerPlayer p = ctx.getSource().getPlayerOrException();
+                            if (!enabled()) return 0;
+                            deleteHome(p, com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "name").toLowerCase(Locale.ROOT));
+                            return 1;
+                        })));
+
         dispatcher.register(Commands.literal("spawn")
                 .executes(ctx -> {
                     ServerPlayer p = ctx.getSource().getPlayerOrException();
@@ -93,6 +108,26 @@ public class OsmiumHomes {
     }
 
     private static boolean enabled() { return OsmiumConfig.tpaEnabled || OsmiumConfig.homesEnabled; }
+
+    /**
+     * Paper's syncCommands generates minecraft.command.<name> permissions for
+     * every Brigadier root node and defaults them to OP. Pre-register ours as
+     * TRUE so non-op players can use /sethome /home /homes /delhome /spawn.
+     */
+    public static void initPermission() {
+        for (String name : new String[]{"sethome", "home", "homes", "delhome", "spawn"}) {
+            try {
+                org.bukkit.permissions.Permission perm = new org.bukkit.permissions.Permission(
+                        "minecraft.command." + name,
+                        "Allows use of the /" + name + " command",
+                        org.bukkit.permissions.PermissionDefault.TRUE);
+                org.bukkit.Bukkit.getPluginManager().addPermission(perm);
+                debug("Registered Bukkit permission minecraft.command." + name);
+            } catch (Exception e) {
+                debug("Could not register Bukkit permission minecraft.command." + name + ": " + e.getMessage());
+            }
+        }
+    }
 
     private static void debug(String msg) {
         if (OsmiumConfig.homesDebug) {
@@ -154,6 +189,18 @@ public class OsmiumHomes {
             return;
         }
         startCountdown(player, home, "'" + name + "'");
+    }
+
+    private static void deleteHome(ServerPlayer player, String name) {
+        Map<String, HomePos> homes = HOMES.get(player.getUUID());
+        if (homes == null || homes.remove(name) == null) {
+            player.sendSystemMessage(Component.literal(ChatFormatting.RED + "No home named '" + name + "'."));
+            return;
+        }
+        if (homes.isEmpty()) HOMES.remove(player.getUUID());
+        save();
+        player.sendSystemMessage(Component.literal(ChatFormatting.GREEN + "Home '" + name + "' deleted."));
+        debug(player.getGameProfile().name() + " deleted home '" + name + "'");
     }
 
     private static void listHomes(ServerPlayer player) {
