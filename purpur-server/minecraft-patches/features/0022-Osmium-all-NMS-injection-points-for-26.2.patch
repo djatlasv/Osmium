@@ -1,14 +1,13 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Djatlasv <djatlasv@users.noreply.github.com>
-Date: Sun, 4 Oct 2026 12:00:00 -0600
+Date: Wed, 22 Oct 2026 12:00:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
-
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index cd88ff5..6742183 100644
+index cd88ff5..3d89306 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -268,6 +268,14 @@ public class Commands {
+@@ -268,6 +268,16 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
@@ -20,10 +19,12 @@ index cd88ff5..6742183 100644
 +        org.osmium.OsmiumReport.registerCommand(this.dispatcher); // Osmium - /report command (always register; enabled check is at execution time)
 +        org.osmium.OsmiumStaffLog.registerCommand(this.dispatcher); // Osmium - /link /unlink staff Discord linking
 +        org.osmium.OsmiumOpLevel.registerCommand(this.dispatcher); // Osmium - /setop in-game op level management
++        org.osmium.npc.OsmiumNpc.registerCommand(this.dispatcher); // Osmium - /osnpc Citizens-backed command NPCs
++        org.osmium.npc.OsmiumBaltop.registerCommand(this.dispatcher); // Osmium - /osbaltop balance leaderboard display
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
-@@ -382,6 +390,7 @@ public class Commands {
+@@ -382,6 +392,7 @@ public class Commands {
          org.spigotmc.AsyncCatcher.catchOp("Cannot perform command async");
          // Paper end
          CommandSourceStack sender = command.getContext().getSource();
@@ -69,7 +70,7 @@ index 1b83d54..25da649 100644
      }
      // Paper end - Async-Anti-Xray - Ready flag for the connection, add chunk packet info
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 57650ce..18d2d86 100644
+index 57650ce..91f7c89 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
 @@ -255,6 +255,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -96,7 +97,7 @@ index 57650ce..18d2d86 100644
              org.spigotmc.WatchdogThread.tick();
              // Paper end
              org.spigotmc.WatchdogThread.hasStarted = true; // Paper
-@@ -1869,6 +1872,30 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1869,6 +1872,32 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
  
          profiler.pop();
          this.serverActivityMonitor.tick();
@@ -112,6 +113,8 @@ index 57650ce..18d2d86 100644
 +        if (org.osmium.OsmiumConfig.homesEnabled) { org.osmium.OsmiumHomes.tick(this); } // Osmium - home countdowns
 +        if (org.osmium.OsmiumConfig.spawnDimensionEnabled) { org.osmium.OsmiumSpawnDim.tick(this); } // Osmium - spawn dimension
 +        org.osmium.OsmiumCombat.tick(this); // Osmium - combat tag action bar / expiry
++        org.osmium.npc.OsmiumNpc.tick(this); // Osmium - prune stale NPC bindings (Citizens late-bind)
++        org.osmium.npc.OsmiumBaltop.tick(this); // Osmium - baltop display restore/refresh
 +        // Osmium start - auto backups
 +        if (org.osmium.OsmiumConfig.backupsEnabled) {
 +            if (this.osmiumBackupLike == null) {
@@ -146,7 +149,7 @@ index c87bc86..3970f74 100644
                  if (online != null) {
                      online.connection.disconnect(Component.translatable("multiplayer.disconnect.banned"), org.bukkit.event.player.PlayerKickEvent.Cause.BANNED); // Paper - kick event cause
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index 582d8d6..c97c5d1 100644
+index 582d8d6..a2d73c5 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -239,6 +239,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
@@ -157,7 +160,7 @@ index 582d8d6..c97c5d1 100644
          this.server.spark.enableEarlyIfRequested(); // Paper - spark
          // Paper start - fix converting txt to json file; convert old users earlier after PlayerList creation but before file load/save
          if (this.convertOldUsers()) {
-@@ -260,6 +261,18 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -260,6 +261,22 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
          }
          org.purpurmc.purpur.PurpurConfig.registerCommands();
          // Purpur end - Purpur config files
@@ -169,6 +172,8 @@ index 582d8d6..c97c5d1 100644
 +        org.osmium.OsmiumTpa.initPermission();
 +        org.osmium.OsmiumReport.initPermission();
 +        org.osmium.OsmiumRecipes.initPermission();
++        org.osmium.npc.OsmiumNpc.init(new java.io.File(".")); // Osmium - command NPC bindings (osmium-npcs.json)
++        org.osmium.npc.OsmiumBaltop.init(new java.io.File(".")); // Osmium - baltop display placement (osmium-baltop.json)
 +        org.osmium.anticheat.OsmiumAltTracker.init(new java.io.File("."));
 +        org.osmium.anticheat.OsmiumChatFilter.init(new java.io.File("."));
 +        org.osmium.OsmiumTeam.init(new java.io.File("."));
@@ -178,7 +183,7 @@ index 582d8d6..c97c5d1 100644
          com.destroystokyo.paper.VersionHistoryManager.INSTANCE.getClass(); // Paper - load version history now
  
          // this.worldData.setGameType(properties.gameMode.get()); // CraftBukkit - moved to world loading
-@@ -406,6 +417,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -406,6 +423,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
          this.saveEverything(false, true, true);
          this.notificationManager().serverStarted();
@@ -188,7 +193,7 @@ index 582d8d6..c97c5d1 100644
          return true;
      }
  
-@@ -942,6 +956,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+@@ -942,6 +962,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
  
      @Override
      protected void stopServer() {
@@ -201,7 +206,7 @@ index 582d8d6..c97c5d1 100644
          super.stopServer();
          //Util.shutdownExecutors(); // Paper - Improved watchdog support; moved into super
 diff --git a/net/minecraft/server/level/ChunkHolder.java b/net/minecraft/server/level/ChunkHolder.java
-index cd5a325..5be7b9c 100644
+index cd5a325..4e1d673 100644
 --- a/net/minecraft/server/level/ChunkHolder.java
 +++ b/net/minecraft/server/level/ChunkHolder.java
 @@ -278,10 +278,55 @@ public class ChunkHolder extends GenerationChunkHolder implements ca.spottedleaf
@@ -345,8 +350,22 @@ index dc29ccc..f6382fb 100644
          return result == null ? null : result.transition();
      }
  
+diff --git a/net/minecraft/server/level/ServerPlayerGameMode.java b/net/minecraft/server/level/ServerPlayerGameMode.java
+index 96a023f..9d50929 100644
+--- a/net/minecraft/server/level/ServerPlayerGameMode.java
++++ b/net/minecraft/server/level/ServerPlayerGameMode.java
+@@ -359,6 +359,9 @@ public class ServerPlayerGameMode {
+     }
+ 
+     public boolean destroyBlock(final BlockPos pos) {
++        // Osmium start - spawn dimension block protection (ops only)
++        if (!org.osmium.OsmiumSpawnDim.blockEditAllowed(this.player, this.level)) return false;
++        // Osmium end
+         BlockState state = this.level.getBlockState(pos);
+         // CraftBukkit start - fire BlockBreakEvent
+         org.bukkit.block.Block bblock = org.bukkit.craftbukkit.block.CraftBlock.at(this.level, pos);
 diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
-index 948a8a2..0d2ed97 100644
+index 948a8a2..1ee7cd6 100644
 --- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
 +++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
 @@ -130,9 +130,40 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
@@ -448,7 +467,7 @@ index 6baa9d2..3cfc132 100644
          this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
      }
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 0fcb2e4..4d88990 100644
+index 0fcb2e4..e6382f2 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -2405,6 +2405,18 @@ public class ServerGamePacketListenerImpl
@@ -470,7 +489,7 @@ index 0fcb2e4..4d88990 100644
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
          final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
-@@ -2747,6 +2758,40 @@ public class ServerGamePacketListenerImpl
+@@ -2747,6 +2759,40 @@ public class ServerGamePacketListenerImpl
      private void broadcastChatMessage(final PlayerChatMessage message) {
          // CraftBukkit start
          String rawMessage = message.signedContent();
@@ -511,7 +530,19 @@ index 0fcb2e4..4d88990 100644
          if (rawMessage.isEmpty()) {
              LOGGER.warn("{} tried to send an empty message", this.player.getScoreboardName());
          } else if (this.getCraftPlayer().isConversing()) {
-@@ -3185,6 +3230,9 @@ public class ServerGamePacketListenerImpl
+@@ -3026,6 +3072,11 @@ public class ServerGamePacketListenerImpl
+             // Spigot end
+             this.player.resetLastActionTime();
+             this.player.setShiftKeyDown(packet.usingSecondaryAction());
++            // Osmium start - Citizens NPC command routing (this packet is right-click only; attacks use ServerboundAttackPacket)
++            if (target != null) {
++                org.osmium.npc.OsmiumNpc.onInteract(this.player, target);
++            }
++            // Osmium end
+             if (target != null && level.getWorldBorder().isWithinBounds(target.blockPosition())) {
+                 AABB targetBounds = target.getBoundingBox();
+                 if (this.player.isWithinEntityInteractionRange(targetBounds, io.papermc.paper.configuration.GlobalConfiguration.get().misc.clientInteractionLeniencyDistance.or(3.0))) { // Paper - configurable lenience value for interact range
+@@ -3185,6 +3236,9 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
  
          if (this.player.isImmobile()) return; // CraftBukkit
@@ -521,7 +552,7 @@ index 0fcb2e4..4d88990 100644
          CraftEventFactory.handleInventoryCloseEvent(this.player, reason); // CraftBukkit // Paper
          this.player.doCloseContainer();
      }
-@@ -3194,6 +3242,14 @@ public class ServerGamePacketListenerImpl
+@@ -3194,6 +3248,14 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          if (this.player.isImmobile()) return; // CraftBukkit
          this.player.resetLastActionTime();
@@ -536,7 +567,7 @@ index 0fcb2e4..4d88990 100644
          if (this.player.containerMenu.containerId == packet.containerId() && this.player.containerMenu.stillValid(this.player)) { // CraftBukkit
              boolean cancelled = this.player.isSpectator(); // CraftBukkit - pre cancelled when in spectator
              if ((false && this.player.isSpectator()) || this.player.isDeadOrDying()) { // CraftBukkit
-@@ -3921,6 +3977,14 @@ public class ServerGamePacketListenerImpl
+@@ -3921,6 +3983,14 @@ public class ServerGamePacketListenerImpl
          if (!hasClientLoaded()) {
              final io.papermc.paper.event.player.PlayerClientLoadedWorldEvent event = new io.papermc.paper.event.player.PlayerClientLoadedWorldEvent(this.player.getBukkitEntity(), timeout);
              event.callEvent();
@@ -552,7 +583,7 @@ index 0fcb2e4..4d88990 100644
          // Paper end - Add PlayerLoadedWorldEvent
          this.clientLoadedTimeoutTimer = 0;
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index 1fb016f..050bf44 100644
+index 1fb016f..601713d 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
 @@ -317,6 +317,76 @@ public abstract class PlayerList {
@@ -632,6 +663,23 @@ index 1fb016f..050bf44 100644
          // CraftBukkit start - moved down
          LOGGER.info(
              "{}[{}] logged in with entity id {} at ([{}]{}, {}, {})", // Paper - add world identifier
+diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
+index 7fd9347..e1393c4 100644
+--- a/net/minecraft/world/item/BlockItem.java
++++ b/net/minecraft/world/item/BlockItem.java
+@@ -55,6 +55,12 @@ public class BlockItem extends Item {
+     }
+ 
+     public InteractionResult place(final BlockPlaceContext placeContext) {
++        // Osmium start - spawn dimension block protection (ops only)
++        if (placeContext.getPlayer() != null
++                && !org.osmium.OsmiumSpawnDim.blockEditAllowed(placeContext.getPlayer(), placeContext.getLevel())) {
++            return InteractionResult.FAIL;
++        }
++        // Osmium end
+         if (!this.getBlock().isEnabled(placeContext.getLevel().enabledFeatures())) {
+             return InteractionResult.FAIL;
+         }
 diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
 index 3f60110..7b6019a 100644
 --- a/net/minecraft/world/level/Level.java

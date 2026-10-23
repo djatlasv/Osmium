@@ -56,6 +56,10 @@ public final class OsmiumCombat {
     public static void tag(ServerPlayer victim, ServerPlayer attacker) {
         if (!enabled()) return;
         if (victim.getUUID().equals(attacker.getUUID())) return;
+        // Citizens NPCs are ServerPlayer subclasses — punching a command NPC
+        // must never tag anyone (fake entities, no PvP).
+        if (org.osmium.npc.OsmiumNpc.isCitizensNpc(victim.getBukkitEntity())
+                || org.osmium.npc.OsmiumNpc.isCitizensNpc(attacker.getBukkitEntity())) return;
 
         MinecraftServer server = victim.level().getServer();
         long exp = expiryTick(server);

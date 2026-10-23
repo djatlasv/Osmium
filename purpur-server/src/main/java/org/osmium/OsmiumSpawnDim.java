@@ -59,6 +59,18 @@ public final class OsmiumSpawnDim {
                 Identifier.fromNamespaceAndPath("osmium", OsmiumConfig.spawnDimensionName));
     }
 
+    /** Block place/break gate for the spawn dimension: ops (or the
+     *  osmium.spawn.build permission) only. Used by the ServerPlayerGameMode
+     *  and BlockItem hooks in 0022. */
+    public static boolean blockEditAllowed(net.minecraft.world.entity.player.Player player, Level level) {
+        if (!org.osmium.OsmiumConfig.spawnDimensionEnabled
+                || !org.osmium.OsmiumConfig.spawnDimensionProtectBlocks) return true;
+        if (!isSpawnDimension(level)) return true;
+        if (!(player instanceof net.minecraft.server.level.ServerPlayer sp)) return true;
+        org.bukkit.entity.Player bukkit = sp.getBukkitEntity();
+        return bukkit.isOp() || bukkit.hasPermission("osmium.spawn.build");
+    }
+
     public static boolean isSpawnDimension(Level level) {
         return level.dimension() == spawnKey();
     }
@@ -310,7 +322,14 @@ public final class OsmiumSpawnDim {
                     // Structures are already disabled by the bundled datapack
                     // generator ("features": false in the flat settings).
                     world.setGameRule(org.bukkit.GameRule.DO_MOB_SPAWNING, false);
-                    LOG.info("[Osmium] Spawn dimension: mob spawning disabled (structures already off via generator)");
+                    // 26.3: PvP is a per-level gamerule (GameRules.PVP)
+                    if (org.osmium.OsmiumConfig.spawnDimensionNoPvp
+                            && !java.util.Objects.equals(dim.getGameRules().get(
+                                    net.minecraft.world.level.gamerules.GameRules.PVP), false)) {
+                        dim.getGameRules().set(net.minecraft.world.level.gamerules.GameRules.PVP, false, dim);
+                    }
+                    LOG.info("[Osmium] Spawn dimension: mob spawning disabled (structures already off via generator)"
+                            + (org.osmium.OsmiumConfig.spawnDimensionNoPvp ? ", PvP off" : ""));
                 }
             } catch (Exception e) {
                 spawningRulesApplied = false; // retry next tick if it fails

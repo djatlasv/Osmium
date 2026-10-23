@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Wed, 22 Oct 2026 12:05:00 -0600
+Subject: [PATCH] Osmium: add /osnpc and /osbaltop to junit permission skip list
+
+
+diff --git a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+index 9dd99d3871e9255152d32e1d725a5a6540930e0b..0000000000000000000000000000000000000000 100644
+--- a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
++++ b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+@@ -94,7 +94,9 @@ public class MinecraftCommandPermissionsTest {
+         "minecraft.command.unlink",
+         "minecraft.command.setop",
+         "minecraft.command.tpahere",
+         "minecraft.command.delhome",
++        "minecraft.command.osnpc",
++        "minecraft.command.osbaltop",
+         // Osmium end - Skip junit tests for osmium commands
+         "minecraft.command.selector"
+     );
