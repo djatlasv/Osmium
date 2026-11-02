@@ -15,11 +15,11 @@ import java.util.logging.Level;
 
 public class OsmiumConfig {
 
-    private static final String HEADER = "Osmium Configuration\nOsmium is a custom Purpur fork with native anticheat and security features.\nGitHub: https://github.com/djatlasv/Osmium\n\n======================================================================\n  ANTICHEAT & SECURITY\n======================================================================\n\n--- chunk-hiding ---\nReplaces all blocks below a Y level with a fake block in the chunk packet.\nPlayers within the proximity radius see real blocks (horizontal distance).\n  enabled: master toggle\n  y-threshold: blocks below this Y level are hidden\n  block: replacement block (e.g. deepslate)\n  hide-entities: also hide entities below the threshold from distant players\n  hide-light: zero out light data below the threshold (defeats Light Finder hacks)\n  proximity-radius: horizontal reveal radius around the player\n  shared-far-view-rewrites: cache rewritten buffers for distant viewers (experimental)\n  disable-in-spawn-dimension: never hide blocks in the spawn dimension (default true)\n\n--- raytrace-hiding ---\nRaycast ore hiding: protected blocks with no line of sight to any player are replaced.\n  enabled: master toggle (default false)\n  blocks: block ids to protect (default: diamond/emerald/gold/iron ore + ancient debris)\n  max-ray-distance: LOS ray length in blocks\n  checks-per-tick: max chunk recomputations queued per tick\n  samples-per-block: rays cast per block (1-4)\n  refresh-seconds: periodic visibility recalculation\n  worker-threads: background compute threads\n  debug: verbose antixray pipeline logging (queue/compute/packet decisions)\n\n--- entity-occlusion ---\nHides entities and block entities (chests, ...) occluded by terrain.\n  enabled: master toggle (default false)\n  max-distance: beyond this, normal distance culling applies\n  block-entity-max-distance: block entities beyond this are stripped by default (default 128)\n  check-interval-ticks: how often each entity+player pair is retraced\n  debug: log block-entity occlusion decisions (1/sec)\n\n--- brand-enforcement ---\nEnforces client mod rules using the HandShaker protocol.\n  enabled: master toggle\n  mode: 'strict' requires HandShaker; 'vanilla' allows vanilla clients\n  kick-message: shown when kicked for missing HandShaker/required mods\n  blacklist-kick-message: shown for blacklisted mods ({mods} = detected mods)\n  check-delay-ticks: ticks to wait for the HandShaker payload (100 = 5s)\n  require-osmium-handshaker: reject stock HandShaker (fingerprint needed)\n  required-mods: mod ids that must be installed\n  blacklisted-mods: mod ids that trigger a kick\n\n--- identity-enforcement ---\nDetects spoofed/vanilla-pretending clients without trusting their mod list.\n  signed-chat-kick: kick clients with signing keys that send unsigned chat or never establish a session (requires enforce-secure-profile=true). The session check runs after signed-chat-check-delay-ticks because the session packet arrives right after join (immediate check would kick vanilla clients too)\n  signed-chat-check-delay-ticks: grace window before the missing-session check fires (default 100 = 5s)\n  signed-chat-kick-message: custom kick message\n  reject-modded-known-packs: reject clients reporting non-vanilla known packs + version validation (skipped when ViaVersion installed)\n  known-packs-kick-message: custom kick message\n\n--- alt-ban ---\nAlt detection via IP and hardware fingerprint associations.\nIP always works; fingerprints require brand-enforcement (HandShaker).\n  enabled: master toggle\n  kick-message: message shown when an alt is kicked\n\n--- chat-filter ---\nChat word-list filter (osmium-words.json). Exact + regex patterns.\n  enabled: master toggle\n  action: block | kick | mute\n  message: message shown when filtered\n\n--- grim ---\nAuto-installs GrimAC from Modrinth into plugins/ on first start.\n  enabled: master toggle\n\n--- latency-warn ---\nWarns laggy players that sustained high ping can cause false anticheat bans.\n  enabled: master toggle (default false)\n  threshold-ms: average keepalive ping considered laggy\n  sustain-seconds: how long ping must stay over the threshold before warning\n  interval-seconds: minimum time between repeated warnings\n  action-bar: also flash the message in the action bar\n  message: warning text ({ping} = measured ms)\n\n======================================================================\n  GAMEPLAY\n======================================================================\n\n--- spawn-dimension ---\nOptional dedicated spawn dimension players respawn/teleport to.\n  enabled: master toggle\n  name: dimension folder name (must be [a-z0-9_])\n  portal-exit-rtp: stepping through a hub nether portal drops you at a random\n    safe overworld spot (uses the rtp min/max-distance range) instead of the\n    exact same coordinates\n\n--- combat ---\nCombat tag: PvP contact blocks teleporting out of a fight.\nAny PvP hit tags BOTH attacker and victim; the tag slides on every hit.\nWhile tagged, /tpa /rtp /home /spawn are refused and in-flight countdowns\ncancel. Death clears the tag. Scoreboard placeholder: {combat}.\n  enabled: master toggle (default false)\n  duration-seconds: tag length after the last hit\n  action-bar: show 'In Combat: Ns' countdown + expiry message\n\n--- chat-tags ---\nPrefixes chat names with rank and team tags. Ranks come from op level\n(4=Owner, 3=Admin, 2=Mod); the team tag shows once named in /team GUI.\n  enabled: master toggle (default true)\n\n--- rtp ---\nRandom Teleport GUI (/rtp), charges economy via Vault if configured.\n  enabled: master toggle\n  delay-seconds: countdown (moving cancels)\n  cost: economy charge (0 = free)\n  max-distance / min-distance: radius range from world center\n  cooldown-seconds: between uses (0 = none)\n  disabled-dimensions: dimensions hidden from the /rtp GUI (list of:\n    overworld, nether, the_end)\n  op-only: restrict to ops\n  debug: verbose logging\n\n--- tpa ---\nTeleport requests: /tpa <player> teleports YOU to them; /tpahere <player>\nasks THEM to come to you. Accept via clickable chat buttons or\n/tpaccept [player]; the player who travels gets the countdown (moving cancels).\n  enabled: master toggle\n  timeout-seconds: request expiry\n  delay-seconds: countdown (moving cancels)\n  cooldown-seconds: between outgoing requests (0 = none)\n  debug: verbose logging\n\n--- homes ---\nPersonal homes + world spawn teleport (/sethome /home /homes /delhome /spawn).\n  enabled: master toggle\n  max-per-player: home limit\n  delay-seconds: countdown (moving cancels)\n  debug: verbose logging\n\n--- team ---\nTeam system: /team opens GUI — create, invite via clickable chat buttons,\nfriendly fire toggle by leader, kick/disband, alliances between teams\n(allied teams can't PvP each other; alliances always protect regardless of\nthe friendly fire toggle). Persists to osmium-teams.json.\n  enabled: master toggle\n  max-size: members per team\n  max-alliances: how many allied teams a team can have (0 = alliances off)\n  invite-timeout-seconds: invite expiry (also used for alliance invites)\n  debug: verbose logging\n\n--- scoreboard ---\nCustom sidebar scoreboard with live placeholders ({player} {ping} {tps} {money} ...).\n  enabled: master toggle\n  title: scoreboard title (& color codes)\n  lines: list of lines\n  update-ticks: refresh rate (20 = 1 second)\n\n--- baltop-display ---\nFloating balance leaderboard (/osbaltop) rendered as a TextDisplay entity\nplaced with /osbaltop here or /osbaltop at <world> <x> <y> <z>. Balances\nare read from the Vault economy provider (XConomy); scans run async.\n  enabled: master toggle (default false)\n  entries: how many top balances to show (1-25)\n  refresh-seconds: seconds between balance scans (min 10)\n  title: first line of the display (& color codes)\n  line-format: one line per entry ({rank} {name} {money})\n  currency-symbol: prefix for the formatted balance\n\n======================================================================\n  DISCORD & SERVER OPS\n======================================================================\n\n--- discord-webhook ---\nDiscord embed notifications (start/stop, bans, alts, chat filter).\n  enabled: master toggle\n  url: webhook URL\n  ping-on-stop: user IDs to ping on stop\n\n--- discord-bot ---\nFull Discord bot — run the server from Discord with slash commands.\nSetup: /osmium setup in Discord (first runner becomes owner), then\n/osmium perm-add <role> <viewer|helper|mod|admin>.\n  enabled: master toggle (default false)\n  token: bot token — KEEP SECRET, never commit\n  audit-channel-id: channel for action log (legacy — the staff log channel\n    auto-created by /osmium setup takes precedence)\n  chat-channel-id: two-way Minecraft <-> Discord chat relay\nStaff log: /osmium setup creates a private osmium-staff-log channel; every\nstaff command run in game (ops / osmium.staff permission / linked accounts)\nand every Discord action is posted there. Staff attach their identity by\nrunning /link in game, then /osmium link code:<code> in Discord.\n/osmium log-channel replaces or recreates it, /osmium links lists pairs.\n\n--- report ---\nPlayer reports routed to a Discord channel with staff action buttons\n(dismiss / time ban / perm ban). Requires the Discord bot to be running.\nReports persist to osmium-reports.json (pruned after 7 days).\n  enabled: master toggle\n  cooldown-seconds: per-player cooldown between reports\n  time-ban-hours: duration of the 'Time ban' button\n  channel-id: Discord channel for reports (blank = audit-channel-id)\n\n--- backups ---\nAutomatic zipped backups of worlds + root configs into backups/.\n  enabled: master toggle (default false)\n  interval-minutes: time between backups (min 5)\n  keep: generations to retain\n  directory: output folder\n  worlds: comma-separated world names (blank = auto-detect)\n\n";
+    private static final String HEADER = "Osmium Configuration\nOsmium is a custom Purpur fork with native anticheat and security features.\nGitHub: https://github.com/djatlasv/Osmium\n\n======================================================================\n  ANTICHEAT & SECURITY\n======================================================================\n\n--- chunk-hiding ---\nReplaces all blocks below a Y level with a fake block in the chunk packet.\nPlayers within the proximity radius see real blocks (horizontal distance).\n  enabled: master toggle\n  y-threshold: blocks below this Y level are hidden\n  block: replacement block (e.g. deepslate)\n  hide-entities: also hide entities below the threshold from distant players\n  hide-light: zero out light data below the threshold (defeats Light Finder hacks)\n  proximity-radius: horizontal reveal radius around the player\n  shared-far-view-rewrites: cache rewritten buffers for distant viewers (experimental)\n  disable-in-spawn-dimension: never hide blocks in the spawn dimension (default true)\n\n--- raytrace-hiding ---\nRaycast ore hiding: protected blocks with no line of sight to any player are replaced.\n  enabled: master toggle (default false)\n  blocks: block ids to protect (default: diamond/emerald/gold/iron ore + ancient debris)\n  max-ray-distance: LOS ray length in blocks\n  checks-per-tick: max chunk recomputations queued per tick\n  samples-per-block: rays cast per block (1-4)\n  refresh-seconds: periodic visibility recalculation\n  worker-threads: background compute threads\n  debug: verbose antixray pipeline logging (queue/compute/packet decisions)\n\n--- entity-occlusion ---\nHides entities and block entities (chests, ...) occluded by terrain.\n  enabled: master toggle (default false)\n  max-distance: beyond this, normal distance culling applies\n  block-entity-max-distance: block entities beyond this are stripped by default (default 128)\n  check-interval-ticks: how often each entity+player pair is retraced\n  debug: log block-entity occlusion decisions (1/sec)\n\n--- brand-enforcement ---\nEnforces client mod rules using the HandShaker protocol.\n  enabled: master toggle\n  mode: 'strict' requires HandShaker; 'vanilla' allows vanilla clients\n  kick-message: shown when kicked for missing HandShaker/required mods\n  blacklist-kick-message: shown for blacklisted mods ({mods} = detected mods)\n  check-delay-ticks: ticks to wait for the HandShaker payload (100 = 5s)\n  require-osmium-handshaker: reject stock HandShaker (fingerprint needed)\n  required-mods: mod ids that must be installed\n  blacklisted-mods: mod ids that trigger a kick\n  blacklisted-brands: client brands (modloaders/clients) that trigger a kick.\n    Matched as a case-insensitive SUBSTRING of the brand string, so 'forge'\n    blocks both 'forge' and the legacy 'fml,forge' brand, 'lunar' blocks\n    'Lunar Client'. Common brands: forge, neoforge, fabric, quilt.\n    Requires brand-enforcement.enabled.\n  blacklist-brand-kick-message: shown for a blacklisted brand ({brand} = detected brand)\n\n--- identity-enforcement ---\nDetects spoofed/vanilla-pretending clients without trusting their mod list.\n  signed-chat-kick: kick clients with signing keys that send unsigned chat or never establish a session (requires enforce-secure-profile=true). The session check runs after signed-chat-check-delay-ticks because the session packet arrives right after join (immediate check would kick vanilla clients too)\n  signed-chat-check-delay-ticks: grace window before the missing-session check fires (default 100 = 5s)\n  signed-chat-kick-message: custom kick message\n  reject-modded-known-packs: reject clients reporting non-vanilla known packs + version validation (skipped when ViaVersion installed)\n  known-packs-kick-message: custom kick message\n  blacklisted-known-packs: mod ids banned via the config-phase known-packs packet —\n    Fabric/NeoForge clients natively report their full mod list here even WITHOUT\n    HandShaker, so this catches cheat clients on an otherwise vanilla server\n  blacklisted-known-packs-kick-message: kick message ({mods} = detected mods)\n\n--- alt-ban ---\nAlt detection via IP and hardware fingerprint associations.\nIP always works; fingerprints require brand-enforcement (HandShaker).\n  enabled: master toggle\n  kick-message: message shown when an alt is kicked\n\n--- chat-filter ---\nChat word-list filter (osmium-words.json). Exact + regex patterns.\n  enabled: master toggle\n  action: block | kick | mute\n  message: message shown when filtered\n\n--- grim ---\nAuto-installs GrimAC from Modrinth into plugins/ on first start.\n  enabled: master toggle\n\n--- latency-warn ---\nWarns laggy players that sustained high ping can cause false anticheat bans.\n  enabled: master toggle (default false)\n  threshold-ms: average keepalive ping considered laggy\n  sustain-seconds: how long ping must stay over the threshold before warning\n  interval-seconds: minimum time between repeated warnings\n  action-bar: also flash the message in the action bar\n  message: warning text ({ping} = measured ms)\n\n======================================================================\n  GAMEPLAY\n======================================================================\n\n\n\n--- apples ---\nOak & dark oak leaves drop apples more often than vanilla.\nVanilla base chance is 0.5% per leaf broken (fortune scales it); the\nmultiplier applies to every chance tier. 1.0 = vanilla behavior.\n  drop-multiplier: apple drop chance multiplier (default 3.0, min 1.0)\n\n--- spawn-dimension ---\nOptional dedicated spawn dimension players respawn/teleport to.\n  enabled: master toggle\n  name: dimension folder name (must be [a-z0-9_])\n  portal-exit-rtp: stepping through a hub nether portal drops you at a random\n    safe overworld spot (uses the rtp min/max-distance range) instead of the\n    exact same coordinates\n\n--- combat ---\nCombat tag: PvP contact blocks teleporting out of a fight.\nAny PvP hit tags BOTH attacker and victim; the tag slides on every hit.\nWhile tagged, /tpa /rtp /home /spawn are refused and in-flight countdowns\ncancel. Death clears the tag. Scoreboard placeholder: {combat}.\n  enabled: master toggle (default false)\n  duration-seconds: tag length after the last hit\n  action-bar: show 'In Combat: Ns' countdown + expiry message\n  blocked-commands: command names (no slash) refused while combat-tagged.\n    Works for vanilla AND plugin commands — entries match by bare name or\n    namespace (a \"home\" entry blocks /home, /ehome, /essentials:home).\n    Only player dispatches are blocked; console/functions are exempt, and\n    players with the osmium.combat.bypass permission are never blocked.\n  blocked-command-message: message sent on a blocked command ({seconds} = tag\n    time remaining; & color codes; empty = silent block)\n\n--- chat-tags ---\nPrefixes chat names with rank and team tags. Ranks come from op level\n(4=Owner, 3=Admin, 2=Mod); the team tag shows once named in /team GUI.\n  enabled: master toggle (default true)\n\n--- rtp ---\nRandom Teleport GUI (/rtp), charges economy via Vault if configured.\n  enabled: master toggle\n  delay-seconds: countdown (moving cancels)\n  cost: economy charge (0 = free)\n  max-distance / min-distance: radius range from world center\n  cooldown-seconds: between uses (0 = none)\n  disabled-dimensions: dimensions hidden from the /rtp GUI (list of:\n    overworld, nether, the_end)\n  op-only: restrict to ops\n  debug: verbose logging\n\n--- tpa ---\nTeleport requests: /tpa <player> teleports YOU to them; /tpahere <player>\nasks THEM to come to you. Accept via clickable chat buttons or\n/tpaccept [player]; the player who travels gets the countdown (moving cancels).\n  enabled: master toggle\n  timeout-seconds: request expiry\n  delay-seconds: countdown (moving cancels)\n  cooldown-seconds: between outgoing requests (0 = none)\n  debug: verbose logging\n\n--- homes ---\nPersonal homes + world spawn teleport (/sethome /home /homes /delhome /spawn).\n  enabled: master toggle\n  max-per-player: home limit\n  delay-seconds: countdown (moving cancels)\n  debug: verbose logging\n\n--- team ---\nTeam system: /team opens GUI — create, invite via clickable chat buttons,\nfriendly fire toggle by leader, kick/disband, alliances between teams\n(allied teams can't PvP each other; alliances always protect regardless of\nthe friendly fire toggle). Persists to osmium-teams.json.\n  enabled: master toggle\n  max-size: members per team\n  max-alliances: how many allied teams a team can have (0 = alliances off)\n  invite-timeout-seconds: invite expiry (also used for alliance invites)\n  debug: verbose logging\n\n--- scoreboard ---\nCustom sidebar scoreboard with live placeholders ({player} {ping} {tps} {money} ...).\n  enabled: master toggle\n  title: scoreboard title (& color codes)\n  lines: list of lines\n  update-ticks: refresh rate (20 = 1 second)\n\n--- baltop-display ---\nFloating balance leaderboard (/osbaltop) rendered as a TextDisplay entity\nplaced with /osbaltop here or /osbaltop at <world> <x> <y> <z>. Balances\nare read from the Vault economy provider (XConomy); scans run async.\n  enabled: master toggle (default false)\n  entries: how many top balances to show (1-25)\n  refresh-seconds: seconds between balance scans (min 10)\n  title: first line of the display (& color codes)\n  line-format: one line per entry ({rank} {name} {money})\n  currency-symbol: prefix for the formatted balance\n\n======================================================================\n  DISCORD & SERVER OPS\n======================================================================\n\n--- discord-webhook ---\nDiscord embed notifications (start/stop, bans, alts, chat filter).\n  enabled: master toggle\n  url: webhook URL\n  ping-on-stop: user IDs to ping on stop\n\n--- discord-bot ---\nFull Discord bot — run the server from Discord with slash commands.\nSetup: /osmium setup in Discord (first runner becomes owner), then\n/osmium perm-add <role> <viewer|helper|mod|admin>.\n  enabled: master toggle (default false)\n  token: bot token — KEEP SECRET, never commit\n  audit-channel-id: channel for action log (legacy — the staff log channel\n    auto-created by /osmium setup takes precedence)\n  chat-channel-id: two-way Minecraft <-> Discord chat relay\nStaff log: /osmium setup creates a private osmium-staff-log channel; every\nstaff command run in game (ops / osmium.staff permission / linked accounts)\nand every Discord action is posted there. Staff attach their identity by\nrunning /link in game, then /osmium link code:<code> in Discord.\n/osmium log-channel replaces or recreates it, /osmium links lists pairs.\n\n--- report ---\nPlayer reports routed to a Discord channel with staff action buttons\n(dismiss / time ban / perm ban). Requires the Discord bot to be running.\nReports persist to osmium-reports.json (pruned after 7 days).\n  enabled: master toggle\n  cooldown-seconds: per-player cooldown between reports\n  time-ban-hours: duration of the 'Time ban' button\n  channel-id: Discord channel for reports (blank = audit-channel-id)\n\n--- backups ---\nAutomatic zipped backups of worlds + root configs into backups/.\n  enabled: master toggle (default false)\n  interval-minutes: time between backups (min 5)\n  keep: generations to retain\n  directory: output folder\n  worlds: comma-separated world names (blank = auto-detect)\n\n";
 
     public static File CONFIG_FILE;
     public static YamlConfiguration config;
-    public static int version = 7;
+    public static int version = 9;
 
     public static void init(File configFile) {
         CONFIG_FILE = configFile;
@@ -56,6 +56,7 @@ public class OsmiumConfig {
         chatFilter();
         grim();
         latencyWarn();
+        apples();
         spawnDimension();
         combat();
         chatTags();
@@ -128,6 +129,29 @@ public class OsmiumConfig {
 
         if (oldVersion < 7) {
             // v6 -> v7: added report (new section, no keys to migrate)
+        }
+
+        if (oldVersion < 8) {
+            // v7 -> v8: added combat.blocked-commands (defaults added by the combat loader)
+        }
+
+        if (oldVersion < 9) {
+            // v8 -> v9: cheat-client ban list (mod-id audit of known cheat clients).
+            // - Append the audited cheat ids to the HandShaker blacklist
+            // - Remove legit 'krypton' (the perf mod; its cheats ship ids
+            //   optimizer / krloader / betterf3 instead)
+            // - identity-enforcement.blacklisted-known-packs is added by its loader
+            java.util.List<String> brand = new java.util.ArrayList<>(
+                    config.getStringList("brand-enforcement.blacklisted-mods"));
+            boolean removedKrypton = brand.remove("krypton");
+            for (String cheatId : CHEAT_MOD_DEFAULTS) {
+                if (!brand.contains(cheatId)) brand.add(cheatId);
+            }
+            config.set("brand-enforcement.blacklisted-mods", brand);
+            if (removedKrypton) {
+                Bukkit.getLogger().info("[Osmium] Removed 'krypton' from brand-enforcement.blacklisted-mods: "
+                        + "the legit Krypton perf mod uses that id (its cheats ship optimizer/krloader/betterf3).");
+            }
         }
     }
 
@@ -239,6 +263,16 @@ public class OsmiumConfig {
         combatEnabled = getBoolean("combat.enabled", false);
         combatDurationSeconds = Math.max(3, getInt("combat.duration-seconds", 15));
         combatActionBar = getBoolean("combat.action-bar", true);
+        combatBlockedCommands = config.getStringList("combat.blocked-commands");
+        if (combatBlockedCommands.isEmpty()) {
+            combatBlockedCommands = List.of(
+                    "tp", "tpa", "tpahere", "tpaccept", "tpdeny", "rtp", "home", "sethome", "spawn",
+                    "back", "warp", "etrp", "ehome", "esethome", "espawn", "eback", "ewarp",
+                    "etpa", "etpahere", "etpaccept", "etpdeny");
+        }
+        config.addDefault("combat.blocked-commands", combatBlockedCommands);
+        combatBlockedCommandMessage = config.getString("combat.blocked-command-message", combatBlockedCommandMessage);
+        config.addDefault("combat.blocked-command-message", combatBlockedCommandMessage);
     }
 
     private static void chatTags() {
@@ -299,6 +333,23 @@ public class OsmiumConfig {
         knownPacksKickMessage = config.getString("identity-enforcement.known-packs-kick-message",
                 "Modified clients are not allowed on this server.");
         config.addDefault("identity-enforcement.known-packs-kick-message", knownPacksKickMessage);
+        // Matched against the mod ids Fabric/NeoForge clients natively report in
+        // the config phase (known packs) — works without HandShaker installed.
+        // contains() (not getStringList) distinguishes "key absent" (fresh or
+        // pre-v9 config -> fall back to defaults) from a deliberately empty list.
+        java.util.List<String> knownPackBlacklist = new java.util.ArrayList<>();
+        if (config.contains("identity-enforcement.blacklisted-known-packs")) {
+            for (String id : config.getStringList("identity-enforcement.blacklisted-known-packs")) {
+                knownPackBlacklist.add(id.toLowerCase(java.util.Locale.ROOT));
+            }
+        } else {
+            knownPackBlacklist.addAll(CHEAT_MOD_DEFAULTS);
+        }
+        blacklistedKnownPacks = java.util.List.copyOf(knownPackBlacklist);
+        config.addDefault("identity-enforcement.blacklisted-known-packs", CHEAT_MOD_DEFAULTS);
+        blacklistedKnownPacksKickMessage = config.getString("identity-enforcement.blacklisted-known-packs-kick-message",
+                "You have been kicked for using a blacklisted mod: {mods}");
+        config.addDefault("identity-enforcement.blacklisted-known-packs-kick-message", blacklistedKnownPacksKickMessage);
     }
 
     private static void entityOcclusion() {
@@ -313,6 +364,14 @@ public class OsmiumConfig {
     // Brand enforcement settings
     // -------------------------------------------------------------------------
 
+    // Cheat mod ids with no legit counterpart (client mod-id audit, 2026-10-26).
+    // Deliberately NOT banned by id: 'immediatelyfast' / 'betterf3' fakes share
+    // ids with legit mods (entrypoint can't be seen server-side), and 'krypton'
+    // IS the legit perf mod — its cheats ship ids optimizer / krloader instead.
+    public static final List<String> CHEAT_MOD_DEFAULTS = List.of(
+            "krloader", "wurst", "aristois", "meteor-client", "meteor_client",
+            "glazed", "optimizer", "radon", "water", "waterclient", "xenon", "prestige");
+
     public static boolean brandEnforcementEnabled = false;
     public static String brandEnforcementMode = "vanilla";
     public static String brandEnforcementKickMessage = "You must use the HandShaker mod. Get it at: discord.gg/yourserver";
@@ -321,6 +380,8 @@ public class OsmiumConfig {
     public static int brandEnforcementCheckDelayTicks = 100;
     public static List<String> brandEnforcementRequiredMods = List.of();
     public static List<String> brandEnforcementBlacklistedMods = List.of();
+    public static List<String> brandEnforcementBlacklistedBrands = List.of();
+    public static String brandEnforcementBlacklistBrandKickMessage = "You have been kicked for using a blocked client: {brand}";
 
     private static void brandEnforcement() {
         brandEnforcementEnabled = getBoolean("brand-enforcement.enabled", false);
@@ -337,8 +398,16 @@ public class OsmiumConfig {
         brandEnforcementRequiredMods = config.getStringList("brand-enforcement.required-mods");
         config.addDefault("brand-enforcement.required-mods", List.of());
         brandEnforcementBlacklistedMods = config.getStringList("brand-enforcement.blacklisted-mods");
-        config.addDefault("brand-enforcement.blacklisted-mods", List.of(
-                "krloader", "krypton", "wurst", "meteor-client", "aristois", "meteor_client"));
+        config.addDefault("brand-enforcement.blacklisted-mods", CHEAT_MOD_DEFAULTS);
+        java.util.List<String> blacklistedBrands = new java.util.ArrayList<>();
+        for (String b : config.getStringList("brand-enforcement.blacklisted-brands")) {
+            if (!b.isBlank()) blacklistedBrands.add(b.toLowerCase(java.util.Locale.ROOT));
+        }
+        brandEnforcementBlacklistedBrands = java.util.List.copyOf(blacklistedBrands);
+        config.addDefault("brand-enforcement.blacklisted-brands", List.of());
+        brandEnforcementBlacklistBrandKickMessage = config.getString("brand-enforcement.blacklist-brand-kick-message",
+                "You have been kicked for using a blocked client: {brand}");
+        config.addDefault("brand-enforcement.blacklist-brand-kick-message", brandEnforcementBlacklistBrandKickMessage);
     }
 
     // -------------------------------------------------------------------------
@@ -497,6 +566,9 @@ private static void grim() {
     public static boolean combatEnabled = false;
     public static int combatDurationSeconds = 15;
     public static boolean combatActionBar = true;
+    public static List<String> combatBlockedCommands = List.of();
+    public static String combatBlockedCommandMessage =
+            "\u00a7cYou are in combat! Wait \u00a7e{seconds}s\u00a7c before using that command.";
 
     // Chat tags
     public static boolean chatTagsEnabled = true;
@@ -537,6 +609,8 @@ private static void grim() {
     public static int signedChatCheckDelayTicks = 100;
     public static boolean rejectModdedKnownPacks = false;
     public static String knownPacksKickMessage = "Modified clients are not allowed on this server.";
+    public static List<String> blacklistedKnownPacks = List.of();
+    public static String blacklistedKnownPacksKickMessage = "You have been kicked for using a blacklisted mod: {mods}";
 
     // Entity occlusion
     public static boolean entityOcclusionEnabled = false;
@@ -553,6 +627,14 @@ private static void grim() {
     public static boolean latencyWarnActionBar = true;
     public static String latencyWarnMessage =
             "\u00a7eYour connection is unstable (\u00a7f{ping}ms\u00a7e) — high latency can cause false anticheat bans.";
+
+    // Apples (leaves loot table multiplier)
+    public static double applesDropMultiplier = 3.0;
+
+    private static void apples() {
+        applesDropMultiplier = Math.max(1.0, config.getDouble("apples.drop-multiplier", 3.0));
+        config.addDefault("apples.drop-multiplier", applesDropMultiplier);
+    }
 
     private static void rtp() {
         rtpEnabled = getBoolean("rtp.enabled", false);
@@ -628,7 +710,7 @@ private static void grim() {
 
             String[] order = {
                 "chunk-hiding", "raytrace-hiding", "entity-occlusion", "brand-enforcement",
-                "identity-enforcement", "alt-ban", "chat-filter", "grim", "latency-warn", "spawn-dimension", "combat",
+                "identity-enforcement", "alt-ban", "chat-filter", "grim", "latency-warn", "apples", "spawn-dimension", "combat",
                 "chat-tags", "rtp", "tpa", "homes", "team", "scoreboard", "baltop-display", "recipes",
                 "discord-webhook", "discord-bot", "report", "backups"
             };

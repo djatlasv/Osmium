@@ -80,6 +80,59 @@ public final class OsmiumCombat {
     }
 
     // ------------------------------------------------------------------
+    // Generic command blocking (called from Commands.performCommand)
+    // ------------------------------------------------------------------
+
+    /**
+     * Blocks configured commands while the sender is combat-tagged.
+     * Runs at the NMS Brigadier dispatch point, so it covers vanilla AND
+     * plugin commands (Essentials aliases, warps, ...) — anything a server
+     * lists in combat.blocked-commands. Non-player senders (console,
+     * functions, command blocks) and players with osmium.combat.bypass are
+     * never blocked. Verb matching is namespace-agnostic: "essentials:home"
+     * and "home" both match the entry "home" (and an entry may name the
+     * full "plugin:command" form to be specific).
+     *
+     * @return true when the command was blocked and must not run
+     */
+    public static boolean blockCommand(net.minecraft.commands.CommandSourceStack source, String commandString) {
+        if (OsmiumConfig.combatBlockedCommands.isEmpty()) return false;
+        ServerPlayer player = source.getPlayer();
+        if (player == null || !isTagged(player)) return false;
+        if (player.getBukkitEntity().hasPermission("osmium.combat.bypass")) return false;
+
+        String verb = verbOf(commandString);
+        if (verb.isEmpty()) return false;
+        for (String blocked : OsmiumConfig.combatBlockedCommands) {
+            String b = blocked.trim().toLowerCase(java.util.Locale.ROOT);
+            if (b.isEmpty()) continue;
+            if (b.equals(verb) || stripNamespace(b).equals(verb)) {
+                String msg = OsmiumConfig.combatBlockedCommandMessage;
+                if (msg == null || msg.isEmpty()) return true;
+                player.sendSystemMessage(Component.literal(org.bukkit.ChatColor.translateAlternateColorCodes('&', msg)
+                        .replace("{seconds}", String.valueOf(secondsLeft(player)))));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** First word of the command, lowercase, leading slash stripped. */
+    private static String verbOf(String command) {
+        String s = command.trim();
+        if (s.startsWith("/")) s = s.substring(1);
+        int space = s.indexOf(' ');
+        if (space >= 0) s = s.substring(0, space);
+        return s.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** "essentials:home" -> "home", "home" -> "home" */
+    private static String stripNamespace(String verb) {
+        int colon = verb.indexOf(':');
+        return colon >= 0 ? verb.substring(colon + 1) : verb;
+    }
+
+    // ------------------------------------------------------------------
     // Teleport blocking helpers (called from the tp commands)
     // ------------------------------------------------------------------
 

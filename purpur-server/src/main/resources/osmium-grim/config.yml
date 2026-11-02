@@ -112,7 +112,7 @@ NegativeTimer:
 VehicleTimer:
     setbackvl: 10
 
-EntityControl:
+Vehicle:
     setbackvl: 25
 
 Reach:

@@ -129,6 +129,27 @@ public class AnticheatCheatClientSimTestSuite {
         assertNotNull(OsmiumChatFilter.check("fuck"), "filter must be active on first boot");
     }
 
+    @Test
+    public void staleWordFileGetsDefaultsMerged() {
+        // Regression: installs whose osmium-words.json predated compound-word
+        // patterns kept the old bare \\bfuck\\b forever (defaults were only
+        // written when the file was absent), so "fuckass" sailed through.
+        File stale = tempDir.resolve("stale-install").toFile();
+        stale.mkdirs();
+        File dataFile = new File(stale, "osmium-words.json");
+        try (java.io.FileWriter w = new java.io.FileWriter(dataFile)) {
+            w.write("[\"regex:\\\\bfuck\\\\b\"]");
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+        OsmiumChatFilter.init(stale);
+        // custom/old entries survive AND the missing defaults got merged in
+        assertNotNull(OsmiumChatFilter.check("fuckass"), "compound must be caught after migration");
+        assertNotNull(OsmiumChatFilter.check("fuck"));
+        assertNotNull(OsmiumChatFilter.check("shit"), "default patterns must be merged into stale files");
+        assertNotNull(OsmiumChatFilter.check("nigger"), "default patterns must be merged into stale files");
+    }
+
     // ------------------------------------------------------------------
     // Brand enforcement (HandShaker payload abuse)
     // ------------------------------------------------------------------

@@ -9,6 +9,7 @@ import org.osmium.discord.OsmiumDiscordBot;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -118,7 +119,10 @@ public class OsmiumStaffLog {
 
     public static void onCommandDispatch(CommandSourceStack source, String command) {
         ServerPlayer player = source.getPlayer();
-        if (player == null) return; // console / RCON / command blocks — not attributed to a staff member
+        if (player == null) {
+            recordConsolePunish(command);
+            return; // console / RCON / command blocks — not attributed to a staff member
+        }
         boolean staff = player.getBukkitEntity().hasPermission("osmium.staff")
                 || OsmiumDiscordBot.isLinked(player.getUUID());
         if (!staff) return;
@@ -127,5 +131,19 @@ public class OsmiumStaffLog {
                 + (discord != null ? " (Discord: " + discord + ")" : " (unlinked)");
         LOGGER.info("[StaffLog] {} ran /{}", who, command);
         OsmiumDiscordBot.pushStaffLog("\u2699 " + who + " ran `" + command + "`");
+    }
+
+    // Punishment commands worth recording when dispatched by the console.
+    // GrimAC runs its punishments (tempban/kick) as the console sender, so
+    // this is how anticheat bans/kicks land in the Discord staff log channel.
+    private static final Set<String> PUNISH_VERBS = Set.of("tempban", "ban", "ban-ip", "kick", "mute");
+
+    private static void recordConsolePunish(String command) {
+        String trimmed = command == null ? "" : command.trim();
+        if (trimmed.isEmpty()) return;
+        String verb = trimmed.split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+        if (!PUNISH_VERBS.contains(verb)) return;
+        LOGGER.info("[StaffLog] console punishment: /{}", trimmed);
+        OsmiumDiscordBot.pushStaffLog("\u26d4 Punishment (console): `" + trimmed + "`");
     }
 }

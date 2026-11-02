@@ -28,6 +28,48 @@ public class OsmiumChatFilter {
     private static File dataFile;
     static final List<String> rawPatterns = new ArrayList<>();
     static final List<Pattern> compiledPatterns = new ArrayList<>();
+
+    /**
+     * Defaults every install should carry. Older installs created their
+     * osmium-words.json before compound-word patterns existed (the original
+     * "\\bfuck\\b" only matched the word ALONE, so "fuckass" sailed through)
+     * and never picked up fixes — the file is only written when absent.
+     * load() now merges any missing default into an existing file, so
+     * pattern fixes ship to all servers without wiping custom entries.
+     */
+    /**
+     * Defaults every install should carry. Older installs created their
+     * osmium-words.json before compound-word patterns existed (the original
+     * "\\bfuck\\b" only matched the word ALONE, so "fuckass" sailed through)
+     * and never picked up fixes — the file is only written when absent.
+     * load() now merges any missing default into an existing file, so
+     * pattern fixes ship to all servers without wiping custom entries.
+     */
+    static final List<String> DEFAULT_PATTERNS = List.of(
+        "regex:\\bn+[i!1|l]+[gq9]{2,}[e3]*[ra@]*s?\\b",
+        "regex:\\bf+[ua@]+[gq9]{2,}[o0]*[t+]*s?\\b",
+        "regex:\\br+[e3]+[t+]+[a@]+r+[d]+s?\\b",
+        // [a-z0-9]* suffix catches compounds like "fuckass", "fucker",
+        // "fucking" — the old bare \\bfuck\\b only matched the word alone.
+        "regex:\\bf+[u]+c+k+[a-z0-9]*\\b",
+        "regex:\\bs+h+[i!1]+t+[a-z0-9]*\\b",
+        "regex:\\bb+[i!1]+t+c+h+[a-z0-9]*\\b",
+        "regex:\\ba+s+s+h+o+l+e+[a-z0-9]*\\b",
+        "regex:\\bc+[u]+n+t+[a-z0-9]*\\b",
+        "regex:\\bd+[i!1]+c+k+[a-z0-9]*\\b",
+        "regex:\\bw+h+[o0]+r+e+[a-z0-9]*\\b",
+        "regex:\\bs+l+[u]+t+[a-z0-9]*\\b",
+        "regex:\\bk+[i!1]+k+e+s?\\b",
+        "regex:\\bs+p+[i!1]+c+s?\\b",
+        "regex:\\bc+h+[i!1]+n+k+s?\\b",
+        "regex:\\bt+r+[a@]+n+n+[yi!1]+e?s?\\b",
+        "regex:\\bd+y+k+e+s?\\b",
+        "regex:\\bk+y+s+\\b",
+        "regex:\\bk+[i!1]+l+l+\\s*(y+o+u+r+)?\\s*s+e+l+f+\\b",
+        "regex:\\bg+[o0]+\\s*k+[i!1]+l+l+\\b",
+        "regex:\\bn+[e3]+g+r+[o0]+s?\\b"
+    );
+
     // Words that should never be filtered even if they match a pattern
     private static final Set<String> WHITELIST = Set.of(
             "night", "knight", "nights", "knights", "nighttime",
@@ -46,30 +88,7 @@ public class OsmiumChatFilter {
             // Create default file with common filter patterns
             rawPatterns.clear();
             compiledPatterns.clear();
-            rawPatterns.addAll(List.of(
-                "regex:\\bn+[i!1|l]+[gq9]{2,}[e3]*[ra@]*s?\\b",
-                "regex:\\bf+[ua@]+[gq9]{2,}[o0]*[t+]*s?\\b",
-                "regex:\\br+[e3]+[t+]+[a@]+r+[d]+s?\\b",
-                // [a-z0-9]* suffix catches compounds like "fuckass", "fucker",
-                // "fucking" — the old bare \\bfuck\\b only matched the word alone.
-                "regex:\\bf+[u]+c+k+[a-z0-9]*\\b",
-                "regex:\\bs+h+[i!1]+t+[a-z0-9]*\\b",
-                "regex:\\bb+[i!1]+t+c+h+[a-z0-9]*\\b",
-                "regex:\\ba+s+s+h+o+l+e+[a-z0-9]*\\b",
-                "regex:\\bc+[u]+n+t+[a-z0-9]*\\b",
-                "regex:\\bd+[i!1]+c+k+[a-z0-9]*\\b",
-                "regex:\\bw+h+[o0]+r+e+[a-z0-9]*\\b",
-                "regex:\\bs+l+[u]+t+[a-z0-9]*\\b",
-                "regex:\\bk+[i!1]+k+e+s?\\b",
-                "regex:\\bs+p+[i!1]+c+s?\\b",
-                "regex:\\bc+h+[i!1]+n+k+s?\\b",
-                "regex:\\bt+r+[a@]+n+n+[yi!1]+e?s?\\b",
-                "regex:\\bd+y+k+e+s?\\b",
-                "regex:\\bk+y+s+\\b",
-                "regex:\\bk+[i!1]+l+l+\\s*(y+o+u+r+)?\\s*s+e+l+f+\\b",
-                "regex:\\bg+[o0]+\\s*k+[i!1]+l+l+\\b",
-                "regex:\\bn+[e3]+g+r+[o0]+s?\\b"
-            ));
+            rawPatterns.addAll(DEFAULT_PATTERNS);
             save();
             // Keep the defaults active in memory too — clearing the lists
             // here left the filter dead until the next config reload.
@@ -88,6 +107,22 @@ public class OsmiumChatFilter {
                 for (String entry : loaded) {
                     rawPatterns.add(entry);
                     compiledPatterns.add(compileEntry(entry));
+                }
+                // Migration: merge in default patterns the file predates.
+                // "fuckass" got through on installs whose word list was
+                // created before compound-word patterns existed.
+                boolean added = false;
+                for (String def : DEFAULT_PATTERNS) {
+                    if (!rawPatterns.contains(def)) {
+                        rawPatterns.add(def);
+                        compiledPatterns.add(compileEntry(def));
+                        added = true;
+                    }
+                }
+                if (added) {
+                    save();
+                    java.util.logging.Logger.getLogger("Osmium")
+                            .info("Merged missing default patterns into osmium-words.json");
                 }
             }
         } catch (IOException ex) {

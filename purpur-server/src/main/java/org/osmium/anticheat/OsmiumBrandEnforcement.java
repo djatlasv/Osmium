@@ -192,6 +192,21 @@ public class OsmiumBrandEnforcement {
                 && !"vanilla".equalsIgnoreCase(brand)
                 && !"Osmium".equalsIgnoreCase(brand); // our own brand shouldn't count
 
+        // Blacklisted modloaders/clients — checked BEFORE the mode gates so a
+        // blocked loader gets its own message even in strict/vanilla mode.
+        // Substring match: Forge ships both 'forge' (modern) and 'fml,forge'
+        // (legacy) brands, and launcher clients use display names like
+        // 'Lunar Client'. Fail open on a null/empty brand (proxies).
+        if (brand != null && !OsmiumConfig.brandEnforcementBlacklistedBrands.isEmpty()) {
+            String brandLower = brand.toLowerCase(Locale.ROOT);
+            for (String banned : OsmiumConfig.brandEnforcementBlacklistedBrands) {
+                if (brandLower.contains(banned)) {
+                    return OsmiumConfig.brandEnforcementBlacklistBrandKickMessage
+                            .replace("{brand}", brand);
+                }
+            }
+        }
+
         // In strict mode, all clients must have the HandShaker mod
         if ("strict".equalsIgnoreCase(OsmiumConfig.brandEnforcementMode) && !hasHandshake) {
             return OsmiumConfig.brandEnforcementKickMessage;

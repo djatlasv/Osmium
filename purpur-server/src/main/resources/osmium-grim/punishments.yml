@@ -57,10 +57,21 @@ Punishments:
       - "5:0 [webhook]"
       - "20:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
 
-  Killaura:
+  Knockback:
     remove-violations-after: 300
     checks:
-      - "Killaura"
+      - "Knockback"
+    commands:
+      - "5:1 [alert]"
+      - "10:0 [webhook]"
+      - "10:0 tempban %player% 7d Cheating detected. Appeal on Discord if this was a mistake."
+
+  # Grim 2.3.74 has no "Killaura" check — combat coverage is Interact/Hitboxes.
+  Combat:
+    remove-violations-after: 300
+    checks:
+      - "Interact"
+      - "Hitboxes"
     commands:
       - "10:10 [alert]"
       - "30:0 [webhook]"
@@ -135,6 +146,7 @@ Punishments:
     remove-violations-after: 300
     checks:
       - "BadPackets"
+      - "PacketOrder"
     commands:
       - "10:5 [alert]"
       - "20:0 [webhook]"
@@ -168,10 +180,10 @@ Punishments:
       - "10:10 [alert]"
       - "20:20 [webhook]"
 
-  EntityControl:
+  Vehicle:
     remove-violations-after: 300
     checks:
-      - "EntityControl"
+      - "Vehicle"
     commands:
       - "10:10 [alert]"
       - "20:20 [webhook]"

@@ -4,10 +4,10 @@ Date: Wed, 22 Oct 2026 12:00:00 -0600
 Subject: [PATCH] Osmium: all NMS injection points for 26.2
 
 diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
-index cd88ff5..3d89306 100644
+index cd88ff5..62680d0 100644
 --- a/net/minecraft/commands/Commands.java
 +++ b/net/minecraft/commands/Commands.java
-@@ -268,6 +268,16 @@ public class Commands {
+@@ -268,6 +268,17 @@ public class Commands {
          WaypointCommand.register(this.dispatcher, context);
          WeatherCommand.register(this.dispatcher);
          WorldBorderCommand.register(this.dispatcher);
@@ -19,16 +19,18 @@ index cd88ff5..3d89306 100644
 +        org.osmium.OsmiumReport.registerCommand(this.dispatcher); // Osmium - /report command (always register; enabled check is at execution time)
 +        org.osmium.OsmiumStaffLog.registerCommand(this.dispatcher); // Osmium - /link /unlink staff Discord linking
 +        org.osmium.OsmiumOpLevel.registerCommand(this.dispatcher); // Osmium - /setop in-game op level management
++        org.osmium.OsmiumTempBan.registerCommand(this.dispatcher); // Osmium - /tempban in-game temporary ban (Grim punishments call this)
 +        org.osmium.npc.OsmiumNpc.registerCommand(this.dispatcher); // Osmium - /osnpc Citizens-backed command NPCs
 +        org.osmium.npc.OsmiumBaltop.registerCommand(this.dispatcher); // Osmium - /osbaltop balance leaderboard display
          if (JvmProfiler.INSTANCE.isAvailable()) {
              JfrCommand.register(this.dispatcher);
          }
-@@ -382,6 +392,7 @@ public class Commands {
+@@ -382,6 +393,8 @@ public class Commands {
          org.spigotmc.AsyncCatcher.catchOp("Cannot perform command async");
          // Paper end
          CommandSourceStack sender = command.getContext().getSource();
 +        org.osmium.OsmiumStaffLog.onCommandDispatch(sender, commandString); // Osmium - staff action log
++        if (org.osmium.OsmiumCombat.blockCommand(sender, commandString)) return; // Osmium - block configured commands while combat-tagged
          Profiler.get().push(() -> "/" + commandString);
          ContextChain<CommandSourceStack> commandChain = finishParsing(command, commandString, sender);
  
@@ -69,6 +71,18 @@ index 1b83d54..25da649 100644
          this.chunkData.setReady(ready);
      }
      // Paper end - Async-Anti-Xray - Ready flag for the connection, add chunk packet info
+diff --git a/net/minecraft/resources/RegistryLoadTask.java b/net/minecraft/resources/RegistryLoadTask.java
+index d9db4b6..b9e12a3 100644
+--- a/net/minecraft/resources/RegistryLoadTask.java
++++ b/net/minecraft/resources/RegistryLoadTask.java
+@@ -100,6 +100,7 @@ public abstract class RegistryLoadTask<T> {
+         ) {
+             try (Reader reader = thunk.openAsReader()) {
+                 JsonElement json = StrictJsonParser.parse(reader);
++                json = org.osmium.OsmiumLootAdjust.transform(elementKey, json); // Osmium - loot table adjustments (apple drop rate)
+                 return Either.left(elementDecoder.parse(ops, json).getOrThrow());
+             } catch (Exception e) {
+                 return Either.right(
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
 index 57650ce..91f7c89 100644
 --- a/net/minecraft/server/MinecraftServer.java
@@ -437,31 +451,43 @@ diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.
 index 6baa9d2..3cfc132 100644
 --- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
-@@ -183,6 +183,28 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+@@ -183,6 +183,40 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
              throw new IllegalStateException("Unexpected response from client: received pack selection, but no negotiation ongoing");
          }
  
-+        // Osmium start - reject modded known packs
++        // Osmium start - known packs enforcement (blacklist + optional reject-all)
 +        // Genuine vanilla clients report only minecraft:* known packs during the
 +        // configuration handshake. Fabric/NeoForge add their own entries here, so
 +        // a non-minecraft namespace proves a modded client regardless of what
-+        // brand name it reported earlier.
-+        if (org.osmium.OsmiumConfig.rejectModdedKnownPacks) {
-+            var osmiumPacks = new java.util.ArrayList<String[]>();
-+            for (net.minecraft.server.packs.repository.KnownPack osmiumPack : packet.knownPacks()) {
-+                if (!osmiumPack.isVanilla()) {
-+                    LOGGER.info("[Osmium] Rejecting {}: modded known pack {}", this.gameProfile.name(), osmiumPack);
-+                    this.disconnect(net.minecraft.network.chat.Component.literal(
-+                            org.osmium.OsmiumConfig.knownPacksKickMessage));
-+                    return;
-+                }
-+                osmiumPacks.add(new String[]{osmiumPack.namespace(), osmiumPack.id(), osmiumPack.version()});
++        // brand name it reported earlier. Mod ids are also matched against the
++        // blacklist: cheat clients report their mods here even without HandShaker.
++        var osmiumPacks = new java.util.ArrayList<String[]>();
++        java.util.Set<String> osmiumBannedPacks = null;
++        for (net.minecraft.server.packs.repository.KnownPack osmiumPack : packet.knownPacks()) {
++            if (org.osmium.OsmiumConfig.rejectModdedKnownPacks && !osmiumPack.isVanilla()) {
++                LOGGER.info("[Osmium] Rejecting {}: modded known pack {}", this.gameProfile.name(), osmiumPack);
++                this.disconnect(net.minecraft.network.chat.Component.literal(
++                        org.osmium.OsmiumConfig.knownPacksKickMessage));
++                return;
 +            }
-+            // Store for play-phase version validation (ViaVersion-aware)
-+            org.osmium.OsmiumIdentity.storeKnownPacks(this.gameProfile.id(),
-+                    java.util.Collections.unmodifiableList(osmiumPacks));
++            if (!org.osmium.OsmiumConfig.blacklistedKnownPacks.isEmpty()
++                    && org.osmium.OsmiumConfig.blacklistedKnownPacks.contains(osmiumPack.id().toLowerCase(java.util.Locale.ROOT))) {
++                if (osmiumBannedPacks == null) osmiumBannedPacks = new java.util.LinkedHashSet<>();
++                osmiumBannedPacks.add(osmiumPack.id());
++            }
++            osmiumPacks.add(new String[]{osmiumPack.namespace(), osmiumPack.id(), osmiumPack.version()});
 +        }
-+        // Osmium end - reject modded known packs
++        if (osmiumBannedPacks != null) {
++            LOGGER.info("[Osmium] Rejecting {}: blacklisted known pack(s) {}", this.gameProfile.name(), osmiumBannedPacks);
++            this.disconnect(net.minecraft.network.chat.Component.literal(
++                    org.osmium.OsmiumConfig.blacklistedKnownPacksKickMessage
++                            .replace("{mods}", String.join(", ", osmiumBannedPacks))));
++            return;
++        }
++        // Store for play-phase version validation (ViaVersion-aware)
++        org.osmium.OsmiumIdentity.storeKnownPacks(this.gameProfile.id(),
++                java.util.Collections.unmodifiableList(osmiumPacks));
++        // Osmium end - known packs enforcement
 +
          this.synchronizeRegistriesTask.handleResponse(packet.knownPacks(), this::send);
          this.finishCurrentTask(SynchronizeRegistriesTask.TYPE);
@@ -470,7 +496,7 @@ diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/ne
 index 0fcb2e4..e6382f2 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2405,6 +2405,18 @@ public class ServerGamePacketListenerImpl
+@@ -2405,6 +2405,19 @@ public class ServerGamePacketListenerImpl
  
      @Override
      public void onDisconnect(final DisconnectionDetails details) {
@@ -485,6 +511,7 @@ index 0fcb2e4..e6382f2 100644
 +        org.osmium.discord.OsmiumDiscordBot.onPlayerEvent("\u00a7c\u274c " + this.player.getPlainTextName() + " left the game"); // Osmium - discord bridge
 +        org.osmium.anticheat.OsmiumBrandEnforcement.removePlayer(this.player.getUUID()); // Osmium - cleanup brand enforcement state
 +        org.osmium.anticheat.OsmiumSignedChat.cancel(this.player.getUUID()); // Osmium - cancel deferred signed chat check
++        org.osmium.OsmiumIdentity.clear(this.player.getUUID()); // Osmium - drop config-phase known packs
 +        // Osmium end
          LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
          // Paper start - Fix kick event leave message not being sent
