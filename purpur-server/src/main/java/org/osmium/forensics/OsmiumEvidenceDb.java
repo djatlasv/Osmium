@@ -338,7 +338,12 @@ public final class OsmiumEvidenceDb {
     }
 
     private static void exec(String sql) throws Exception {
-        mExecUpdate.invoke(writeConn, sql);
+        Object st = writeConn.getClass().getMethod("createStatement").invoke(writeConn);
+        try {
+            mExecUpdate.invoke(st, sql);
+        } finally {
+            mClose.invoke(st);
+        }
     }
 
     // ------------------------------------------------------------------
