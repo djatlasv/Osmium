@@ -243,6 +243,9 @@ boolean sent = OsmiumDiscordBot.pushReport(report);
             from.sendSystemMessage(Component.literal("\u00a7aReport sent to the staff. Thanks!"));
             LOGGER.info("[Report] {} reported {}: {}",
                     from.getGameProfile().name(), target.getGameProfile().name(), reason);
+            if (org.osmium.OsmiumConfig.forensicsEnabled && org.osmium.OsmiumConfig.forensicsAutoEvidenceOnReport) {
+                org.osmium.forensics.OsmiumEvidence.autoForReport(report);
+            }
         } else {
             // Bot offline / no report channel: don't keep a report nobody can act on
             REPORTS.remove(report.id());

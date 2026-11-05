@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Djatlasv <djatlasv@users.noreply.github.com>
+Date: Thu, 5 Nov 2026 10:23:58 -0700
+Subject: [PATCH] Osmium: add evidence to junit command permission skip list
+
+
+diff --git a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+index 682cb0b42e86b1de45b5ee8bcdb1a20a4aa3fd89..c5ed5146d55a09b1d1999afb7f3838dd84b0133f 100644
+--- a/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
++++ b/src/test/java/io/papermc/paper/permissions/MinecraftCommandPermissionsTest.java
+@@ -98,6 +98,7 @@ public class MinecraftCommandPermissionsTest {
+         "minecraft.command.osnpc",
+         "minecraft.command.osbaltop",
+         "minecraft.command.tempban",
++        "minecraft.command.evidence",
+         // Osmium end - Skip junit tests for osmium commands
+         "minecraft.command.selector"
+     );

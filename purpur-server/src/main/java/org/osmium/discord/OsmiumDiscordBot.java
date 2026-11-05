@@ -75,6 +75,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         String logChannelId = ""; // staff log channel (auto-created on setup, /osmium log-channel)
         Map<String, String> roles = new LinkedHashMap<>(); // roleId -> LEVEL name
         Map<String, Link> links = new LinkedHashMap<>();   // minecraft uuid -> link
+        Map<String, String> channels = new LinkedHashMap<>(); // category ("reports"/"punishments"/"commands") -> channelId, fallback = staff log
     }
 
     /** Minecraft <-> Discord staff link (persisted). Created via /link + /osmium link. */
@@ -99,6 +100,10 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         } catch (Exception e) {
             LOGGER.error("Failed to load osmium-discord-bot.json", e);
         }
+        // Gson skips the constructor: maps missing from older store files deserialize as null
+        if (store.roles == null) store.roles = new LinkedHashMap<>();
+        if (store.links == null) store.links = new LinkedHashMap<>();
+        if (store.channels == null) store.channels = new LinkedHashMap<>();
     }
 
     private static void saveStore() {
@@ -138,10 +143,27 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
      * is off or no channel is configured — logging must never break gameplay.
      */
     public static void pushStaffLog(String text) {
-        TextChannel ch = staffLogChannel();
+        pushStaffLog(null, text);
+    }
+
+    /**
+     * Sends a staff action line to the channel configured for the given
+     * category ("reports" / "punishments" / "commands"), falling back to the
+     * staff log channel when the category has no (resolvable) channel.
+     */
+    public static void pushStaffLog(String category, String text) {
+        TextChannel ch = categoryChannel(category);
+        if (ch == null) ch = staffLogChannel();
         if (ch == null) return;
         ch.sendMessage(sanitize(text)).queue(ok -> {},
                 err -> LOGGER.warn("Staff log send failed: {}", err.getMessage()));
+    }
+
+    private static TextChannel categoryChannel(String category) {
+        if (category == null || store.channels == null) return null;
+        String id = store.channels.get(category);
+        if (id == null || id.isBlank()) return null;
+        return jda != null ? jda.getTextChannelById(id.trim()) : null;
     }
 
     public static boolean isLinked(UUID mcUuid) {
@@ -298,6 +320,12 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                                         .addOption(OptionType.ROLE, "role", "Discord role", true),
                                 new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("log-channel", "Set or create the staff log channel (owner)")
                                         .addOption(OptionType.CHANNEL, "channel", "Existing channel to use (leave empty to create a new private one)", false),
+                                new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("report-channel", "Where /report embeds go (owner). No option = show current")
+                                        .addOption(OptionType.CHANNEL, "channel", "Channel to use", false),
+                                new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("punish-channel", "Where punishments (bans/kicks) are logged (owner). No option = show current")
+                                        .addOption(OptionType.CHANNEL, "channel", "Channel to use", false),
+                                new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("command-channel", "Where in-game staff command logs go (owner). No option = show current")
+                                        .addOption(OptionType.CHANNEL, "channel", "Channel to use", false),
                                 new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("links", "List Minecraft <-> Discord links (owner)"),
                                 new net.dv8tion.jda.api.interactions.commands.build.SubcommandData("link", "Link your Minecraft account (staff) — run /link in game first")
                                         .addOption(OptionType.STRING, "code", "Code from /link", true),
@@ -306,6 +334,10 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                 Commands.slash("status", "Server status (viewer)"),
                 Commands.slash("list", "Online players (viewer)"),
                 Commands.slash("tps", "Server performance (viewer)"),
+
+                Commands.slash("evidence", "Packet forensics report for a player (mod+)")
+                        .addOption(OptionType.STRING, "player", "Player name", true)
+                        .addOption(OptionType.INTEGER, "minutes", "Lookback window in minutes (default from osmium.yml)", false),
 
                 Commands.slash("kick", "Kick a player (helper+)")
                         .addOption(OptionType.STRING, "player", "Player name", true)
@@ -391,17 +423,30 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     // ------------------------------------------------------------------
 
     private void audit(SlashCommandInteractionEvent e, String action) {
+        audit(e, null, action);
+    }
+
+    private void audit(SlashCommandInteractionEvent e, String category, String action) {
         String mc = linkedMcName(e.getUser().getId());
         String line = "[Discord] " + e.getUser().getName()
                 + (mc != null ? " [" + mc + "]" : "")
                 + " (" + e.getUser().getId() + ") -> " + action;
         LOGGER.info(line);
-        auditChannel(e.getGuild(), line);
+        auditChannel(e.getGuild(), category, line);
     }
 
     private void auditChannel(net.dv8tion.jda.api.entities.Guild guild, String text) {
-        // Prefer the staff log channel; fall back to the legacy audit-channel-id.
-        if (staffLogChannel() != null) { pushStaffLog("`" + text + "`"); return; }
+        auditChannel(guild, null, text);
+    }
+
+    private void auditChannel(net.dv8tion.jda.api.entities.Guild guild, String category, String text) {
+        // Prefer the category channel (or staff log); fall back to the legacy audit-channel-id.
+        TextChannel cat = categoryChannel(category);
+        if (cat == null && category != null) cat = staffLogChannel();
+        if (cat != null) {
+            cat.sendMessage("`" + text + "`").queue(ok -> {}, err -> {});
+            return;
+        }
         String chId = OsmiumConfig.discordBotAuditChannelId;
         if (chId == null || chId.isBlank() || guild == null) return;
         TextChannel ch = guild.getTextChannelById(chId.trim());
@@ -442,6 +487,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         switch (e.getName()) {
             case "osmium" -> handleOsmiumAdmin(e, server);
             case "status" -> { require(e, Level.VIEWER); replyInfo(e, buildStatus(server)); }
+            case "evidence" -> handleEvidence(e, server);
             case "list" -> { require(e, Level.VIEWER); replyInfo(e, buildList(server)); }
             case "tps" -> { require(e, Level.VIEWER); replyInfo(e, buildPerf(server)); }
             case "kick" -> handleKick(e, server);
@@ -579,6 +625,29 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                     replyInfo(e, "✅ Creating a new private **osmium-staff-log** channel...");
                 }
             }
+            case "report-channel", "punish-channel", "command-channel" -> {
+                if (!isOwner(e)) { replyError(e, "Owner only."); return; }
+                String category = switch (sub) {
+                    case "report-channel" -> "reports";
+                    case "punish-channel" -> "punishments";
+                    default -> "commands";
+                };
+                var chOpt = e.getOption("channel");
+                if (chOpt != null && chOpt.getAsChannel() instanceof TextChannel tc) {
+                    store.channels.put(category, tc.getId());
+                    saveStore();
+                    audit(e, "set " + category + " channel to " + tc.getId());
+                    replyInfo(e, "✅ **" + category + "** now route to " + tc.getAsMention()
+                            + ". Categories without their own channel keep using the staff log channel.");
+                } else {
+                    String current = store.channels.get(category);
+                    if (current != null && !current.isBlank()) {
+                        replyInfo(e, "**" + category + "** channel: <#" + current.trim() + ">. Pass a channel to change it.");
+                    } else {
+                        replyInfo(e, "**" + category + "** currently follow the staff log channel (<#" + store.logChannelId.trim() + ">). Pass a channel to split them off.");
+                    }
+                }
+            }
             case "links" -> {
                 if (!isOwner(e)) { replyError(e, "Owner only."); return; }
                 if (store.links.isEmpty()) { replyInfo(e, "No linked accounts. Staff run `/link` in game, then `/osmium link code:<code>`."); return; }
@@ -679,7 +748,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         var target = server.getPlayerList().getPlayerByName(player);
         if (target == null) { replyError(e, "'" + player + "' is not online."); return; }
 
-        audit(e, "KICK " + target.getGameProfile().name() + " (" + reason + ")");
+        audit(e, "punishments", "KICK " + target.getGameProfile().name() + " (" + reason + ")");
         server.execute(() -> target.connection.disconnect(
                 net.minecraft.network.chat.Component.literal("Kicked: " + reason),
                 org.bukkit.event.player.PlayerKickEvent.Cause.KICK_COMMAND));
@@ -781,7 +850,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     }
 
     private void executeBan(SlashCommandInteractionEvent ctx, PendingAction pa) {
-        audit(ctx, "BAN " + pa.player() + " (" + pa.reason() + ")");
+        audit(ctx, "punishments", "BAN " + pa.player() + " (" + pa.reason() + ")");
         doBan(pa.player(), pa.reason());
         replyInfo(ctx, "🔨 Banned **" + pa.player() + "** — " + pa.reason());
     }
@@ -789,7 +858,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     private void handlePardon(SlashCommandInteractionEvent e, MinecraftServer server) {
         require(e, Level.MOD);
         String player = e.getOption("player", "", OptionMapping::getAsString);
-        audit(e, "PARDON " + player);
+        audit(e, "punishments", "PARDON " + player);
         server.execute(() -> {
             var resolved = server.services().nameToIdCache().get(player);
             resolved.ifPresent(nameAndId -> server.getPlayerList().getBans().remove(nameAndId));
@@ -908,10 +977,10 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         Date expires = new Date(System.currentTimeMillis() + pa.durationMs());
         OsmiumReport.banPlayer(pa.player(), null, pa.reason(), expires, "Discord temp-ban by " + e.getUser().getName());
         String mc = linkedMcName(e.getUser().getId());
-        auditChannel(e.getGuild(), "[Discord] " + e.getUser().getName()
+        auditChannel(e.getGuild(), "punishments", "[Discord] " + e.getUser().getName()
                 + (mc != null ? " [" + mc + "]" : "")
                 + " (" + e.getUser().getId() + ") -> tempban " + pa.player() + " (" + durText + ")");
-        pushStaffLog("\u26d4 " + e.getUser().getName() + " temp-banned **" + pa.player()
+        pushStaffLog("punishments", "\u26d4 " + e.getUser().getName() + " temp-banned **" + pa.player()
                 + "** for " + durText + " \u2014 " + pa.reason());
         e.editMessage("\u23f3 Temp-banned **" + pa.player() + "** for " + durText).setComponents().queue();
     }
@@ -926,7 +995,8 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     // ------------------------------------------------------------------
 
     private static TextChannel reportChannel(JDA api) {
-        String id = OsmiumConfig.reportChannelId;
+        String id = store.channels != null ? store.channels.get("reports") : null;
+        if (id == null || id.isBlank()) id = OsmiumConfig.reportChannelId;
         if (id == null || id.isBlank()) id = store.logChannelId;
         if (id == null || id.isBlank()) id = OsmiumConfig.discordBotAuditChannelId;
         if (id == null || id.isBlank()) return null;
@@ -961,6 +1031,94 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                 .queue(ok -> {},
                         err -> LOGGER.error("Failed to push report {}: {}", r.id(), err.getMessage()));
         return true;
+    }
+
+    // ------------------------------------------------------------------
+    // Packet forensics /evidence
+    // ------------------------------------------------------------------
+
+    private void handleEvidence(SlashCommandInteractionEvent e, MinecraftServer server) {
+        require(e, Level.MOD);
+        if (!org.osmium.OsmiumConfig.forensicsEnabled
+                || !org.osmium.forensics.OsmiumEvidenceDb.isRunning()) {
+            replyError(e, "Forensics is not running (forensics.enabled in osmium.yml).");
+            return;
+        }
+        String player = e.getOption("player", "", OptionMapping::getAsString);
+        int minutes = e.getOption("minutes", org.osmium.OsmiumConfig.forensicsEvidenceMinutes, OptionMapping::getAsInt);
+        e.deferReply().queue();
+        server.execute(() -> {
+            UUID uuid;
+            String name = player;
+            var online = server.getPlayerList().getPlayerByName(player);
+            if (online != null) {
+                uuid = online.getUUID();
+                name = online.getPlainTextName();
+            } else {
+                var resolved = server.services().nameToIdCache().get(player);
+                if (resolved.isEmpty()) {
+                    e.getHook().sendMessage("Unknown player **" + player + "**.").queue();
+                    return;
+                }
+                uuid = resolved.get().id();
+                name = resolved.get().name();
+            }
+            final UUID fUuid = uuid;
+            final String fName = name;
+            org.osmium.forensics.OsmiumEvidence.compileAsync(fUuid, fName, minutes, (c, t) -> {
+                if (t != null) {
+                    e.getHook().sendMessage("Evidence compile failed: " + t).queue();
+                    return;
+                }
+                if (c.summary.isEmpty()) {
+                    e.getHook().sendMessage("No forensics data for **" + fName
+                            + "** in the last " + minutes + " min.").queue();
+                    return;
+                }
+                try {
+                    MessageEmbed em = evidenceEmbed(c.summary);
+                    e.getHook().sendFiles(net.dv8tion.jda.api.utils.FileUpload.fromData(c.file))
+                            .setEmbeds(em).queue();
+                    auditChannel(e.getGuild(), "[Discord] " + e.getUser().getName()
+                            + " -> evidence " + fName + " (" + minutes + "min)");
+                } catch (Exception ex) {
+                    e.getHook().sendMessage("Evidence upload failed: " + ex.getMessage()).queue();
+                }
+            });
+        });
+    }
+
+    private static MessageEmbed evidenceEmbed(org.osmium.forensics.OsmiumEvidence.Summary s) {
+        var b = new EmbedBuilder()
+                .setTitle("\ud83d\udd0e Evidence: " + s.name)
+                .setColor(new Color(0xE67E22))
+                .setDescription("Last " + s.minutes + " min \u2014 raw dump attached");
+        for (String line : s.discordLines()) {
+            int idx = line.indexOf(": ");
+            if (idx > 0) b.addField(line.substring(0, idx), line.substring(idx + 2), false);
+            else b.addField("\u200b", line, false);
+        }
+        b.setFooter(s.uuid);
+        return b.build();
+    }
+
+    /** Auto-evidence after a delivered /report: summary embed + dump to the report channel. */
+    public static void pushEvidence(org.osmium.forensics.OsmiumEvidence.Summary s, java.io.File file) {
+        JDA api = jda;
+        if (api == null) return;
+        TextChannel ch = reportChannel(api);
+        if (ch == null) {
+            LOGGER.warn("Evidence for {} not delivered: no report channel", s.name);
+            return;
+        }
+        try {
+            ch.sendMessageEmbeds(evidenceEmbed(s))
+                    .addFiles(net.dv8tion.jda.api.utils.FileUpload.fromData(file))
+                    .queue(ok -> {},
+                            err -> LOGGER.warn("Evidence send failed: {}", err.getMessage()));
+        } catch (Exception ex) {
+            LOGGER.warn("Evidence send failed: {}", ex.getMessage());
+        }
     }
 
     private static MessageEmbed reportEmbed(OsmiumReport.Report r, String statusLine) {
@@ -1041,7 +1199,7 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         OsmiumReport.Report updated = OsmiumReport.resolve(reportId,
                 parts[1].equals("dismiss") ? "dismissed" : "banned", actor);
         String mc = linkedMcName(e.getUser().getId());
-        auditChannel(e.getGuild(), "[Discord] " + actor + (mc != null ? " [" + mc + "]" : "")
+        auditChannel(e.getGuild(), "punishments", "[Discord] " + actor + (mc != null ? " [" + mc + "]" : "")
                 + " (" + e.getUser().getId() + ") -> report " + parts[1] + " " + r.targetName());
         e.editMessageEmbeds(reportEmbed(updated, statusLine)).setComponents().queue();
     }

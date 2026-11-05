@@ -130,7 +130,7 @@ public class OsmiumStaffLog {
         String who = player.getPlainTextName()
                 + (discord != null ? " (Discord: " + discord + ")" : " (unlinked)");
         LOGGER.info("[StaffLog] {} ran /{}", who, command);
-        OsmiumDiscordBot.pushStaffLog("\u2699 " + who + " ran `" + command + "`");
+        OsmiumDiscordBot.pushStaffLog("commands", "\u2699 " + who + " ran `" + command + "`");
     }
 
     // Punishment commands worth recording when dispatched by the console.
@@ -144,6 +144,6 @@ public class OsmiumStaffLog {
         String verb = trimmed.split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
         if (!PUNISH_VERBS.contains(verb)) return;
         LOGGER.info("[StaffLog] console punishment: /{}", trimmed);
-        OsmiumDiscordBot.pushStaffLog("\u26d4 Punishment (console): `" + trimmed + "`");
+        OsmiumDiscordBot.pushStaffLog("punishments", "\u26d4 Punishment (console): `" + trimmed + "`");
     }
 }
