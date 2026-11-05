@@ -17,6 +17,10 @@ import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
+import net.dv8tion.jda.api.interactions.modals.Modal;
+import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
+import net.dv8tion.jda.api.interactions.components.text.TextInput;
+import net.dv8tion.jda.api.interactions.components.text.TextInputStyle;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.minecraft.server.MinecraftServer;
 import org.osmium.OsmiumConfig;
@@ -395,6 +399,12 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
     }
 
     private boolean isOwner(ButtonInteractionEvent e) {
+        if (!inBoundGuild(e.getGuild())) return false;
+        if (e.getUser().getIdLong() == e.getGuild().getOwnerIdLong()) return true;
+        return !store.ownerId.isEmpty() && e.getUser().getId().equals(store.ownerId);
+    }
+
+    private boolean isOwner(ModalInteractionEvent e) {
         if (!inBoundGuild(e.getGuild())) return false;
         if (e.getUser().getIdLong() == e.getGuild().getOwnerIdLong()) return true;
         return !store.ownerId.isEmpty() && e.getUser().getId().equals(store.ownerId);
@@ -1134,6 +1144,87 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
         return eb.build();
     }
 
+    /** A report ban button click waiting for its reason modal to come back. */
+    private record PendingReportBan(UUID reportId, String type, long userId, long channelId, long messageId) {}
+    private static final Map<String, PendingReportBan> REPORT_BAN_PENDING = new ConcurrentHashMap<>();
+
+    private static String clampModalTitle(String t) {
+        return t.length() <= 45 ? t : t.substring(0, 44) + "…";
+    }
+
+    /** Ban reason modal submitted: apply the ban with the staff-provided reason. */
+    @Override
+    public void onModalInteraction(ModalInteractionEvent e) {
+        String id = e.getModalId();
+        if (!id.startsWith("rban:")) return;
+        PendingReportBan p = REPORT_BAN_PENDING.remove(id.substring(5));
+        if (p == null) { e.reply("⌛ This ban prompt expired.").setEphemeral(true).queue(); return; }
+        if (p.userId() != e.getUser().getIdLong()) {
+            e.reply("Only whoever clicked the button can confirm.").setEphemeral(true).queue();
+            return;
+        }
+        // Re-check permission at confirm time — mod tier
+        boolean allowed = isOwner(e);
+        if (!allowed && e.getMember() != null) {
+            Level best = Level.NONE;
+            for (var role : e.getMember().getRoles()) {
+                String lvlName = store.roles.get(role.getId());
+                if (lvlName == null) continue;
+                Level l = Level.of(lvlName);
+                if (l.rank > best.rank) best = l;
+            }
+            allowed = best.rank >= Level.MOD.rank;
+        }
+        if (!allowed) { e.reply("❌ Your roles no longer permit this action.").setEphemeral(true).queue(); return; }
+        if (linkedMcName(e.getUser().getId()) == null) {
+            e.reply("❌ Link required — run **/link** in game, then `/osmium link code:<code>` here.").setEphemeral(true).queue();
+            return;
+        }
+
+        OsmiumReport.Report r = OsmiumReport.get(p.reportId());
+        if (r == null || !OsmiumReport.isOpen(r)) {
+            e.reply("⌛ This report was already handled or expired.").setEphemeral(true).queue();
+            return;
+        }
+
+        String actor = e.getUser().getName();
+        String reason = e.getValue("reason") != null ? e.getValue("reason").getAsString().trim() : "";
+        if (reason.isEmpty()) reason = r.reason(); // fall back to the report reason
+        String statusLine;
+        if (p.type().equals("timeban")) {
+            int hours = Math.max(1, OsmiumConfig.reportTimeBanHours);
+            OsmiumReport.banPlayer(r.targetName(), r.targetUuid(), reason,
+                    new Date(System.currentTimeMillis() + hours * 3600_000L),
+                    "Discord report by " + actor);
+            statusLine = "🔨 **" + r.targetName() + "** banned for " + hours + "h by **" + actor
+                    + "** — " + reason;
+            LOGGER.info("[Discord] user {} -> REPORT {} timeban {} ({}h) reason: {}",
+                    e.getUser().getId(), r.id(), r.targetName(), hours, reason);
+        } else {
+            OsmiumReport.banPlayer(r.targetName(), r.targetUuid(), reason, null,
+                    "Discord report by " + actor);
+            statusLine = "🔨 **" + r.targetName() + "** permanently banned by **" + actor
+                    + "** — " + reason;
+            LOGGER.info("[Discord] user {} -> REPORT {} permban {} reason: {}",
+                    e.getUser().getId(), r.id(), r.targetName(), reason);
+        }
+
+        OsmiumReport.Report updated = OsmiumReport.resolve(p.reportId(), "banned", actor);
+        String mc = linkedMcName(e.getUser().getId());
+        auditChannel(e.getGuild(), "punishments", "[Discord] " + actor + (mc != null ? " [" + mc + "]" : "")
+                + " (" + e.getUser().getId() + ") -> report " + p.type() + " " + r.targetName()
+                + " — " + reason);
+        // update the original report embed (the modal isn't tied to that message)
+        TextChannel ch = jda != null ? jda.getTextChannelById(p.channelId()) : null;
+        if (ch != null) {
+            ch.editMessageEmbedsById(p.messageId(), reportEmbed(updated, statusLine))
+                    .setComponents().queue(ok -> {},
+                            err -> LOGGER.warn("Failed to update report embed: {}", err.getMessage()));
+        }
+        e.reply("🔨 " + (p.type().equals("timeban") ? "Time ban applied" : "Player banned")
+                + " — " + reason).setEphemeral(true).queue();
+    }
+
     private void handleReportButton(ButtonInteractionEvent e) {
         String[] parts = e.getComponentId().split(":", 3); // report:<action>:<uuid>
         UUID reportId = null;
@@ -1175,23 +1266,24 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                 LOGGER.info("[Discord] user {} -> REPORT {} dismiss {}",
                         e.getUser().getId(), r.id(), r.targetName());
             }
-            case "timeban" -> {
-                int hours = Math.max(1, OsmiumConfig.reportTimeBanHours);
-                OsmiumReport.banPlayer(r.targetName(), r.targetUuid(), r.reason(),
-                        new Date(System.currentTimeMillis() + hours * 3600_000L),
-                        "Discord report by " + actor);
-                statusLine = "🔨 **" + r.targetName() + "** banned for " + hours + "h by **" + actor
-                        + "** — " + r.reason();
-                LOGGER.info("[Discord] user {} -> REPORT {} timeban {} ({}h)",
-                        e.getUser().getId(), r.id(), r.targetName(), hours);
-            }
-            case "permban" -> {
-                OsmiumReport.banPlayer(r.targetName(), r.targetUuid(), r.reason(), null,
-                        "Discord report by " + actor);
-                statusLine = "🔨 **" + r.targetName() + "** permanently banned by **" + actor
-                        + "** — " + r.reason();
-                LOGGER.info("[Discord] user {} -> REPORT {} permban {}",
-                        e.getUser().getId(), r.id(), r.targetName());
+            case "timeban", "permban" -> {
+                // Ask for the ban reason via a modal instead of reusing the
+                // report reason blindly. Pre-filled with the report reason.
+                String shortId = UUID.randomUUID().toString().substring(0, 8);
+                REPORT_BAN_PENDING.put(shortId, new PendingReportBan(r.id(), parts[1],
+                        e.getUser().getIdLong(), e.getChannel().getIdLong(), e.getMessageIdLong()));
+                TextInput reasonInput = TextInput.create("reason", "Ban reason", TextInputStyle.PARAGRAPH)
+                        .setPlaceholder("Why is " + r.targetName() + " being banned?")
+                        .setValue(r.reason())
+                        .setMaxLength(500)
+                        .setRequired(true)
+                        .build();
+                Modal modal = Modal.create("rban:" + shortId,
+                                clampModalTitle((parts[1].equals("timeban") ? "Time ban: " : "Ban: ") + r.targetName()))
+                        .addActionRow(reasonInput)
+                        .build();
+                e.replyModal(modal).queue();
+                return;
             }
             default -> { e.reply("Unknown action.").setEphemeral(true).queue(); return; }
         }
