@@ -93,7 +93,7 @@ public final class OsmiumEvidenceDb {
     public static void start(File serverDir) {
         if (running) return;
         try {
-            File jar = ensureDriverJar(new File(serverDir, "osmium-libs"));
+            File jar = ensureDriverJar(serverDir, new File(serverDir, "osmium-libs"));
             dbFile = new File(serverDir, DB_NAME);
             URLClassLoader loader = new URLClassLoader(new URL[]{ jar.toURI().toURL() },
                     OsmiumEvidenceDb.class.getClassLoader());
@@ -511,7 +511,21 @@ public final class OsmiumEvidenceDb {
     // driver jar download (pinned Maven Central artifact, sha1-verified)
     // ------------------------------------------------------------------
 
-    private static File ensureDriverJar(File libDir) throws Exception {
+    private static File ensureDriverJar(File serverDir, File libDir) throws Exception {
+        // Prefer the sqlite-jdbc already bundled by the paperclip installer in
+        // libraries/org/xerial/sqlite-jdbc/<ver>/ — no internet needed. Fall
+        // back to a pinned Maven Central download for unusual installs.
+        File bundledDir = new File(new File(serverDir, "libraries"), "org/xerial/sqlite-jdbc");
+        File[] bundled = bundledDir.listFiles(d -> d.isDirectory() && d.getName().matches("[0-9][0-9.]+"));
+        if (bundled != null) {
+            for (File vdir : bundled) {
+                File[] jars = vdir.listFiles((d, n) -> n.startsWith("sqlite-jdbc-") && n.endsWith(".jar"));
+                if (jars != null && jars.length > 0) {
+                    LOGGER.info("Using bundled sqlite-jdbc: " + jars[0].getName());
+                    return jars[0];
+                }
+            }
+        }
         if (!libDir.exists()) libDir.mkdirs();
         File jar = new File(libDir, "sqlite-jdbc-" + SQLITE_VERSION + ".jar");
         if (jar.exists() && jar.length() > 0) return jar;
