@@ -1095,8 +1095,8 @@ public final class OsmiumDiscordBot extends ListenerAdapter {
                 .setDescription("Last " + s.minutes + " min \u2014 raw dump attached");
         for (String line : s.discordLines()) {
             int idx = line.indexOf(": ");
-            if (idx > 0) b.addField(line.substring(0, idx), line.substring(idx + 2), false);
-            else b.addField("\u200b", line, false);
+            if (idx > 0) b.addField(line.substring(0, idx).trim(), line.substring(idx + 2).trim(), false);
+            else b.addField("\u200b", line.trim(), false);
         }
         b.setFooter(s.uuid);
         return b.build();

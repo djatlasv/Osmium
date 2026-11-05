@@ -259,6 +259,19 @@ public class OsmiumEvidence {
         public int grimSetbacks;
         public Map<String, Double> grimByCheck = new LinkedHashMap<>();
 
+        // analyzer scores (0 = clean, 100 = max suspicion)
+        public int movementScore;
+        public int combatScore;
+        public int chatScore;
+        public int grimScore;
+        public int overallScore;
+        public String overallVerdict = "No data";
+        public List<String> scoreReasons = new ArrayList<>();
+        // combat extras computed during analysis
+        public int reachHits;        // attacks beyond 3.3 blocks
+        public double maxReach;
+        public double attackIntervalCv; // stddev/mean of attack intervals (robotic = low)
+
         public boolean isEmpty() {
             return (moves == null || moves.isEmpty())
                     && (attacks == null || attacks.isEmpty())
@@ -324,11 +337,132 @@ public class OsmiumEvidence {
                     grimByCheck.merge(r.check(), r.vl(), Double::sum);
                 }
             }
+            analyze();
+        }
+
+        // ------------------------------------------------------------------
+        // heuristic analyzer — scores DIRECT investigation, they are not proof
+        // ------------------------------------------------------------------
+
+        private void analyze() {
+            // --- movement ---
+            double ms = 0;
+            if (moveWindows > 0) {
+                double spikeRatio = (double) speedSpikes / moveWindows;
+                if (maxSpeed > 20) { ms += 40; scoreReasons.add("movement: max speed " + fmt(maxSpeed) + " b/s (fly/blink territory)"); }
+                else if (maxSpeed > 14) { ms += 25; scoreReasons.add("movement: max speed " + fmt(maxSpeed) + " b/s"); }
+                else if (maxSpeed > 11) { ms += 10; scoreReasons.add("movement: max speed " + fmt(maxSpeed) + " b/s (could be elytra/pearl)"); }
+                if (spikeRatio > 0.3) { ms += 25; scoreReasons.add("movement: " + Math.round(spikeRatio * 100) + "% of windows over 9 b/s"); }
+                if (packetRate > 30) { ms += 30; scoreReasons.add("movement: " + fmt(packetRate) + " move pkt/s (timer hack range)"); }
+                else if (packetRate > 20) { ms += 15; scoreReasons.add("movement: " + fmt(packetRate) + " move pkt/s (elevated)"); }
+                if (maxVertical > 3.0) { ms += 15; scoreReasons.add("movement: vertical " + fmt(maxVertical) + " b/s (could be elytra dive)"); }
+                // on-ground toggle spam
+                int gc = 0;
+                for (OsmiumEvidenceDb.MoveRow r : moves) gc += r.groundChanges();
+                double avgGc = (double) gc / moveWindows;
+                if (avgGc > 8) { ms += 25; scoreReasons.add("movement: " + fmt(avgGc) + " on-ground toggles/window (ground spoof)"); }
+                if (maxSpeed > 14 || spikeRatio > 0.3) scoreReasons.add("movement: verify NOT elytra/pearls before acting");
+            }
+            movementScore = clamp(ms);
+
+            // --- combat ---
+            double cs = 0;
+            if (attackCount > 2) {
+                double spanS = attackWindowSeconds();
+                double cps = spanS > 0 ? attackCount / spanS : 0;
+                if (cps > 15) { cs += 40; scoreReasons.add("combat: " + fmt(cps) + " CPS sustained (autoclicker range)"); }
+                else if (cps > 10) { cs += 20; scoreReasons.add("combat: " + fmt(cps) + " CPS sustained"); }
+                // reach
+                int over = 0;
+                for (OsmiumEvidenceDb.AttackRow r : attacks) {
+                    double dx = r.x() - r.tx(), dy = r.y() - r.ty(), dz = r.z() - r.tz();
+                    double reach = Math.sqrt(dx * dx + dy * dy + dz * dz) - 0.45; // ~target bounding radius
+                    if (reach > maxReach) maxReach = reach;
+                    if (reach > 3.3) over++;
+                }
+                reachHits = over;
+                if (over > 0) {
+                    double ratio = (double) over / attackCount;
+                    cs += ratio > 0.5 ? 45 : 20;
+                    scoreReasons.add("combat: " + over + "/" + attackCount + " attacks beyond 3.3 reach (max " + fmt(maxReach) + ")");
+                }
+                // interval regularity (autoclickers are metronomic)
+                if (attackCount >= 6) {
+                    double mean = 0;
+                    for (int i = 1; i < attacks.size(); i++) mean += attacks.get(i).ts() - attacks.get(i - 1).ts();
+                    mean /= (attacks.size() - 1);
+                    double var = 0;
+                    for (int i = 1; i < attacks.size(); i++) {
+                        double d = attacks.get(i).ts() - attacks.get(i - 1).ts() - mean;
+                        var += d * d;
+                    }
+                    var /= (attacks.size() - 1);
+                    double cv = mean > 0 ? Math.sqrt(var) / mean : 1;
+                    attackIntervalCv = cv;
+                    if (cv < 0.08) { cs += 30; scoreReasons.add("combat: metronomic attack intervals (cv " + fmt(cv) + " — autoclicker signature)"); }
+                    else if (cv < 0.15) { cs += 15; scoreReasons.add("combat: suspiciously regular attack intervals (cv " + fmt(cv) + ")"); }
+                }
+                // target switching (killaura multi-target)
+                if (distinctTargets >= 3) {
+                    int switches = 0;
+                    for (int i = 1; i < attacks.size(); i++) {
+                        if (!attacks.get(i).targetUuid().equals(attacks.get(i - 1).targetUuid())) switches++;
+                    }
+                    double switchesPerMin = spanS > 0 ? switches / (spanS / 60.0) : 0;
+                    if (switchesPerMin > 10) { cs += 20; scoreReasons.add("combat: " + (int) switchesPerMin + " target switches/min (killaura pattern)"); }
+                }
+            }
+            combatScore = clamp(cs);
+
+            // --- chat ---
+            if (chatCount > 0 && filteredCount > 0) {
+                chatScore = clamp(Math.min(100, filteredCount * 12));
+                scoreReasons.add("chat: " + filteredCount + "/" + chatCount + " messages caught by the filter (bypass attempts)");
+            }
+
+            // --- grim ---
+            if (grimEvents > 0) {
+                double totalVl = 0;
+                for (double v : grimByCheck.values()) totalVl += v;
+                grimScore = clamp((int) Math.min(100, totalVl * 2 + grimSetbacks * 5));
+                scoreReasons.add("grim: " + fmt(totalVl) + " total VL across " + grimByCheck.size() + " check(s), " + grimSetbacks + " setbacks");
+            }
+
+            // --- overall ---
+            double parts = 0, weighted = 0;
+            if (moveWindows > 0) { weighted += movementScore * 0.30; parts += 0.30; }
+            if (attackCount > 0) { weighted += combatScore * 0.30; parts += 0.30; }
+            if (chatCount > 0) { weighted += chatScore * 0.20; parts += 0.20; }
+            if (grimEvents > 0) { weighted += grimScore * 0.20; parts += 0.20; }
+            overallScore = parts > 0 ? clamp((int) (weighted / parts)) : 0;
+            overallVerdict = parts == 0 ? "No data" : verdict(overallScore);
+        }
+
+        private double attackWindowSeconds() {
+            if (attacks.isEmpty()) return 0;
+            return Math.max(1, (attacks.get(attacks.size() - 1).ts() - attacks.get(0).ts()) / 1000.0);
+        }
+
+        private static int clamp(double v) { return (int) Math.max(0, Math.min(100, v)); }
+
+        private static String verdict(int score) {
+            if (score < 10) return "Clean";
+            if (score < 30) return "Low";
+            if (score < 55) return "Suspicious";
+            if (score < 75) return "Likely cheating";
+            return "Cheating (high confidence)";
         }
 
         /** Compact per-category lines (in-game echo + Discord embed fields). */
         public List<String> discordLines() {
             List<String> out = new ArrayList<>();
+            // verdict block first — this is what staff read
+            if (moveWindows > 0 || attackCount > 0 || chatCount > 0 || grimEvents > 0) {
+                out.add("Verdict: " + overallVerdict + " (" + overallScore + "%) — movement " + movementScore
+                        + "%, combat " + combatScore + "%, chat " + chatScore + "%, grim " + grimScore + "%");
+                for (String reason : scoreReasons) out.add("  " + reason);
+                if (scoreReasons.isEmpty()) out.add("  no anomalies flagged in the lookback window");
+            }
             out.add("Movement: " + moveWindows + " windows, avg " + fmt(avgSpeed) + " b/s, max "
                     + fmt(maxSpeed) + " b/s" + (speedSpikes > 0 ? " (" + speedSpikes + " spikes >9 b/s)" : "")
                     + ", " + String.format(java.util.Locale.ROOT, "%.1f", packetRate) + " pkt/s, maxVy "
